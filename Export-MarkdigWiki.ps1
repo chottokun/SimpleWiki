@@ -125,7 +125,21 @@ $template = @'
         <div class="markdown-body">
             {2}
         </div>
-    </main>
+    <script src="{3}"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            document.querySelectorAll("pre code.language-mermaid").forEach(function(el) {
+                var pre = el.parentElement;
+                var div = document.createElement("div");
+                div.className = "mermaid";
+                div.textContent = el.textContent;
+                pre.replaceWith(div);
+            });
+            if (typeof mermaid !== "undefined") {
+                mermaid.initialize({ startOnLoad: true, theme: "default" });
+            }
+        });
+    </script>
 </body>
 </html>
 '@
@@ -150,13 +164,19 @@ foreach ($file in $allMdFiles) {
     $sidebarHtml = Get-ExportSidebarHtml -currentFile $file -allMdFiles $allMdFiles
     $pageTitle   = [System.Net.WebUtility]::HtmlEncode([System.IO.Path]::GetFileNameWithoutExtension($file.FullName))
 
-    $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyHtml)
+    # 現在の出力 HTML から lib/mermaid.min.js への相対パスを計算
+    $destUri     = New-Object System.Uri($destFile)
+    $mermaidDist = Join-Path $targetDistDir "lib\mermaid.min.js"
+    $mermaidUri  = New-Object System.Uri($mermaidDist)
+    $relMermaid  = $destUri.MakeRelativeUri($mermaidUri).ToString()
+
+    $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyHtml).Replace("{3}", $relMermaid)
 
     [System.IO.File]::WriteAllText($destFile, $fullHtml, [System.Text.Encoding]::UTF8)
     Write-Host "  [HTML 変換] $relPath -> $htmlRel" -ForegroundColor Green
 }
 
-# --- 4. 静的アセット (画像、CSS 等) のコピー ---
+# --- 4. 静的アセット (画像、CSS、JS 等) のコピー ---
 $assetFiles = Get-ChildItem -Path $wikiDir -Recurse | 
     Where-Object { 
         -not $_.PSIsContainer -and 
@@ -175,6 +195,15 @@ foreach ($asset in $assetFiles) {
 
     Copy-Item -Path $asset.FullName -Destination $destFile -Force
     Write-Host "  [アセット コピー] $relPath" -ForegroundColor DarkGray
+}
+
+# 100% オフライン用に lib/mermaid.min.js をコピー
+$scriptMermaid = Join-Path $libDir "mermaid.min.js"
+if (Test-Path $scriptMermaid) {
+    $distLib = Join-Path $targetDistDir "lib"
+    if (-not (Test-Path $distLib)) { New-Item -ItemType Directory -Path $distLib -Force | Out-Null }
+    Copy-Item -Path $scriptMermaid -Destination (Join-Path $distLib "mermaid.min.js") -Force
+    Write-Host "  [オフライン JS コピー] lib\mermaid.min.js" -ForegroundColor DarkGray
 }
 
 Write-Host "==========================================================" -ForegroundColor Green

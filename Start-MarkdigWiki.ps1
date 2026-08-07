@@ -93,6 +93,7 @@ $mimeTypes = @{
     ".gif"  = "image/gif"
     ".svg"  = "image/svg+xml"
     ".css"  = "text/css; charset=utf-8"
+    ".js"   = "application/javascript; charset=utf-8"
 }
 
 try {
@@ -115,9 +116,16 @@ try {
             $relPath  = $rawPath.TrimStart("/").Replace("/", "\")
             $filePath = Join-Path $wikiDir $relPath
 
-            # 安全性検証: ディレクトリトラバーサル防止
+            # /lib/ 配下のリソース要求はスクリプト直下の lib フォルダへフォールバック
+            if (-not (Test-Path $filePath) -and $rawPath.StartsWith("/lib/")) {
+                $filePath = Join-Path $scriptDir $relPath
+            }
+
+            # 安全性検証: ディレクトリトラバーサル防止 ($fullWikiDir または $scriptDir\lib)
             $fullPath = [System.IO.Path]::GetFullPath($filePath)
-            if (-not $fullPath.StartsWith($fullWikiDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $fullScriptLibDir = (Join-Path $scriptDir "lib\").TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+            $isAllowed = $fullPath.StartsWith($fullWikiDir, [System.StringComparison]::OrdinalIgnoreCase) -or $fullPath.StartsWith($fullScriptLibDir, [System.StringComparison]::OrdinalIgnoreCase)
+            if (-not $isAllowed) {
                 $response.StatusCode = 403
                 $forbiddenBytes = [System.Text.Encoding]::UTF8.GetBytes("<h1>403 Forbidden</h1>")
                 $response.ContentLength64 = $forbiddenBytes.Length
@@ -176,6 +184,21 @@ try {
             {2}
         </div>
     </main>
+    <script src="/lib/mermaid.min.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            document.querySelectorAll("pre code.language-mermaid").forEach(function(el) {
+                var pre = el.parentElement;
+                var div = document.createElement("div");
+                div.className = "mermaid";
+                div.textContent = el.textContent;
+                pre.replaceWith(div);
+            });
+            if (typeof mermaid !== "undefined") {
+                mermaid.initialize({ startOnLoad: true, theme: "default" });
+            }
+        });
+    </script>
 </body>
 </html>
 '@

@@ -70,6 +70,14 @@
 <pre><code class="language-cmd">:: ダブルクリック起動用バッチ
 Start-MarkdigWiki.bat
 </code></pre>
+<h2 id="mermaid">シーケンス図サンプル (Mermaid)</h2>
+<pre class="mermaid">sequenceDiagram
+    autonumber
+    Client->>Server: HTTP GET /index.md
+    Server->>Markdig: HTML 変換要求
+    Markdig-->>Server: HTML レスポンス返却
+    Server-->>Client: 200 OK (100% オフライン表示)
+</pre>
 <hr />
 <h2 id="section-3">パイプテーブル表示サンプル</h2>
 <table>
@@ -95,6 +103,20 @@ Start-MarkdigWiki.bat
 </table>
 
         </div>
-    </main>
+    <script src="../lib/mermaid.min.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            document.querySelectorAll("pre code.language-mermaid").forEach(function(el) {
+                var pre = el.parentElement;
+                var div = document.createElement("div");
+                div.className = "mermaid";
+                div.textContent = el.textContent;
+                pre.replaceWith(div);
+            });
+            if (typeof mermaid !== "undefined") {
+                mermaid.initialize({ startOnLoad: true, theme: "default" });
+            }
+        });
+    </script>
 </body>
 </html>
