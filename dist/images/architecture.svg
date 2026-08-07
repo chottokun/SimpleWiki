@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="100%" height="100%">
+  <rect width="100%" height="100%" fill="#f8f9fa" rx="12" />
+  <!-- Title -->
+  <text x="400" y="35" font-family="-apple-system, sans-serif" font-size="18" font-weight="bold" fill="#24292e" text-anchor="middle">SimpleWiki 100% Offline Architecture</text>
+  
+  <!-- Step 1: User / Browser -->
+  <g transform="translate(40, 70)">
+    <rect width="200" height="180" rx="8" fill="#e1f5fe" stroke="#0288d1" stroke-width="2"/>
+    <text x="100" y="35" font-family="sans-serif" font-size="16" font-weight="bold" fill="#01579b" text-anchor="middle">1. Web Browser</text>
+    <text x="100" y="80" font-family="sans-serif" font-size="13" fill="#0277bd" text-anchor="middle">HTTP Requests</text>
+    <text x="100" y="105" font-family="sans-serif" font-size="13" fill="#0277bd" text-anchor="middle">http://localhost:8080/</text>
+    <text x="100" y="145" font-family="sans-serif" font-size="12" fill="#555" text-anchor="middle">(Edge / Chrome / Firefox)</text>
+  </g>
+  
+  <!-- Arrow 1 -->
+  <path d="M 245 160 L 295 160" stroke="#0288d1" stroke-width="3" marker-end="url(#arrow)"/>
+  
+  <!-- Step 2: PowerShell Listener -->
+  <g transform="translate(300, 70)">
+    <rect width="200" height="180" rx="8" fill="#e8f5e9" stroke="#388e3c" stroke-width="2"/>
+    <text x="100" y="35" font-family="sans-serif" font-size="16" font-weight="bold" fill="#1b5e20" text-anchor="middle">2. PowerShell Server</text>
+    <text x="100" y="75" font-family="sans-serif" font-size="13" fill="#2e7d32" text-anchor="middle">System.Net.HttpListener</text>
+    <text x="100" y="105" font-family="sans-serif" font-size="13" fill="#2e7d32" text-anchor="middle">Path &amp; Security Validation</text>
+    <text x="100" y="145" font-family="sans-serif" font-size="12" fill="#555" text-anchor="middle">(Windows PowerShell 5.1)</text>
+  </g>
+  
+  <!-- Arrow 2 -->
+  <path d="M 505 160 L 555 160" stroke="#388e3c" stroke-width="3" marker-end="url(#arrow)"/>
+  
+  <!-- Step 3: Markdig & Output -->
+  <g transform="translate(560, 70)">
+    <rect width="200" height="180" rx="8" fill="#fff3e0" stroke="#f57c00" stroke-width="2"/>
+    <text x="100" y="35" font-family="sans-serif" font-size="16" font-weight="bold" fill="#e65100" text-anchor="middle">3. Markdig Engine</text>
+    <text x="100" y="75" font-family="sans-serif" font-size="13" fill="#ef6c00" text-anchor="middle">Markdig.dll (net462)</text>
+    <text x="100" y="105" font-family="sans-serif" font-size="13" fill="#ef6c00" text-anchor="middle">GFM HTML + Sidebar</text>
+    <text x="100" y="145" font-family="sans-serif" font-size="12" fill="#555" text-anchor="middle">(100% Offline Rendering)</text>
+  </g>
+  
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#333" />
+    </marker>
+  </defs>
+</svg>
