@@ -42,6 +42,11 @@ dotnet-uninstall-debian-packages.sh
 *.pdb
 *.dll
 *.wixpdb
+!lib/*.dll
+!lib/*.js
+
+# Export output directory
+dist/
 
 # Ignore packages
 *.deb
