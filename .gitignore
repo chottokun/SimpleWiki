@@ -48,6 +48,10 @@ dotnet-uninstall-debian-packages.sh
 # Export output directory
 dist/
 
+# Development plans and scratch files
+plan/
+scratch/
+
 # Ignore packages
 *.deb
 *.tar.gz
