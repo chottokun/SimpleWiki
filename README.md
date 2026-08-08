@@ -117,4 +117,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\te
   - `mermaid.min.js`: MIT License
   - `.NET System.*` アセンブリ: MIT License (by .NET Foundation)
 
-詳細なライセンス全文および著作権表示は [LICENSE.md](file:///c:/Project/PowershellScript/SimpleWiki/LICENSE.md) をご覧ください。商用・個人利用・社内展開を含め自由に再配布いただけます。
+詳細なライセンス全文および著作権表示は [LICENSE.md](LICENSE.md) をご覧ください。商用・個人利用・社内展開を含め自由に再配布いただけます。
