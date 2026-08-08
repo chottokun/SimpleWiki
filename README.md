@@ -1,4 +1,4 @@
-# SimpleWiki
+﻿# SimpleWiki
 
 Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作する **100% オフライン対応 Markdown Wiki サーバー ＆ 静的 HTML エキスポートツール** です。
 

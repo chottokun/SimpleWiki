@@ -1,4 +1,4 @@
-# License & Third-Party Notices
+﻿# License & Third-Party Notices
 
 ## SimpleWiki License
 

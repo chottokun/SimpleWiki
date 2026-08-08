@@ -1,4 +1,4 @@
-# Markdig + PowerShell SimpleWiki へようこそ！
+﻿# Markdig + PowerShell SimpleWiki へようこそ！
 
 100% 完全なオフライン環境で動作する軽量かつ高速な Markdown Wiki システムです。
 

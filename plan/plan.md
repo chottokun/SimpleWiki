@@ -1,4 +1,4 @@
-# Markdig + PowerShell 100% オフライン Wiki サーバー 計画書
+﻿# Markdig + PowerShell 100% オフライン Wiki サーバー 計画書
 
 ## 1. 概要・対象環境
 外部 CDN やインターネットへの通信が一切発生せず、100% 完全なオフライン（閉域網）環境で高速かつ安全に動作する Markdown Wiki サーバーの構築計画です。

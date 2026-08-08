@@ -98,4 +98,16 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
         $subHtmlContent | Should Match "href='../index.html'"
         $subHtmlContent | Should Match "href='../%E6%A6%82%E8%A6%81.html'"
     }
+
+    It "Generates nested tree structure for subfolder pages in sidebar" {
+        $subHtmlPath    = Join-Path $testExportDir "docs\詳細仕様.html"
+        $subHtmlContent = [System.IO.File]::ReadAllText($subHtmlPath)
+
+        $subHtmlContent | Should Match "<li class='nav-folder'>"
+        # アクティブな親フォルダ docs は open
+        $subHtmlContent | Should Match "<details open>\s*<summary class='folder-title'>📁 docs</summary>"
+        # アクティブでないフォルダ guides は open なし
+        $subHtmlContent | Should Match "<details>\s*<summary class='folder-title'>📁 guides</summary>"
+    }
 }
+

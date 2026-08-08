@@ -42,7 +42,89 @@ Get-ChildItem -Path $libDir -Filter "*.dll" | ForEach-Object {
     Add-Type -Path $_.FullName
 }
 
-# --- 2. サイドバー (HTML) の自動生成関数 ---
+# --- 2. サイドバー (HTML) の自動生成関数 (フォルダ階層対応) ---
+function Build-ServerFileTreeNode {
+    param ($allMdFiles, $wikiDir)
+
+    $rootNode = [PSCustomObject]@{
+        Files      = [System.Collections.Generic.List[PSObject]]::new()
+        SubFolders = [ordered]@{}
+    }
+
+    foreach ($file in $allMdFiles) {
+        $relPath = $file.FullName.Substring($wikiDir.Length).TrimStart("\", "/")
+        $parts   = $relPath -split '[\\/]'
+
+        $currentNode = $rootNode
+        for ($i = 0; $i -lt $parts.Length - 1; $i++) {
+            $folderName = $parts[$i]
+            if (-not $currentNode.SubFolders.Contains($folderName)) {
+                $currentNode.SubFolders[$folderName] = [PSCustomObject]@{
+                    Files      = [System.Collections.Generic.List[PSObject]]::new()
+                    SubFolders = [ordered]@{}
+                }
+            }
+            $currentNode = $currentNode.SubFolders[$folderName]
+        }
+        $currentNode.Files.Add($file)
+    }
+    return $rootNode
+}
+
+function Test-ServerNodeHasActiveFile {
+    param ($node, $currentRelPath, $wikiDir)
+
+    foreach ($file in $node.Files) {
+        $relPath = $file.FullName.Substring($wikiDir.Length).TrimStart("\", "/")
+        if ($relPath -eq $currentRelPath) {
+            return $true
+        }
+    }
+
+    foreach ($folderName in $node.SubFolders.Keys) {
+        if (Test-ServerNodeHasActiveFile -node $node.SubFolders[$folderName] -currentRelPath $currentRelPath -wikiDir $wikiDir) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Render-ServerFolderTreeHtml {
+    param ($node, $currentRelPath, $wikiDir)
+
+    $html = "<ul>`n"
+
+    foreach ($file in $node.Files) {
+        $relPath   = $file.FullName.Substring($wikiDir.Length).TrimStart("\", "/")
+        $cleanPath = $relPath -replace "\\", "/"
+        $webPath   = "/" + [Uri]::EscapeUriString($cleanPath)
+        $title     = [System.Net.WebUtility]::HtmlEncode($file.BaseName)
+
+        $activeClass = if ($relPath -eq $currentRelPath) { ' class="active"' } else { '' }
+        $html += "  <li class='nav-file'><a href='$webPath'$activeClass>$title</a></li>`n"
+    }
+
+    foreach ($folderName in $node.SubFolders.Keys) {
+        $subNode     = $node.SubFolders[$folderName]
+        $encodedName = [System.Net.WebUtility]::HtmlEncode($folderName)
+        $subHtml     = Render-ServerFolderTreeHtml -node $subNode -currentRelPath $currentRelPath -wikiDir $wikiDir
+
+        $isOpen   = Test-ServerNodeHasActiveFile -node $subNode -currentRelPath $currentRelPath -wikiDir $wikiDir
+        $openAttr = if ($isOpen) { " open" } else { "" }
+
+        $html += "  <li class='nav-folder'>`n"
+        $html += "    <details$openAttr>`n"
+        $html += "      <summary class='folder-title'>📁 $encodedName</summary>`n"
+        $html += "      $subHtml`n"
+        $html += "    </details>`n"
+        $html += "  </li>`n"
+    }
+
+    $html += "</ul>"
+    return $html
+}
+
 function Get-SidebarHtml {
     param ($currentRelPath)
     
@@ -50,18 +132,8 @@ function Get-SidebarHtml {
         Where-Object { $_.FullName -notmatch '[\\/]\.(git|lib|tests|dist)[\\/]' } |
         Sort-Object FullName
 
-    $html = "<ul>`n"
-    foreach ($file in $mdFiles) {
-        $relPath   = $file.FullName.Substring($wikiDir.Length).TrimStart("\", "/")
-        $cleanPath = $relPath -replace "\\", "/"
-        $webPath   = "/" + [Uri]::EscapeUriString($cleanPath)
-        $title     = [System.Net.WebUtility]::HtmlEncode($file.BaseName)
-
-        $activeClass = if ($relPath -eq $currentRelPath) { ' class="active"' } else { '' }
-        $html += "  <li><a href='$webPath'$activeClass>$title</a></li>`n"
-    }
-    $html += "</ul>"
-    return $html
+    $treeNode = Build-ServerFileTreeNode -allMdFiles $mdFiles -wikiDir $wikiDir
+    return Render-ServerFolderTreeHtml -node $treeNode -currentRelPath $currentRelPath -wikiDir $wikiDir
 }
 
 # --- 3. HttpListener の起動 ---
@@ -158,9 +230,13 @@ try {
     nav { width: 260px; background-color: #f6f8fa; border-right: 1px solid #e1e4e8; padding: 20px 10px; overflow-y: auto; flex-shrink: 0; }
     nav h2 { font-size: 14px; text-transform: uppercase; color: #586069; margin: 0 0 10px 10px; letter-spacing: 0.5px; }
     nav ul { list-style: none; padding: 0; margin: 0; }
-    nav li a { display: block; padding: 6px 10px; color: #0366d6; text-decoration: none; border-radius: 6px; font-size: 14px; word-break: break-all; }
-    nav li a:hover { background-color: #f0f3f6; text-decoration: none; }
-    nav li a.active { background-color: #0366d6; color: #ffffff; font-weight: bold; }
+    nav ul ul { padding-left: 12px; margin-top: 2px; }
+    nav li.nav-folder { margin-top: 4px; margin-bottom: 4px; }
+    nav summary.folder-title { font-weight: bold; font-size: 13px; color: #586069; padding: 4px 6px; cursor: pointer; user-select: none; }
+    nav summary.folder-title:hover { color: #0366d6; }
+    nav li.nav-file a { display: block; padding: 4px 8px; color: #0366d6; text-decoration: none; border-radius: 6px; font-size: 14px; word-break: break-all; }
+    nav li.nav-file a:hover { background-color: #f0f3f6; text-decoration: none; }
+    nav li.nav-file a.active { background-color: #0366d6; color: #ffffff; font-weight: bold; }
     main { flex: 1; padding: 40px 60px; overflow-y: auto; }
     .markdown-body { max-width: 880px; margin: 0 auto; line-height: 1.6; }
     h1, h2, h3 { border-bottom: 1px solid #eaecef; padding-bottom: 0.3em; margin-top: 24px; margin-bottom: 16px; }

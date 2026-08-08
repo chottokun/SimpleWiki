@@ -9,9 +9,13 @@
     nav { width: 260px; background-color: #f6f8fa; border-right: 1px solid #e1e4e8; padding: 20px 10px; overflow-y: auto; flex-shrink: 0; }
     nav h2 { font-size: 14px; text-transform: uppercase; color: #586069; margin: 0 0 10px 10px; letter-spacing: 0.5px; }
     nav ul { list-style: none; padding: 0; margin: 0; }
-    nav li a { display: block; padding: 6px 10px; color: #0366d6; text-decoration: none; border-radius: 6px; font-size: 14px; word-break: break-all; }
-    nav li a:hover { background-color: #f0f3f6; text-decoration: none; }
-    nav li a.active { background-color: #0366d6; color: #ffffff; font-weight: bold; }
+    nav ul ul { padding-left: 12px; margin-top: 2px; }
+    nav li.nav-folder { margin-top: 4px; margin-bottom: 4px; }
+    nav summary.folder-title { font-weight: bold; font-size: 13px; color: #586069; padding: 4px 6px; cursor: pointer; user-select: none; }
+    nav summary.folder-title:hover { color: #0366d6; }
+    nav li.nav-file a { display: block; padding: 4px 8px; color: #0366d6; text-decoration: none; border-radius: 6px; font-size: 14px; word-break: break-all; }
+    nav li.nav-file a:hover { background-color: #f0f3f6; text-decoration: none; }
+    nav li.nav-file a.active { background-color: #0366d6; color: #ffffff; font-weight: bold; }
     main { flex: 1; padding: 40px 60px; overflow-y: auto; }
     .markdown-body { max-width: 880px; margin: 0 auto; line-height: 1.6; }
     h1, h2, h3 { border-bottom: 1px solid #eaecef; padding-bottom: 0.3em; margin-top: 24px; margin-bottom: 16px; }
@@ -29,9 +33,40 @@
     <nav>
         <h2>📄 ドキュメント一覧</h2>
         <ul>
-  <li><a href='docs/%E8%A9%B3%E7%B4%B0%E4%BB%95%E6%A7%98.html'>詳細仕様</a></li>
-  <li><a href='index.html'>index</a></li>
-  <li><a href='' class="active">概要</a></li>
+  <li class='nav-file'><a href='index.html'>index</a></li>
+  <li class='nav-file'><a href='' class="active">概要</a></li>
+  <li class='nav-folder'>
+    <details>
+      <summary class='folder-title'>📁 docs</summary>
+      <ul>
+  <li class='nav-file'><a href='docs/%E8%A9%B3%E7%B4%B0%E4%BB%95%E6%A7%98.html'>詳細仕様</a></li>
+  <li class='nav-folder'>
+    <details>
+      <summary class='folder-title'>📁 api</summary>
+      <ul>
+  <li class='nav-file'><a href='docs/api/REST-API.html'>REST-API</a></li>
+</ul>
+    </details>
+  </li>
+  <li class='nav-folder'>
+    <details>
+      <summary class='folder-title'>📁 user-guide</summary>
+      <ul>
+  <li class='nav-file'><a href='docs/user-guide/%E3%82%AF%E3%82%A4%E3%83%83%E3%82%AF%E3%82%B9%E3%82%BF%E3%83%BC%E3%83%88.html'>クイックスタート</a></li>
+</ul>
+    </details>
+  </li>
+</ul>
+    </details>
+  </li>
+  <li class='nav-folder'>
+    <details>
+      <summary class='folder-title'>📁 guides</summary>
+      <ul>
+  <li class='nav-file'><a href='guides/%E7%92%B0%E5%A2%83%E6%A7%8B%E7%AF%89.html'>環境構築</a></li>
+</ul>
+    </details>
+  </li>
 </ul>
     </nav>
     <main>

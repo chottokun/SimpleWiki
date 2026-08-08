@@ -56,27 +56,96 @@ Get-ChildItem -Path $libDir -Filter "*.dll" | ForEach-Object {
     Add-Type -Path $_.FullName
 }
 
-# --- 2. 静的 HTML 用サイドバーの自動生成関数 (相対パス計算対応) ---
+# --- 2. 静的 HTML 用サイドバーの自動生成関数 (フォルダ階層対応) ---
+function Build-FileTreeNode {
+    param ($allMdFiles, $wikiDir)
+
+    $rootNode = [PSCustomObject]@{
+        Files      = [System.Collections.Generic.List[PSObject]]::new()
+        SubFolders = [ordered]@{}
+    }
+
+    foreach ($file in $allMdFiles) {
+        $relPath = $file.FullName.Substring($wikiDir.Length).TrimStart("\", "/")
+        $parts   = $relPath -split '[\\/]'
+
+        $currentNode = $rootNode
+        for ($i = 0; $i -lt $parts.Length - 1; $i++) {
+            $folderName = $parts[$i]
+            if (-not $currentNode.SubFolders.Contains($folderName)) {
+                $currentNode.SubFolders[$folderName] = [PSCustomObject]@{
+                    Files      = [System.Collections.Generic.List[PSObject]]::new()
+                    SubFolders = [ordered]@{}
+                }
+            }
+            $currentNode = $currentNode.SubFolders[$folderName]
+        }
+        $currentNode.Files.Add($file)
+    }
+    return $rootNode
+}
+
+function Test-ExportNodeHasActiveFile {
+    param ($node, $currentFile)
+
+    foreach ($file in $node.Files) {
+        if ($file.FullName -eq $currentFile.FullName) {
+            return $true
+        }
+    }
+
+    foreach ($folderName in $node.SubFolders.Keys) {
+        if (Test-ExportNodeHasActiveFile -node $node.SubFolders[$folderName] -currentFile $currentFile) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Render-ExportFolderTreeHtml {
+    param ($node, $currentFile, $currentUri)
+
+    $html = "<ul>`n"
+
+    foreach ($file in $node.Files) {
+        $targetHtmlPath = $file.FullName -replace '\.md$', '.html'
+        $targetUri      = New-Object System.Uri($targetHtmlPath)
+        $relativeUri    = $currentUri.MakeRelativeUri($targetUri).ToString()
+        $title          = [System.Net.WebUtility]::HtmlEncode($file.BaseName)
+        $activeClass    = if ($file.FullName -eq $currentFile.FullName) { ' class="active"' } else { '' }
+
+        $html += "  <li class='nav-file'><a href='$relativeUri'$activeClass>$title</a></li>`n"
+    }
+
+    foreach ($folderName in $node.SubFolders.Keys) {
+        $subNode     = $node.SubFolders[$folderName]
+        $encodedName = [System.Net.WebUtility]::HtmlEncode($folderName)
+        $subHtml     = Render-ExportFolderTreeHtml -node $subNode -currentFile $currentFile -currentUri $currentUri
+
+        $isOpen   = Test-ExportNodeHasActiveFile -node $subNode -currentFile $currentFile
+        $openAttr = if ($isOpen) { " open" } else { "" }
+
+        $html += "  <li class='nav-folder'>`n"
+        $html += "    <details$openAttr>`n"
+        $html += "      <summary class='folder-title'>📁 $encodedName</summary>`n"
+        $html += "      $subHtml`n"
+        $html += "    </details>`n"
+        $html += "  </li>`n"
+    }
+
+    $html += "</ul>"
+    return $html
+}
+
 function Get-ExportSidebarHtml {
-    param ($currentFile, $allMdFiles)
+    param ($currentFile, $allMdFiles, $wikiDir)
 
     $currentHtmlPath = $currentFile.FullName -replace '\.md$', '.html'
     $currentUri      = New-Object System.Uri($currentHtmlPath)
 
-    $html = "<ul>`n"
-    foreach ($file in $allMdFiles) {
-        $targetHtmlPath = $file.FullName -replace '\.md$', '.html'
-        $targetUri      = New-Object System.Uri($targetHtmlPath)
-
-        # 現在地からの相対パスを動的計算 (file:// のローカル表示および Web サーバーの双方で動作)
-        $relativeUri = $currentUri.MakeRelativeUri($targetUri).ToString()
-        $title       = [System.Net.WebUtility]::HtmlEncode($file.BaseName)
-        $activeClass = if ($file.FullName -eq $currentFile.FullName) { ' class="active"' } else { '' }
-
-        $html += "  <li><a href='$relativeUri'$activeClass>$title</a></li>`n"
-    }
-    $html += "</ul>"
-    return $html
+    $treeNode = Build-FileTreeNode -allMdFiles $allMdFiles -wikiDir $wikiDir
+    return Render-ExportFolderTreeHtml -node $treeNode -currentFile $currentFile -currentUri $currentUri
 }
 
 # --- 3. マークダウンファイルの抽出と HTML 変換 ---
@@ -100,9 +169,13 @@ $template = @'
     nav { width: 260px; background-color: #f6f8fa; border-right: 1px solid #e1e4e8; padding: 20px 10px; overflow-y: auto; flex-shrink: 0; }
     nav h2 { font-size: 14px; text-transform: uppercase; color: #586069; margin: 0 0 10px 10px; letter-spacing: 0.5px; }
     nav ul { list-style: none; padding: 0; margin: 0; }
-    nav li a { display: block; padding: 6px 10px; color: #0366d6; text-decoration: none; border-radius: 6px; font-size: 14px; word-break: break-all; }
-    nav li a:hover { background-color: #f0f3f6; text-decoration: none; }
-    nav li a.active { background-color: #0366d6; color: #ffffff; font-weight: bold; }
+    nav ul ul { padding-left: 12px; margin-top: 2px; }
+    nav li.nav-folder { margin-top: 4px; margin-bottom: 4px; }
+    nav summary.folder-title { font-weight: bold; font-size: 13px; color: #586069; padding: 4px 6px; cursor: pointer; user-select: none; }
+    nav summary.folder-title:hover { color: #0366d6; }
+    nav li.nav-file a { display: block; padding: 4px 8px; color: #0366d6; text-decoration: none; border-radius: 6px; font-size: 14px; word-break: break-all; }
+    nav li.nav-file a:hover { background-color: #f0f3f6; text-decoration: none; }
+    nav li.nav-file a.active { background-color: #0366d6; color: #ffffff; font-weight: bold; }
     main { flex: 1; padding: 40px 60px; overflow-y: auto; }
     .markdown-body { max-width: 880px; margin: 0 auto; line-height: 1.6; }
     h1, h2, h3 { border-bottom: 1px solid #eaecef; padding-bottom: 0.3em; margin-top: 24px; margin-bottom: 16px; }
@@ -161,7 +234,7 @@ foreach ($file in $allMdFiles) {
     $bodyHtml = $bodyHtml -replace 'href="([^"]+)\.md"', 'href="$1.html"'
     $bodyHtml = $bodyHtml -replace "href='([^']+)\.md'", "href='$1.html'"
 
-    $sidebarHtml = Get-ExportSidebarHtml -currentFile $file -allMdFiles $allMdFiles
+    $sidebarHtml = Get-ExportSidebarHtml -currentFile $file -allMdFiles $allMdFiles -wikiDir $wikiDir
     $pageTitle   = [System.Net.WebUtility]::HtmlEncode([System.IO.Path]::GetFileNameWithoutExtension($file.FullName))
 
     # 現在の出力 HTML から lib/mermaid.min.js への相対パスを計算

@@ -1,4 +1,4 @@
-# Coding Rules
+﻿# Coding Rules
 
 - **Character Encoding & Format Guidelines**:
   - **PowerShell Scripts (`.ps1`, `.psm1`) & Data Files (`.psd1`)**: Save as **UTF-8 with BOM (`EF BB BF`)** to ensure correct multi-byte character interpretation by Windows PowerShell 5.1 and `Import-PowerShellDataFile`.
