@@ -75,43 +75,58 @@
 <p>SimpleWiki は、PowerShell 5.1 の <code>System.Net.HttpListener</code> と .NET 用 Markdown レンダラ <code>Markdig</code> を組み合わせた単一ファイル構成のローカル Wiki サーバーです。</p>
 <h2 id="section-1">開発背景</h2>
 <p>閉域網環境や機密環境でのドキュメント共有・閲覧において、インターネット接続が必要なブラウザベースのツールや、Node.js / Python 等のランタイムのインストールが制限されるケースに対応するために設計されました。</p>
+<p>初めての方は <a href="docs/user-guide/%E3%82%AF%E3%82%A4%E3%83%83%E3%82%AF%E3%82%B9%E3%82%BF%E3%83%BC%E3%83%88.html">クイックスタートガイド</a> を参照して起動方法を確認できます。</p>
 <h2 id="section-2">システム構成図</h2>
 <p><img src="images/architecture.svg" alt="SimpleWiki 100% オフライン構成図" /></p>
-<h2 id="section-3">技術スタック</h2>
+<h2 id="section-3">技術スタックと関連ドキュメント</h2>
 <table>
 <thead>
 <tr>
 <th style="text-align: left;">コンポーネント</th>
 <th style="text-align: left;">技術仕様</th>
+<th style="text-align: left;">関連リンク</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td style="text-align: left;"><strong>OS</strong></td>
 <td style="text-align: left;">Windows 11</td>
+<td style="text-align: left;">-</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>ランタイム</strong></td>
 <td style="text-align: left;">Windows PowerShell 5.1 (.NET Framework 4.8)</td>
+<td style="text-align: left;"><a href="guides/%E7%92%B0%E5%A2%83%E6%A7%8B%E7%AF%89.html">環境構築ガイド</a></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Web サーバー</strong></td>
 <td style="text-align: left;"><code>System.Net.HttpListener</code> (ローカルポート 8080)</td>
+<td style="text-align: left;"><a href="docs/%E8%A9%B3%E7%B4%B0%E4%BB%95%E6%A7%98.md#%E3%83%AB%E3%83%BC%E3%83%86%E3%82%A3%E3%83%B3%E3%82%B0%E4%BB%95%E6%A7%98">詳細仕様書（ルーティング）</a></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Markdown 変換</strong></td>
 <td style="text-align: left;"><code>Markdig.dll</code> (.NET Framework 4.6.2 ビルド)</td>
+<td style="text-align: left;"><a href="index.html">TOP ページに戻る</a></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>API仕様</strong></td>
+<td style="text-align: left;">REST 形式のインターフェース仕様</td>
+<td style="text-align: left;"><a href="docs/api/REST-API.html">REST API 仕様書</a></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>自動テスト</strong></td>
 <td style="text-align: left;">Pester ユニット/統合テスト</td>
-</tr>
-<tr>
-<td style="text-align: left;"><strong>静的解析</strong></td>
-<td style="text-align: left;">PSScriptAnalyzer</td>
+<td style="text-align: left;"><a href="guides/%E7%92%B0%E5%A2%83%E6%A7%8B%E7%AF%89.html">環境構築ガイド</a></td>
 </tr>
 </tbody>
 </table>
+<hr />
+<h3 id="section-4">関連ページへの移動</h3>
+<ul>
+<li><a href="docs/%E8%A9%B3%E7%B4%B0%E4%BB%95%E6%A7%98.html">詳細仕様書を見る</a></li>
+<li><a href="docs/api/REST-API.html">REST API 仕様書を見る</a></li>
+<li><a href="index.html">トップページに戻る</a></li>
+</ul>
 
         </div>
     <script src="lib/mermaid.min.js"></script>

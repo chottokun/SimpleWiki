@@ -244,6 +244,7 @@ foreach ($file in $allMdFiles) {
     $relMermaid  = $destUri.MakeRelativeUri($mermaidUri).ToString()
 
     $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyHtml).Replace("{3}", $relMermaid)
+    $fullHtml = $fullHtml -replace "\r?\n", "`r`n"
 
     [System.IO.File]::WriteAllText($destFile, $fullHtml, [System.Text.Encoding]::UTF8)
     Write-Host "  [HTML 変換] $relPath -> $htmlRel" -ForegroundColor Green

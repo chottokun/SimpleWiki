@@ -77,22 +77,69 @@
 <ul>
 <li>🚀 <strong>100% オフライン動作</strong>: 外部 CDN やインターネット接続が一切不要。</li>
 <li>📁 <strong>リアルタイム・サイドバー</strong>: Markdown ファイルを追加するだけで自動的にドキュメント一覧が生成。</li>
+<li>🔗 <strong>Wiki 相互リンク（ワードリンク）</strong>: 文中のキーワードから関連ページや特定見出しへのリンクが自由自在。</li>
 <li>🔒 <strong>安全設計</strong>: ディレクトリトラバーサル防止機能、XSS サニタイズ機能を完備。</li>
 <li>🎨 <strong>GitHub スタイル表示</strong>: Markdig による高度な Markdown 拡張描画（テーブル、コード、タスクリスト対応）。</li>
 </ul>
 <hr />
-<h2 id="section-1">ドキュメント一覧</h2>
+<h2 id="wiki">Wiki 相互リンク（ワードリンク）の書き方と例</h2>
+<p>文章中のキーワードや用語から、他のページや別階層のドキュメントへ相互リンク（Wikiリンク）できます。<br />
+<code>.md</code> 拡張子のまま記述すれば、HTMLエキスポート時およびローカルWebサーバー実行時に自動でリンクが機能します。</p>
+<h3 id="section-1">文中リンクの実用例</h3>
+<ul>
+<li>まずは本システムの <a href="%E6%A6%82%E8%A6%81.html">基本概要</a> や、開発者向けの <a href="guides/%E7%92%B0%E5%A2%83%E6%A7%8B%E7%AF%89.html">環境構築ガイド</a> をご覧ください。</li>
+<li>APIの詳細は <a href="docs/api/REST-API.html">REST API 仕様書</a> を、ルーティング動作の詳細は <a href="docs/%E8%A9%B3%E7%B4%B0%E4%BB%95%E6%A7%98.md#%E3%83%AB%E3%83%BC%E3%83%86%E3%82%A3%E3%83%B3%E3%82%B0%E4%BB%95%E6%A7%98">詳細仕様書のルーティング仕様</a>（見出しリンク）をご参照ください。</li>
+<li>初めて利用される方は <a href="docs/user-guide/%E3%82%AF%E3%82%A4%E3%83%83%E3%82%AF%E3%82%B9%E3%82%BF%E3%83%BC%E3%83%88.html">クイックスタートガイド</a> をおすすめします。</li>
+</ul>
+<h3 id="section-2">リンク記法一覧</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">リンク種別</th>
+<th style="text-align: left;">Markdown 記述例</th>
+<th style="text-align: left;">説明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>同階層リンク</strong></td>
+<td style="text-align: left;"><code>[概要](概要.md)</code></td>
+<td style="text-align: left;">同じフォルダ内のページへリンク</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>サブフォルダリンク</strong></td>
+<td style="text-align: left;"><code>[API仕様](docs/api/REST-API.md)</code></td>
+<td style="text-align: left;">下位フォルダのページへリンク</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>親フォルダリンク</strong></td>
+<td style="text-align: left;"><code>[トップ](index.md)</code></td>
+<td style="text-align: left;">上位フォルダのページへリンク</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>見出しアンカーリンク</strong></td>
+<td style="text-align: left;"><code>[詳細](docs/詳細仕様.md#ルーティング仕様)</code></td>
+<td style="text-align: left;">特定見出し (<code>#見出し名</code>) へ直接ジャンプ</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="section-3">ドキュメント一覧</h2>
 <ul>
 <li><a href="%E6%A6%82%E8%A6%81.html">プロジェクト概要</a></li>
 <li><a href="docs/%E8%A9%B3%E7%B4%B0%E4%BB%95%E6%A7%98.html">詳細仕様書</a></li>
+<li><a href="docs/api/REST-API.html">REST API 仕様書</a></li>
+<li><a href="docs/user-guide/%E3%82%AF%E3%82%A4%E3%83%83%E3%82%AF%E3%82%B9%E3%82%BF%E3%83%BC%E3%83%88.html">クイックスタートガイド</a></li>
+<li><a href="guides/%E7%92%B0%E5%A2%83%E6%A7%8B%E7%AF%89.html">環境構築ガイド</a></li>
 </ul>
 <hr />
-<h2 id="section-2">サンプルタスクリスト</h2>
+<h2 id="section-4">サンプルタスクリスト</h2>
 <ul class="contains-task-list">
 <li class="task-list-item"><input disabled="disabled" type="checkbox" checked="checked" /> <code>Markdig.dll</code> (net462) の組込み</li>
 <li class="task-list-item"><input disabled="disabled" type="checkbox" checked="checked" /> ディレクトリトラバーサル防止機能の追加</li>
 <li class="task-list-item"><input disabled="disabled" type="checkbox" checked="checked" /> XSS 対策 (HtmlEncode) の追加</li>
-<li class="task-list-item"><input disabled="disabled" type="checkbox" /> サンプルドキュメントの拡充</li>
+<li class="task-list-item"><input disabled="disabled" type="checkbox" checked="checked" /> フォルダツリー（サイドバー）の階層表示・クリック開閉対応</li>
+<li class="task-list-item"><input disabled="disabled" type="checkbox" checked="checked" /> Wiki 相互リンク（ワードリンク）サンプルの充実</li>
 </ul>
 
         </div>
