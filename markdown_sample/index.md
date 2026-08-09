@@ -1,63 +1,72 @@
 ---
-title: Markdig + PowerShell SimpleWiki へようこそ！
-description: 100% 完全なオフライン環境で動作する OKF (Open Knowledge Format) 対応 Markdown Wiki システムです。
-author: SimpleWiki コアチーム
-domain: ナレッジベース/ポータル
-tags: [Wiki, OKF, Markdig, PowerShell]
+title: "SimpleWiki OKF ナレッジベースへようこそ！"
+description: "100% オフライン環境で動作する Google OKF (Open Knowledge Format) 対応 Markdown Wiki サーバー ＆ 静的 HTML エキスポートシステムです。"
+author: "SimpleWiki 開発チーム"
+domain: "ポータル"
+tags:
+  - OKF
+  - Markdown
+  - PowerShell
+  - Wiki
+  - RAG
 last_updated: 2026-08-09
 status: active
 ---
 
-# Markdig + PowerShell SimpleWiki へようこそ！
+# SimpleWiki OKF ナレッジベースへようこそ！
 
-100% 完全なオフライン環境で動作する軽量かつ高速な Markdown Wiki システムです。
+SimpleWiki は、Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作する **100% オフライン対応 Markdown Wiki サーバー ＆ 静的 HTML エキスポートツール** です。
 
-## 主な特徴
-
-- 🚀 **100% オフライン動作**: 外部 CDN やインターネット接続が一切不要。
-- 📁 **リアルタイム・サイドバー**: Markdown ファイルを追加するだけで自動的にドキュメント一覧が生成。
-- 🔗 **Wiki 相互リンク（ワードリンク）**: 文中のキーワードから関連ページや特定見出しへのリンクが自由自在。
-- 🔒 **安全設計**: ディレクトリトラバーサル防止機能、XSS サニタイズ機能を完備。
-- 🎨 **GitHub スタイル表示**: Markdig による高度な Markdown 拡張描画（テーブル、コード、タスクリスト対応）。
+Google が提唱する **OKF (Open Knowledge Format)** の思想に基づき、Markdown ドキュメントに文脈（著者・最終更新日・状態・カテゴリ・タグ）を付与して人間（Human）と AI エージェント（RAG/LLM）の双方に最適化されたナレッジ管理環境を提供します。
 
 ---
 
-## Wiki 相互リンク（ワードリンク）の書き方と例
+## 🌟 主な特徴
 
-文章中のキーワードや用語から、他のページや別階層のドキュメントへ相互リンク（Wikiリンク）できます。  
-`.md` 拡張子のまま記述すれば、HTMLエキスポート時およびローカルWebサーバー実行時に自動でリンクが機能します。
+- 🚀 **100% オフライン動作**: 外部 CDN やデータベース、Node.js / Python などの重いランタイムが一切不要。
+- 📁 **リアルタイム・フォルダツリー**: ディレクトリ内に `.md` ファイルを追加・編集するだけで自動的にサイドバーが更新。
+- 📄 **Google OKF (Open Knowledge Format) 準拠**: YAML Front Matter からの属性抽出・自動補完（フォールバック）に対応。
+- 🤖 **AI エージェント / RAG 用機械可読 API**:
+  - `/api/index.json`: 全ドキュメントの構造化メタデータ一覧
+  - `/api/chunks.json`: 見出し (H2/H3) 単位の自動セマンティック分割済み JSON チャンク API
+- 🔍 **豊富な動的ナビゲーションビュー**:
+  - 🕒 [最近の更新](/recent) | 🏷️ [タグ目録](/tags) | 🧹 [品質ダッシュボード](/maintenance) | 👥 [著者一覧](/authors) | 🔍 [全文検索](/search)
+- 🔒 **安全設計**: ディレクトリトラバーサル防止機能 (`403 Forbidden`)、XSS サニタイズ (`HtmlEncode`) を標準完備。
+- 🎨 **GitHub スタイル ＆ オフライン Mermaid.js**: GFM テーブル、コードハイライト、タスクリスト、100% オフラインダイアグラム表示対応。
 
-### 文中リンクの実用例
+---
 
-- まずは本システムの [基本概要](概要.md) や、開発者向けの [環境構築ガイド](guides/環境構築.md) をご覧ください。
-- APIの詳細は [REST API 仕様書](docs/api/REST-API.md) を、ルーティング動作の詳細は [詳細仕様書のルーティング仕様](docs/詳細仕様.md#ルーティング仕様)（見出しリンク）をご参照ください。
-- 初めて利用される方は [クイックスタートガイド](docs/user-guide/クイックスタート.md) をおすすめします。
+## 🔗 Wiki 内ナビゲーション ＆ 相互リンク（ワードリンク）
 
-### リンク記法一覧
+文章中のキーワードから、他ページや特定の見出しへ直感的に相互リンクできます。
+
+### ドキュメントマップ
+
+- 📘 **[プロジェクト概要とシステムアーキテクチャ](概要.md)**: 開発背景、コンポーネント構成、OKF 思想の反映状況
+- ⚙️ **[詳細仕様書](docs/詳細仕様.md)**: ルーティング動作、メタデータ補完マトリクス、セキュリティ仕様
+- 🤖 **[REST API 仕様書](docs/api/REST-API.md)**: `/api/index.json` および RAG 用 `/api/chunks.json` の仕様と Python 連携コード
+- 🚀 **[クイックスタートガイド](docs/user-guide/クイックスタート.md)**: Web サーバー起動、GUI ツール、ドラッグ＆ドロップ運用
+- 🛠️ **[開発環境構築ガイド](guides/環境構築.md)**: 開発前提条件、文字コード規約 (BOM付き UTF-8)、Pester 自動テスト
+
+---
+
+## 記法別相互リンク例
 
 | リンク種別 | Markdown 記述例 | 説明 |
 | :--- | :--- | :--- |
 | **同階層リンク** | `[概要](概要.md)` | 同じフォルダ内のページへリンク |
 | **サブフォルダリンク** | `[API仕様](docs/api/REST-API.md)` | 下位フォルダのページへリンク |
 | **親フォルダリンク** | `[トップ](index.md)` | 上位フォルダのページへリンク |
-| **見出しアンカーリンク** | `[詳細](docs/詳細仕様.md#ルーティング仕様)` | 特定見出し (`#見出し名`) へ直接ジャンプ |
+| **見出しアンカーリンク** | `[ルーティング詳細](docs/詳細仕様.md#ルーティング仕様)` | 特定見出し (`#見出し名`) へ直接ジャンプ |
 
 ---
 
-## ドキュメント一覧
+## 📋 システムチェックリスト
 
-- [プロジェクト概要](概要.md)
-- [詳細仕様書](docs/詳細仕様.md)
-- [REST API 仕様書](docs/api/REST-API.md)
-- [クイックスタートガイド](docs/user-guide/クイックスタート.md)
-- [環境構築ガイド](guides/環境構築.md)
-
----
-
-## サンプルタスクリスト
-
-- [x] `Markdig.dll` (net462) の組込み
-- [x] ディレクトリトラバーサル防止機能の追加
-- [x] XSS 対策 (HtmlEncode) の追加
-- [x] フォルダツリー（サイドバー）の階層表示・クリック開閉対応
-- [x] Wiki 相互リンク（ワードリンク）サンプルの充実
+- [x] `Markdig.dll` (.NET Framework 4.6.2) による高度 Markdown パース
+- [x] ディレクトリトラバーサル防止 (`403 Forbidden`)
+- [x] XSS 対策 (`HtmlEncode`)
+- [x] Google OKF YAML Front Matter 解析 ＆ スマートフォールバック
+- [x] スリム・トップバー ＆ 終端フッターカードの 2 段構成 UI
+- [x] RAG 用セマンティックチャンク自動分割 API (`/api/chunks.json`)
+- [x] 3 段階品質検証フェーズ (AST / Pester 24件 / E2E Export) 100% PASS
