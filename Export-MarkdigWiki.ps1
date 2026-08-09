@@ -138,6 +138,231 @@ function Render-ExportFolderTreeHtml {
     return $html
 }
 
+# --- OKF メタデータ抽出し ＆ 自動補完 (フォールバック) 関数 ---
+function Get-DocumentMetadata {
+    param (
+        [Parameter(Mandatory = $true)]$File,
+        [string]$RelPath = "",
+        [string]$MdText = ""
+    )
+
+    if ([string]::IsNullOrEmpty($MdText) -and $File -and (Test-Path $File.FullName)) {
+        $MdText = Get-Content -Path $File.FullName -Raw -Encoding UTF8
+    }
+
+    $hasYaml  = $false
+    $bodyText = $MdText
+    $yamlDict = @{}
+
+    if ($MdText -match '(?s)^\s*---\r?\n(.*?)\r?\n---\r?\n(.*)$') {
+        $hasYaml  = $true
+        $rawYaml  = $matches[1]
+        $bodyText = $matches[2]
+
+        try {
+            $currentKey = $null
+            $lines = $rawYaml -split '\r?\n'
+            foreach ($line in $lines) {
+                if ($line -match '^\s*#' -or [string]::IsNullOrWhiteSpace($line)) { continue }
+
+                if ($currentKey -and $line -match '^\s*-\s+(.*)$') {
+                    $itemVal = $matches[1].Trim().Trim('"', "'")
+                    if (-not $yamlDict.ContainsKey($currentKey) -or $yamlDict[$currentKey] -isnot [System.Collections.IList]) {
+                        $yamlDict[$currentKey] = [System.Collections.Generic.List[string]]::new()
+                    }
+                    [void]$yamlDict[$currentKey].Add($itemVal)
+                    continue
+                }
+
+                if ($line -match '^\s*([a-zA-Z0-9_\-]+)\s*:\s*(.*)$') {
+                    $key = $matches[1].ToLower().Trim()
+                    $val = $matches[2].Trim()
+                    $currentKey = $key
+
+                    if ($val -match '^\[(.*)\]$') {
+                        $items = $matches[1] -split ',' | ForEach-Object { $_.Trim().Trim('"', "'") } | Where-Object { $_ -ne "" }
+                        $yamlDict[$key] = @($items)
+                    } elseif (-not [string]::IsNullOrWhiteSpace($val)) {
+                        $val = $val.Trim('"', "'")
+                        $yamlDict[$key] = $val
+                    }
+                }
+            }
+        } catch {
+            Write-Warning "YAML parsing failed for $RelPath : $_"
+        }
+    }
+
+    # Title
+    $title = ""
+    if ($yamlDict.ContainsKey("title") -and -not [string]::IsNullOrWhiteSpace($yamlDict["title"])) {
+        $title = $yamlDict["title"]
+    } else {
+        if ($bodyText -match '(?m)^\s*#\s+(.+)$') {
+            $title = $matches[1].Trim()
+        } elseif ($File) {
+            $title = $File.BaseName
+        } else {
+            $title = "Untitled"
+        }
+    }
+
+    # Description
+    $description = ""
+    if ($yamlDict.ContainsKey("description") -and -not [string]::IsNullOrWhiteSpace($yamlDict["description"])) {
+        $description = $yamlDict["description"]
+    } else {
+        $cleanBody = $bodyText -replace '(?m)^\s*#+\s*', '' -replace '[\*\`\[\]\(\)]', '' -replace '\s+', ' '
+        $cleanBody = $cleanBody.Trim()
+        if ($cleanBody.Length -gt 150) {
+            $description = $cleanBody.Substring(0, 150) + "..."
+        } else {
+            $description = $cleanBody
+        }
+    }
+
+    # Author
+    $author = ""
+    if ($yamlDict.ContainsKey("author") -and -not [string]::IsNullOrWhiteSpace($yamlDict["author"])) {
+        $author = $yamlDict["author"]
+    }
+
+    # Domain
+    $domain = ""
+    if ($yamlDict.ContainsKey("domain") -and -not [string]::IsNullOrWhiteSpace($yamlDict["domain"])) {
+        $domain = $yamlDict["domain"]
+    } else {
+        if (-not [string]::IsNullOrWhiteSpace($RelPath)) {
+            $dir = [System.IO.Path]::GetDirectoryName($RelPath)
+            $domain = if ([string]::IsNullOrWhiteSpace($dir)) { "root" } else { $dir.Replace('\', '/') }
+        } else {
+            $domain = "root"
+        }
+    }
+
+    # Tags
+    $tags = @()
+    if ($yamlDict.ContainsKey("tags")) {
+        if ($yamlDict["tags"] -is [System.Collections.IEnumerable] -and $yamlDict["tags"] -isnot [string]) {
+            $tags = @($yamlDict["tags"])
+        } elseif (-not [string]::IsNullOrWhiteSpace($yamlDict["tags"])) {
+            $tags = @($yamlDict["tags"])
+        }
+    }
+
+    # LastUpdated
+    $lastUpdated = if ($File) { $File.LastWriteTime } else { Get-Date }
+    if ($yamlDict.ContainsKey("last_updated") -and -not [string]::IsNullOrWhiteSpace($yamlDict["last_updated"])) {
+        $parsedDate = [DateTime]::MinValue
+        if ([DateTime]::TryParse($yamlDict["last_updated"], [ref]$parsedDate)) {
+            $lastUpdated = $parsedDate
+        }
+    }
+
+    # Status (active, draft, deprecated)
+    $status = "active"
+    if ($yamlDict.ContainsKey("status") -and -not [string]::IsNullOrWhiteSpace($yamlDict["status"])) {
+        $st = $yamlDict["status"].ToString().ToLower().Trim()
+        if ($st -in @("active", "draft", "deprecated")) {
+            $status = $st
+        }
+    }
+
+    return [PSCustomObject]@{
+        Title       = $title
+        Description = $description
+        Author      = $author
+        Domain      = $domain
+        Tags        = $tags
+        LastUpdated = $lastUpdated
+        Status      = $status
+        HasYaml     = $hasYaml
+        RelPath     = $RelPath
+        FullPath    = if ($File) { $File.FullName } else { "" }
+        BodyText    = $bodyText
+    }
+}
+
+# --- OKF トップバー ＆ フッターカード レンダリング関数 ---
+function Get-OkfTopBarHtml {
+    param ([Parameter(Mandatory = $true)]$Meta)
+
+    $domain      = [System.Net.WebUtility]::HtmlEncode($Meta.Domain)
+    $statusBadge = switch ($Meta.Status) {
+        "draft"      { '<span class="badge badge-draft">📝 Draft</span>' }
+        "deprecated" { '<span class="badge badge-deprecated">🗑️ Deprecated</span>' }
+        default      { '<span class="badge badge-active">✅ Active</span>' }
+    }
+
+    $tagsHtml = ""
+    if ($Meta.Tags -and $Meta.Tags.Count -gt 0) {
+        $tagBadges = foreach ($t in $Meta.Tags) {
+            $encTag = [System.Net.WebUtility]::HtmlEncode($t)
+            "<span class='tag-badge'>🏷️ $encTag</span>"
+        }
+        $tagsHtml = "<div class='okf-tags'>" + ($tagBadges -join " ") + "</div>"
+    }
+
+    $warningBanner = if ($Meta.Status -eq "deprecated") {
+        '<div class="warning-banner">⚠️ <strong>警告: 非推奨ドキュメント</strong><br>このドキュメントは非推奨または旧版です。最新の情報を参照してください。</div>'
+    } else { "" }
+
+    return @"
+$warningBanner
+<div class="okf-top-bar">
+    <div class="okf-top-left">
+        <span class="okf-domain">📁 $domain</span>
+        $statusBadge
+    </div>
+    $tagsHtml
+</div>
+"@
+}
+
+function Get-OkfFooterCardHtml {
+    param ([Parameter(Mandatory = $true)]$Meta)
+
+    $desc    = [System.Net.WebUtility]::HtmlEncode($Meta.Description)
+    $author  = [System.Net.WebUtility]::HtmlEncode($Meta.Author)
+    $lastUpd = $Meta.LastUpdated.ToString("yyyy-MM-dd")
+
+    $tagsHtml = ""
+    if ($Meta.Tags -and $Meta.Tags.Count -gt 0) {
+        $tagBadges = foreach ($t in $Meta.Tags) {
+            $encTag = [System.Net.WebUtility]::HtmlEncode($t)
+            "<span class='tag-badge'>🏷️ $encTag</span>"
+        }
+        $tagsHtml = "<div class='okf-tags'>" + ($tagBadges -join " ") + "</div>"
+    }
+
+    $authorHtml = if (-not [string]::IsNullOrWhiteSpace($author)) {
+        "<span class='okf-author'>👤 著者: $author</span>"
+    } else { "" }
+
+    $descHtml = if (-not [string]::IsNullOrWhiteSpace($desc)) {
+        "<p class='okf-desc'>$desc</p>"
+    } else { "" }
+
+    return @"
+<footer class="okf-footer-card">
+    <div class="okf-footer-header">
+        <span class="okf-footer-title">ℹ️ ドキュメント メタデータ (OKF)</span>
+    </div>
+    $descHtml
+    <div class="okf-footer-meta">
+        $authorHtml
+        <span>📅 最終更新: $lastUpd</span>
+    </div>
+    $tagsHtml
+</footer>
+"@
+}
+
+function Get-OkfCardHtml {
+    param ([Parameter(Mandatory = $true)]$Meta)
+    return (Get-OkfTopBarHtml -Meta $Meta) + (Get-OkfFooterCardHtml -Meta $Meta)
+}
+
 function Get-ExportSidebarHtml {
     param ($currentFile, $allMdFiles, $wikiDir)
 
@@ -155,6 +380,7 @@ $allMdFiles = Get-ChildItem -Path $wikiDir -Recurse -Filter "*.md" |
 
 $builder  = New-Object Markdig.MarkdownPipelineBuilder
 $null     = [Markdig.MarkdownExtensions]::UseAdvancedExtensions($builder)
+$null     = [Markdig.MarkdownExtensions]::UseYamlFrontMatter($builder)
 $pipeline = $builder.Build()
 
 $template = @'
@@ -162,7 +388,7 @@ $template = @'
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>{0} - Local Wiki</title>
+<title>{0} - SimpleWiki OKF</title>
 <style>
     * { box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; margin: 0; padding: 0; display: flex; height: 100vh; color: #24292e; background-color: #fff; }
@@ -187,6 +413,19 @@ $template = @'
     table th, table td { border: 1px solid #dfe2e5; padding: 8px 13px; }
     table th { background: #f6f8fa; }
     img { max-width: 100%; }
+
+    /* OKF Custom Components */
+    .okf-card { background: #f8f9fa; border: 1px solid #e1e4e8; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+    .okf-card-header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #586069; font-weight: bold; }
+    .okf-desc { font-size: 14px; color: #24292e; margin: 10px 0; }
+    .okf-card-footer { display: flex; gap: 20px; font-size: 12px; color: #586069; }
+    .okf-tags { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+    .tag-badge { background: #e1e4e8; color: #0366d6; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
+    .badge { padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
+    .badge-active { background: #28a745; color: #fff; }
+    .badge-draft { background: #ffc107; color: #212529; }
+    .badge-deprecated { background: #dc3545; color: #fff; }
+    .warning-banner { background: #fff3cd; border: 1px solid #ffeeba; color: #856404; padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; }
 </style>
 </head>
 <body>
@@ -198,6 +437,7 @@ $template = @'
         <div class="markdown-body">
             {2}
         </div>
+    </main>
     <script src="{3}"></script>
     <script>
         document.addEventListener("DOMContentLoaded", function() {
@@ -228,14 +468,19 @@ foreach ($file in $allMdFiles) {
     }
 
     $mdText   = Get-Content -Path $file.FullName -Raw -Encoding UTF8
+    $meta     = Get-DocumentMetadata -File $file -RelPath $relPath -MdText $mdText
     $bodyHtml = [Markdig.Markdown]::ToHtml($mdText, $pipeline)
+
+    $okfTopBar   = Get-OkfTopBarHtml -Meta $meta
+    $okfFooter   = Get-OkfFooterCardHtml -Meta $meta
+    $bodyHtml    = $okfTopBar + $bodyHtml + $okfFooter
 
     # 本文中の .md ハイパーリンクを .html に自動変換
     $bodyHtml = $bodyHtml -replace 'href="([^"]+)\.md"', 'href="$1.html"'
     $bodyHtml = $bodyHtml -replace "href='([^']+)\.md'", "href='$1.html'"
 
     $sidebarHtml = Get-ExportSidebarHtml -currentFile $file -allMdFiles $allMdFiles -wikiDir $wikiDir
-    $pageTitle   = [System.Net.WebUtility]::HtmlEncode([System.IO.Path]::GetFileNameWithoutExtension($file.FullName))
+    $pageTitle   = [System.Net.WebUtility]::HtmlEncode($meta.Title)
 
     # 現在の出力 HTML から lib/mermaid.min.js への相対パスを計算
     $destUri     = New-Object System.Uri($destFile)

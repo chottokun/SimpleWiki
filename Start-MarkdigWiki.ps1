@@ -5,7 +5,8 @@
 # ==============================================================================
 param (
     [int]$Port = 8080,
-    [string]$RootFolder = ""
+    [string]$RootFolder = "",
+    [switch]$DotSourceOnly
 )
 
 # スクリプト自身のディレクトリ ($PSScriptRoot) から lib フォルダを参照
@@ -42,7 +43,188 @@ Get-ChildItem -Path $libDir -Filter "*.dll" | ForEach-Object {
     Add-Type -Path $_.FullName
 }
 
-# --- 2. サイドバー (HTML) の自動生成関数 (フォルダ階層対応) ---
+# --- OKF メタデータ抽出し ＆ 自動補完 (フォールバック) 関数 ---
+function Get-DocumentMetadata {
+    param (
+        [Parameter(Mandatory = $true)]$File,
+        [string]$RelPath = "",
+        [string]$MdText = ""
+    )
+
+    if ([string]::IsNullOrEmpty($MdText) -and $File -and (Test-Path $File.FullName)) {
+        $MdText = Get-Content -Path $File.FullName -Raw -Encoding UTF8
+    }
+
+    $hasYaml  = $false
+    $bodyText = $MdText
+    $yamlDict = @{}
+
+    if ($MdText -match '(?s)^\s*---\r?\n(.*?)\r?\n---\r?\n(.*)$') {
+        $hasYaml  = $true
+        $rawYaml  = $matches[1]
+        $bodyText = $matches[2]
+
+        try {
+            $currentKey = $null
+            $lines = $rawYaml -split '\r?\n'
+            foreach ($line in $lines) {
+                if ($line -match '^\s*#' -or [string]::IsNullOrWhiteSpace($line)) { continue }
+
+                if ($currentKey -and $line -match '^\s*-\s+(.*)$') {
+                    $itemVal = $matches[1].Trim().Trim('"', "'")
+                    if (-not $yamlDict.ContainsKey($currentKey) -or $yamlDict[$currentKey] -isnot [System.Collections.IList]) {
+                        $yamlDict[$currentKey] = [System.Collections.Generic.List[string]]::new()
+                    }
+                    [void]$yamlDict[$currentKey].Add($itemVal)
+                    continue
+                }
+
+                if ($line -match '^\s*([a-zA-Z0-9_\-]+)\s*:\s*(.*)$') {
+                    $key = $matches[1].ToLower().Trim()
+                    $val = $matches[2].Trim()
+                    $currentKey = $key
+
+                    if ($val -match '^\[(.*)\]$') {
+                        $items = $matches[1] -split ',' | ForEach-Object { $_.Trim().Trim('"', "'") } | Where-Object { $_ -ne "" }
+                        $yamlDict[$key] = @($items)
+                    } elseif (-not [string]::IsNullOrWhiteSpace($val)) {
+                        $val = $val.Trim('"', "'")
+                        $yamlDict[$key] = $val
+                    }
+                }
+            }
+        } catch {
+            Write-Warning "YAML parsing failed for $RelPath : $_"
+        }
+    }
+
+    # Title
+    $title = ""
+    if ($yamlDict.ContainsKey("title") -and -not [string]::IsNullOrWhiteSpace($yamlDict["title"])) {
+        $title = $yamlDict["title"]
+    } else {
+        if ($bodyText -match '(?m)^\s*#\s+(.+)$') {
+            $title = $matches[1].Trim()
+        } elseif ($File) {
+            $title = $File.BaseName
+        } else {
+            $title = "Untitled"
+        }
+    }
+
+    # Description
+    $description = ""
+    if ($yamlDict.ContainsKey("description") -and -not [string]::IsNullOrWhiteSpace($yamlDict["description"])) {
+        $description = $yamlDict["description"]
+    } else {
+        $cleanBody = $bodyText -replace '(?m)^\s*#+\s*', '' -replace '[\*\`\[\]\(\)]', '' -replace '\s+', ' '
+        $cleanBody = $cleanBody.Trim()
+        if ($cleanBody.Length -gt 150) {
+            $description = $cleanBody.Substring(0, 150) + "..."
+        } else {
+            $description = $cleanBody
+        }
+    }
+
+    # Author
+    $author = ""
+    if ($yamlDict.ContainsKey("author") -and -not [string]::IsNullOrWhiteSpace($yamlDict["author"])) {
+        $author = $yamlDict["author"]
+    }
+
+    # Domain
+    $domain = ""
+    if ($yamlDict.ContainsKey("domain") -and -not [string]::IsNullOrWhiteSpace($yamlDict["domain"])) {
+        $domain = $yamlDict["domain"]
+    } else {
+        if (-not [string]::IsNullOrWhiteSpace($RelPath)) {
+            $dir = [System.IO.Path]::GetDirectoryName($RelPath)
+            $domain = if ([string]::IsNullOrWhiteSpace($dir)) { "root" } else { $dir.Replace('\', '/') }
+        } else {
+            $domain = "root"
+        }
+    }
+
+    # Tags
+    $tags = @()
+    if ($yamlDict.ContainsKey("tags")) {
+        if ($yamlDict["tags"] -is [System.Collections.IEnumerable] -and $yamlDict["tags"] -isnot [string]) {
+            $tags = @($yamlDict["tags"])
+        } elseif (-not [string]::IsNullOrWhiteSpace($yamlDict["tags"])) {
+            $tags = @($yamlDict["tags"])
+        }
+    }
+
+    # LastUpdated
+    $lastUpdated = if ($File) { $File.LastWriteTime } else { Get-Date }
+    if ($yamlDict.ContainsKey("last_updated") -and -not [string]::IsNullOrWhiteSpace($yamlDict["last_updated"])) {
+        $parsedDate = [DateTime]::MinValue
+        if ([DateTime]::TryParse($yamlDict["last_updated"], [ref]$parsedDate)) {
+            $lastUpdated = $parsedDate
+        }
+    }
+
+    # Status (active, draft, deprecated)
+    $status = "active"
+    if ($yamlDict.ContainsKey("status") -and -not [string]::IsNullOrWhiteSpace($yamlDict["status"])) {
+        $st = $yamlDict["status"].ToString().ToLower().Trim()
+        if ($st -in @("active", "draft", "deprecated")) {
+            $status = $st
+        }
+    }
+
+    return [PSCustomObject]@{
+        Title       = $title
+        Description = $description
+        Author      = $author
+        Domain      = $domain
+        Tags        = $tags
+        LastUpdated = $lastUpdated
+        Status      = $status
+        HasYaml     = $hasYaml
+        RelPath     = $RelPath
+        FullPath    = if ($File) { $File.FullName } else { "" }
+        BodyText    = $bodyText
+    }
+}
+
+# --- 全件インデックス構築 & キャッシュ機能 ---
+$script:WikiIndex = @()
+$script:WikiIndexLastScan = [DateTime]::MinValue
+$script:WikiIndexDirWriteTime = [DateTime]::MinValue
+
+function Build-WikiIndex {
+    param (
+        [string]$TargetWikiDir = $wikiDir,
+        [switch]$ForceRefresh
+    )
+
+    if (-not (Test-Path $TargetWikiDir)) { return @() }
+
+    $currentWriteTime = (Get-Item $TargetWikiDir).LastWriteTime
+    if (-not $ForceRefresh -and $script:WikiIndex.Count -gt 0 -and $script:WikiIndexDirWriteTime -eq $currentWriteTime) {
+        return $script:WikiIndex
+    }
+
+    $mdFiles = Get-ChildItem -Path $TargetWikiDir -Recurse -Filter "*.md" |
+        Where-Object { $_.FullName -notmatch '[\\/]\.(git|lib|tests|dist)[\\/]' } |
+        Sort-Object FullName
+
+    $indexList = [System.Collections.Generic.List[PSObject]]::new()
+    foreach ($file in $mdFiles) {
+        $relPath = $file.FullName.Substring($TargetWikiDir.Length).TrimStart("\", "/")
+        $meta    = Get-DocumentMetadata -File $file -RelPath $relPath
+        $indexList.Add($meta)
+    }
+
+    $script:WikiIndex = $indexList.ToArray()
+    $script:WikiIndexDirWriteTime = $currentWriteTime
+    $script:WikiIndexLastScan = Get-Date
+
+    return $script:WikiIndex
+}
+
+# --- サイドバー (HTML) の自動生成関数 (フォルダ階層対応) ---
 function Build-ServerFileTreeNode {
     param ($allMdFiles, $wikiDir)
 
@@ -136,6 +318,392 @@ function Get-SidebarHtml {
     return Render-ServerFolderTreeHtml -node $treeNode -currentRelPath $currentRelPath -wikiDir $wikiDir
 }
 
+# --- OKF トップバー ＆ フッターカード レンダリング関数 ---
+function Get-OkfTopBarHtml {
+    param ([Parameter(Mandatory = $true)]$Meta)
+
+    $domain      = [System.Net.WebUtility]::HtmlEncode($Meta.Domain)
+    $statusBadge = switch ($Meta.Status) {
+        "draft"      { '<span class="badge badge-draft">📝 Draft</span>' }
+        "deprecated" { '<span class="badge badge-deprecated">🗑️ Deprecated</span>' }
+        default      { '<span class="badge badge-active">✅ Active</span>' }
+    }
+
+    $tagsHtml = ""
+    if ($Meta.Tags -and $Meta.Tags.Count -gt 0) {
+        $tagBadges = foreach ($t in $Meta.Tags) {
+            $encTag = [System.Net.WebUtility]::HtmlEncode($t)
+            $urlTag = [Uri]::EscapeDataString($t)
+            "<a href='/tags?tag=$urlTag' class='tag-badge'>🏷️ $encTag</a>"
+        }
+        $tagsHtml = "<div class='okf-tags'>" + ($tagBadges -join " ") + "</div>"
+    }
+
+    $warningBanner = if ($Meta.Status -eq "deprecated") {
+        '<div class="warning-banner">⚠️ <strong>警告: 非推奨ドキュメント</strong><br>このドキュメントは非推奨または旧版です。最新の情報を参照してください。</div>'
+    } else { "" }
+
+    return @"
+$warningBanner
+<div class="okf-top-bar">
+    <div class="okf-top-left">
+        <span class="okf-domain">📁 $domain</span>
+        $statusBadge
+    </div>
+    $tagsHtml
+</div>
+"@
+}
+
+function Get-OkfFooterCardHtml {
+    param ([Parameter(Mandatory = $true)]$Meta)
+
+    $desc    = [System.Net.WebUtility]::HtmlEncode($Meta.Description)
+    $author  = [System.Net.WebUtility]::HtmlEncode($Meta.Author)
+    $lastUpd = $Meta.LastUpdated.ToString("yyyy-MM-dd")
+
+    $tagsHtml = ""
+    if ($Meta.Tags -and $Meta.Tags.Count -gt 0) {
+        $tagBadges = foreach ($t in $Meta.Tags) {
+            $encTag = [System.Net.WebUtility]::HtmlEncode($t)
+            $urlTag = [Uri]::EscapeDataString($t)
+            "<a href='/tags?tag=$urlTag' class='tag-badge'>🏷️ $encTag</a>"
+        }
+        $tagsHtml = "<div class='okf-tags'>" + ($tagBadges -join " ") + "</div>"
+    }
+
+    $authorHtml = if (-not [string]::IsNullOrWhiteSpace($author)) {
+        $urlAuthor = [Uri]::EscapeDataString($Meta.Author)
+        "<span class='okf-author'>👤 著者: <a href='/authors?name=$urlAuthor'>$author</a></span>"
+    } else { "" }
+
+    $descHtml = if (-not [string]::IsNullOrWhiteSpace($desc)) {
+        "<p class='okf-desc'>$desc</p>"
+    } else { "" }
+
+    return @"
+<footer class="okf-footer-card">
+    <div class="okf-footer-header">
+        <span class="okf-footer-title">ℹ️ ドキュメント メタデータ (OKF)</span>
+        <a href="/api/index.json" target="_blank" class="okf-api-link">🤖 API (JSON)</a>
+    </div>
+    $descHtml
+    <div class="okf-footer-meta">
+        $authorHtml
+        <span>📅 最終更新: $lastUpd</span>
+    </div>
+    $tagsHtml
+</footer>
+"@
+}
+
+# 互換用別名関数
+function Get-OkfCardHtml {
+    param ([Parameter(Mandatory = $true)]$Meta)
+    return (Get-OkfTopBarHtml -Meta $Meta) + (Get-OkfFooterCardHtml -Meta $Meta)
+}
+
+# --- 機械可読 API JSON 生成関数 (AI エージェント / LLM 用) ---
+function Get-ApiIndexJson {
+    Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+    $exportItems = foreach ($item in $script:WikiIndex) {
+        [PSCustomObject]@{
+            Title       = $item.Title
+            Description = $item.Description
+            Author      = $item.Author
+            Domain      = $item.Domain
+            Tags        = $item.Tags
+            LastUpdated = $item.LastUpdated.ToString("yyyy-MM-ddTHH:mm:ssZ")
+            Status      = $item.Status
+            HasYaml     = $item.HasYaml
+            RelPath     = $item.RelPath
+        }
+    }
+    return ($exportItems | ConvertTo-Json -Depth 3)
+}
+
+# --- RAG / LLM 用セマンティックチャンク JSON 生成関数 (/api/chunks.json) ---
+function Get-ApiChunksJson {
+    Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+
+    $allChunks = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+    foreach ($item in $script:WikiIndex) {
+        $body = $item.BodyText
+        if ([string]::IsNullOrWhiteSpace($body)) { continue }
+
+        $lines = $body -split '\r?\n'
+        $currentSection = $item.Title
+        $currentContentLines = [System.Collections.Generic.List[string]]::new()
+        $chunkIndex = 0
+
+        foreach ($line in $lines) {
+            if ($line -match '^\s*#{1,3}\s+(.+)$') {
+                if ($currentContentLines.Count -gt 0) {
+                    $contentText = ($currentContentLines -join "`n").Trim()
+                    if (-not [string]::IsNullOrWhiteSpace($contentText)) {
+                        $chunkIndex++
+                        $tagStr = if ($item.Tags) { $item.Tags -join ", " } else { "" }
+                        $enriched = "[Document: $($item.Title) | Domain: $($item.Domain) | Section: $currentSection | Tags: $tagStr]`n`n$contentText"
+                        
+                        [void]$allChunks.Add([PSCustomObject]@{
+                            ChunkId      = "$($item.RelPath)#chunk-$chunkIndex"
+                            RelPath      = $item.RelPath
+                            Title        = $item.Title
+                            Domain       = $item.Domain
+                            Section      = $currentSection
+                            Tags         = $item.Tags
+                            LastUpdated  = $item.LastUpdated.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                            Status       = $item.Status
+                            Content      = $contentText
+                            EnrichedText = $enriched
+                        })
+                    }
+                    $currentContentLines.Clear()
+                }
+                $currentSection = $matches[1].Trim()
+            } else {
+                [void]$currentContentLines.Add($line)
+            }
+        }
+
+        if ($currentContentLines.Count -gt 0) {
+            $contentText = ($currentContentLines -join "`n").Trim()
+            if (-not [string]::IsNullOrWhiteSpace($contentText)) {
+                $chunkIndex++
+                $tagStr = if ($item.Tags) { $item.Tags -join ", " } else { "" }
+                $enriched = "[Document: $($item.Title) | Domain: $($item.Domain) | Section: $currentSection | Tags: $tagStr]`n`n$contentText"
+
+                [void]$allChunks.Add([PSCustomObject]@{
+                    ChunkId      = "$($item.RelPath)#chunk-$chunkIndex"
+                    RelPath      = $item.RelPath
+                    Title        = $item.Title
+                    Domain       = $item.Domain
+                    Section      = $currentSection
+                    Tags         = $item.Tags
+                    LastUpdated  = $item.LastUpdated.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                    Status       = $item.Status
+                    Content      = $contentText
+                    EnrichedText = $enriched
+                })
+            }
+        }
+    }
+
+    return ($allChunks | ConvertTo-Json -Depth 4)
+}
+
+# --- 最近の更新一覧ビュー生成関数 ---
+function Get-RecentViewHtml {
+    Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+    $sorted = $script:WikiIndex | Sort-Object LastUpdated -Descending
+
+    $rowsHtml = foreach ($item in $sorted) {
+        $relUri   = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
+        $title    = [System.Net.WebUtility]::HtmlEncode($item.Title)
+        $domain   = [System.Net.WebUtility]::HtmlEncode($item.Domain)
+        $author   = [System.Net.WebUtility]::HtmlEncode($item.Author)
+        $lastUpd  = $item.LastUpdated.ToString("yyyy-MM-dd")
+        $status   = [System.Net.WebUtility]::HtmlEncode($item.Status)
+        "<tr><td>$lastUpd</td><td><a href='$relUri'>$title</a></td><td>$domain</td><td>$author</td><td><span class='badge badge-$status'>$status</span></td></tr>"
+    }
+
+    return @"
+<h1>🕒 最近の更新ドキュメント</h1>
+<p>Wiki内の全ドキュメントを更新日順に表示しています。</p>
+<table class="okf-table">
+    <thead>
+        <tr><th>最終更新日</th><th>タイトル</th><th>ドメイン</th><th>著者</th><th>状態</th></tr>
+    </thead>
+    <tbody>
+        $($rowsHtml -join "`n")
+    </tbody>
+</table>
+"@
+}
+
+# --- タグ目録 & 絞り込みビュー生成関数 ---
+function Get-TagsViewHtml {
+    param ([string]$SelectedTag = "")
+
+    Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+
+    if ([string]::IsNullOrWhiteSpace($SelectedTag)) {
+        $tagCounts = @{}
+        foreach ($item in $script:WikiIndex) {
+            foreach ($t in $item.Tags) {
+                if (-not [string]::IsNullOrWhiteSpace($t)) {
+                    if ($tagCounts.ContainsKey($t)) { $tagCounts[$t]++ } else { $tagCounts[$t] = 1 }
+                }
+            }
+        }
+
+        $cloudHtml = foreach ($t in ($tagCounts.Keys | Sort-Object)) {
+            $encTag = [System.Net.WebUtility]::HtmlEncode($t)
+            $urlTag = [Uri]::EscapeDataString($t)
+            $count  = $tagCounts[$t]
+            "<a href='/tags?tag=$urlTag' class='tag-cloud-item'>🏷️ $encTag <span class='tag-count'>($count)</span></a>"
+        }
+
+        return @"
+<h1>🏷️ タグ一覧</h1>
+<div class="tag-cloud">
+    $($cloudHtml -join " ")
+</div>
+"@
+    } else {
+        $filtered = $script:WikiIndex | Where-Object { $_.Tags -contains $SelectedTag }
+        $encTag   = [System.Net.WebUtility]::HtmlEncode($SelectedTag)
+
+        $cardsHtml = foreach ($item in $filtered) {
+            $relUri = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
+            $title  = [System.Net.WebUtility]::HtmlEncode($item.Title)
+            $desc   = [System.Net.WebUtility]::HtmlEncode($item.Description)
+            "<div class='search-item'><h3><a href='$relUri'>$title</a></h3><p>$desc</p></div>"
+        }
+
+        return @"
+<h1>🏷️ タグ: $encTag</h1>
+<p><a href="/tags">← 全タグ一覧へ戻る</a></p>
+<div class="tag-results">
+    $($cardsHtml -join "`n")
+</div>
+"@
+    }
+}
+
+# --- 品質・メンテナンスダッシュボード生成関数 ---
+function Get-MaintenanceViewHtml {
+    Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+    $now = Get-Date
+
+    $staleDocs      = $script:WikiIndex | Where-Object { $_.Status -eq "active" -and ($now - $_.LastUpdated).TotalDays -ge 365 }
+    $draftDocs      = $script:WikiIndex | Where-Object { $_.Status -eq "draft" }
+    $deprecatedDocs = $script:WikiIndex | Where-Object { $_.Status -eq "deprecated" }
+
+    function Render-DocList ($docArray) {
+        if (-not $docArray -or $docArray.Count -eq 0) { return "<p class='empty-msg'>該当ドキュメントはありません。</p>" }
+        $items = foreach ($item in $docArray) {
+            $relUri  = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
+            $title   = [System.Net.WebUtility]::HtmlEncode($item.Title)
+            $lastUpd = $item.LastUpdated.ToString("yyyy-MM-dd")
+            "<li><a href='$relUri'>$title</a> <span class='muted'>($lastUpd)</span></li>"
+        }
+        return "<ul>" + ($items -join "") + "</ul>"
+    }
+
+    return @"
+<h1>🧹 品質・メンテナンスダッシュボード</h1>
+<p>ドキュメントの風化を防ぎ、ナレッジの信頼性を維持するための管理画面です。</p>
+
+<div class="maint-section warning-box">
+    <h2>⚠️ 更新停滞ドキュメント (最終更新から365日以上経過)</h2>
+    $(Render-DocList $staleDocs)
+</div>
+
+<div class="maint-section info-box">
+    <h2>📝 下書き一覧 (status: draft)</h2>
+    $(Render-DocList $draftDocs)
+</div>
+
+<div class="maint-section danger-box">
+    <h2>🗑️ 非推奨・旧版一覧 (status: deprecated)</h2>
+    $(Render-DocList $deprecatedDocs)
+</div>
+"@
+}
+
+# --- 著者一覧ビュー生成関数 ---
+function Get-AuthorsViewHtml {
+    param ([string]$SelectedAuthor = "")
+
+    Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+
+    if ([string]::IsNullOrWhiteSpace($SelectedAuthor)) {
+        $authors = $script:WikiIndex | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Author) } | Group-Object Author
+
+        $listHtml = foreach ($g in ($authors | Sort-Object Name)) {
+            $encAuthor = [System.Net.WebUtility]::HtmlEncode($g.Name)
+            $urlAuthor = [Uri]::EscapeDataString($g.Name)
+            $count     = $g.Count
+            "<li><a href='/authors?name=$urlAuthor'>👤 $encAuthor</a> <span class='muted'>($count 件)</span></li>"
+        }
+
+        return @"
+<h1>👥 著者一覧</h1>
+<ul>
+    $($listHtml -join "`n")
+</ul>
+"@
+    } else {
+        $filtered  = $script:WikiIndex | Where-Object { $_.Author -eq $SelectedAuthor }
+        $encAuthor = [System.Net.WebUtility]::HtmlEncode($SelectedAuthor)
+
+        $itemsHtml = foreach ($item in $filtered) {
+            $relUri = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
+            $title  = [System.Net.WebUtility]::HtmlEncode($item.Title)
+            "<li><a href='$relUri'>$title</a></li>"
+        }
+
+        return @"
+<h1>👥 著者: $encAuthor</h1>
+<p><a href="/authors">← 全著者一覧へ戻る</a></p>
+<ul>
+    $($itemsHtml -join "`n")
+</ul>
+"@
+    }
+}
+
+# --- 検索結果ビュー生成関数 ---
+function Get-SearchViewHtml {
+    param ([string]$Query = "")
+
+    Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+    $encQuery = [System.Net.WebUtility]::HtmlEncode($Query)
+
+    if ([string]::IsNullOrWhiteSpace($Query)) {
+        return @"
+<h1>🔍 ドキュメント検索</h1>
+<p>キーワードを入力して検索してください。</p>
+"@
+    }
+
+    $keywords = $Query.Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)
+    $results  = [System.Collections.Generic.List[PSObject]]::new()
+
+    foreach ($item in $script:WikiIndex) {
+        $searchTarget = "$($item.Title) $($item.Description) $($item.Author) $($item.Domain) $($item.Tags -join ' ') $($item.BodyText)"
+        $isMatch = $true
+        foreach ($kw in $keywords) {
+            if ($searchTarget.IndexOf($kw, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+                $isMatch = $false
+                break
+            }
+        }
+        if ($isMatch) {
+            $results.Add($item)
+        }
+    }
+
+    $resultsHtml = foreach ($item in $results) {
+        $relUri = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
+        $title  = [System.Net.WebUtility]::HtmlEncode($item.Title)
+        $desc   = [System.Net.WebUtility]::HtmlEncode($item.Description)
+        "<div class='search-item'><h3><a href='$relUri'>$title</a></h3><p>$desc</p></div>"
+    }
+
+    return @"
+<h1>🔍 検索結果: $encQuery</h1>
+<p>該当件数: $($results.Count) 件</p>
+<div class="search-results">
+    $($resultsHtml -join "`n")
+</div>
+"@
+}
+
+if ($DotSourceOnly) { return }
+
 # --- 3. HttpListener の起動 ---
 $listener = New-Object System.Net.HttpListener
 $prefix   = "http://localhost:$Port/"
@@ -176,8 +744,57 @@ try {
 
         try {
             $rawPath = [System.Net.WebUtility]::UrlDecode($request.Url.LocalPath)
-            
-            if ($rawPath -eq "/" -or [string]::IsNullOrEmpty($rawPath)) {
+
+            # 1. API エンドポイント (/api/index.json, /api/chunks.json)
+            if ($rawPath -eq "/api/index.json") {
+                $jsonStr = Get-ApiIndexJson
+                $bytes   = [System.Text.Encoding]::UTF8.GetBytes($jsonStr)
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.ContentLength64 = $bytes.Length
+                $response.OutputStream.Write($bytes, 0, $bytes.Length)
+                continue
+            }
+            if ($rawPath -eq "/api/chunks.json") {
+                $jsonStr = Get-ApiChunksJson
+                $bytes   = [System.Text.Encoding]::UTF8.GetBytes($jsonStr)
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.ContentLength64 = $bytes.Length
+                $response.OutputStream.Write($bytes, 0, $bytes.Length)
+                continue
+            }
+
+            # 2. 動的ビュー判定
+            $isDynamicView = $false
+            $bodyContent   = ""
+            $pageTitle     = "Wiki"
+
+            if ($rawPath -eq "/recent") {
+                $isDynamicView = $true
+                $pageTitle     = "最近の更新"
+                $bodyContent   = Get-RecentViewHtml
+            } elseif ($rawPath -eq "/tags") {
+                $isDynamicView = $true
+                $tagParam      = $request.QueryString["tag"]
+                $pageTitle     = if ($tagParam) { "タグ: $tagParam" } else { "タグ一覧" }
+                $bodyContent   = Get-TagsViewHtml -SelectedTag $tagParam
+            } elseif ($rawPath -eq "/maintenance") {
+                $isDynamicView = $true
+                $pageTitle     = "品質・メンテナンス"
+                $bodyContent   = Get-MaintenanceViewHtml
+            } elseif ($rawPath -eq "/authors") {
+                $isDynamicView = $true
+                $authorParam   = $request.QueryString["name"]
+                $pageTitle     = if ($authorParam) { "著者: $authorParam" } else { "著者一覧" }
+                $bodyContent   = Get-AuthorsViewHtml -SelectedAuthor $authorParam
+            } elseif ($rawPath -eq "/search") {
+                $isDynamicView = $true
+                $qParam        = $request.QueryString["q"]
+                $pageTitle     = if ($qParam) { "検索: $qParam" } else { "検索" }
+                $bodyContent   = Get-SearchViewHtml -Query $qParam
+            }
+
+            # Markdown ファイルの物理存在チェックと決定
+            if (-not $isDynamicView -and ($rawPath -eq "/" -or [string]::IsNullOrEmpty($rawPath))) {
                 if (Test-Path (Join-Path $wikiDir "index.md")) {
                     $rawPath = "/index.md"
                 } elseif (Test-Path (Join-Path $wikiDir "README.md")) {
@@ -197,7 +814,8 @@ try {
             $fullPath = [System.IO.Path]::GetFullPath($filePath)
             $fullScriptLibDir = (Join-Path $scriptDir "lib\").TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
             $isAllowed = $fullPath.StartsWith($fullWikiDir, [System.StringComparison]::OrdinalIgnoreCase) -or $fullPath.StartsWith($fullScriptLibDir, [System.StringComparison]::OrdinalIgnoreCase)
-            if (-not $isAllowed) {
+            
+            if (-not $isDynamicView -and -not $isAllowed) {
                 $response.StatusCode = 403
                 $forbiddenBytes = [System.Text.Encoding]::UTF8.GetBytes("<h1>403 Forbidden</h1>")
                 $response.ContentLength64 = $forbiddenBytes.Length
@@ -205,40 +823,57 @@ try {
                 continue
             }
 
-            # Markdown ファイルのレンダリング処理
-            if ((Test-Path $fullPath -PathType Leaf) -and ($fullPath.EndsWith(".md"))) {
-                $mdText = Get-Content -Path $fullPath -Raw -Encoding UTF8
+            # 3. HTML レンダリング (Markdown または動的ビュー)
+            if ($isDynamicView -or ((Test-Path $fullPath -PathType Leaf) -and ($fullPath.EndsWith(".md")))) {
+                if (-not $isDynamicView) {
+                    $mdText   = Get-Content -Path $fullPath -Raw -Encoding UTF8
+                    $fileObj  = Get-Item $fullPath
+                    $meta     = Get-DocumentMetadata -File $fileObj -RelPath $relPath -MdText $mdText
 
-                # Markdig で Markdown -> HTML 変換
-                $builder  = New-Object Markdig.MarkdownPipelineBuilder
-                $null     = [Markdig.MarkdownExtensions]::UseAdvancedExtensions($builder)
-                $pipeline = $builder.Build()
-                $bodyHtml = [Markdig.Markdown]::ToHtml($mdText, $pipeline)
+                    $builder  = New-Object Markdig.MarkdownPipelineBuilder
+                    $null     = [Markdig.MarkdownExtensions]::UseAdvancedExtensions($builder)
+                    $null     = [Markdig.MarkdownExtensions]::UseYamlFrontMatter($builder)
+                    $pipeline = $builder.Build()
+                    $renderedHtml = [Markdig.Markdown]::ToHtml($mdText, $pipeline)
+
+                    $okfTopBar   = Get-OkfTopBarHtml -Meta $meta
+                    $okfFooter   = Get-OkfFooterCardHtml -Meta $meta
+                    $bodyContent = $okfTopBar + $renderedHtml + $okfFooter
+                    $pageTitle   = [System.Net.WebUtility]::HtmlEncode($meta.Title)
+                }
 
                 $sidebarHtml = Get-SidebarHtml -currentRelPath $relPath
-                $pageTitle   = [System.Net.WebUtility]::HtmlEncode([System.IO.Path]::GetFileNameWithoutExtension($fullPath))
 
                 $template = @'
 <!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>{0} - Local Wiki</title>
+<title>{0} - SimpleWiki OKF</title>
 <style>
     * { box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; margin: 0; padding: 0; display: flex; height: 100vh; color: #24292e; background-color: #fff; }
-    nav { width: 260px; background-color: #f6f8fa; border-right: 1px solid #e1e4e8; padding: 20px 10px; overflow-y: auto; flex-shrink: 0; }
-    nav h2 { font-size: 14px; text-transform: uppercase; color: #586069; margin: 0 0 10px 10px; letter-spacing: 0.5px; }
-    nav ul { list-style: none; padding: 0; margin: 0; }
-    nav ul ul { padding-left: 12px; margin-top: 2px; }
-    nav li.nav-folder { margin-top: 4px; margin-bottom: 4px; }
-    nav summary.folder-title { font-weight: bold; font-size: 13px; color: #586069; padding: 4px 6px; cursor: pointer; user-select: none; }
-    nav summary.folder-title:hover { color: #0366d6; }
-    nav li.nav-file a { display: block; padding: 4px 8px; color: #0366d6; text-decoration: none; border-radius: 6px; font-size: 14px; word-break: break-all; }
-    nav li.nav-file a:hover { background-color: #f0f3f6; text-decoration: none; }
-    nav li.nav-file a.active { background-color: #0366d6; color: #ffffff; font-weight: bold; }
-    main { flex: 1; padding: 40px 60px; overflow-y: auto; }
-    .markdown-body { max-width: 880px; margin: 0 auto; line-height: 1.6; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; color: #24292e; background-color: #fff; }
+    header.top-header { background: #1b1f23; color: #fff; padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+    header.top-header a.brand { color: #fff; font-weight: bold; font-size: 16px; text-decoration: none; display: flex; align-items: center; gap: 8px; }
+    header.top-header nav.top-nav { display: flex; gap: 15px; align-items: center; }
+    header.top-header nav.top-nav a { color: #d1d5da; text-decoration: none; font-size: 13px; padding: 4px 8px; border-radius: 4px; }
+    header.top-header nav.top-nav a:hover { color: #fff; background: rgba(255,255,255,0.1); }
+    header.top-header form.search-form { display: flex; gap: 4px; }
+    header.top-header form.search-form input { padding: 4px 8px; font-size: 12px; border: 1px solid #444; border-radius: 4px; background: #2f363d; color: #fff; }
+    header.top-header form.search-form button { padding: 4px 8px; font-size: 12px; border: none; border-radius: 4px; background: #0366d6; color: #fff; cursor: pointer; }
+    .layout-container { display: flex; flex: 1; overflow: hidden; }
+    nav.sidebar { width: 260px; background-color: #f6f8fa; border-right: 1px solid #e1e4e8; padding: 20px 10px; overflow-y: auto; flex-shrink: 0; }
+    nav.sidebar h2 { font-size: 13px; text-transform: uppercase; color: #586069; margin: 0 0 10px 10px; letter-spacing: 0.5px; }
+    nav.sidebar ul { list-style: none; padding: 0; margin: 0; }
+    nav.sidebar ul ul { padding-left: 12px; margin-top: 2px; }
+    nav.sidebar li.nav-folder { margin-top: 4px; margin-bottom: 4px; }
+    nav.sidebar summary.folder-title { font-weight: bold; font-size: 13px; color: #586069; padding: 4px 6px; cursor: pointer; user-select: none; }
+    nav.sidebar summary.folder-title:hover { color: #0366d6; }
+    nav.sidebar li.nav-file a { display: block; padding: 4px 8px; color: #0366d6; text-decoration: none; border-radius: 6px; font-size: 13px; word-break: break-all; }
+    nav.sidebar li.nav-file a:hover { background-color: #f0f3f6; text-decoration: none; }
+    nav.sidebar li.nav-file a.active { background-color: #0366d6; color: #ffffff; font-weight: bold; }
+    main { flex: 1; padding: 30px 50px; overflow-y: auto; }
+    .markdown-body { max-width: 900px; margin: 0 auto; line-height: 1.6; }
     h1, h2, h3 { border-bottom: 1px solid #eaecef; padding-bottom: 0.3em; margin-top: 24px; margin-bottom: 16px; }
     code { background: rgba(27,31,35,0.05); padding: 0.2em 0.4em; border-radius: 3px; font-family: monospace; }
     pre { background: #f6f8fa; padding: 16px; border-radius: 6px; overflow: auto; }
@@ -248,18 +883,62 @@ try {
     table th, table td { border: 1px solid #dfe2e5; padding: 8px 13px; }
     table th { background: #f6f8fa; }
     img { max-width: 100%; }
+    
+    /* OKF Custom Components */
+    .okf-top-bar { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #586069; margin-bottom: 16px; border-bottom: 1px dashed #e1e4e8; padding-bottom: 8px; }
+    .okf-footer-card { background: #f8f9fa; border: 1px solid #e1e4e8; border-radius: 6px; padding: 16px; margin-top: 40px; }
+    .okf-footer-header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: bold; color: #444; border-bottom: 1px solid #e1e4e8; padding-bottom: 8px; margin-bottom: 10px; }
+    .okf-footer-meta { display: flex; gap: 20px; font-size: 12px; color: #586069; margin-top: 10px; }
+    .okf-api-link { font-size: 11px; color: #0366d6; text-decoration: none; padding: 2px 8px; background: #e1e4e8; border-radius: 12px; }
+    .okf-api-link:hover { background: #0366d6; color: #fff; }
+    .okf-desc { font-size: 13px; color: #586069; margin: 6px 0 10px 0; }
+    .okf-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .tag-badge { background: #e1e4e8; color: #0366d6; text-decoration: none; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
+    .tag-badge:hover { background: #0366d6; color: #fff; }
+    .badge { padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
+    .badge-active { background: #28a745; color: #fff; }
+    .badge-draft { background: #ffc107; color: #212529; }
+    .badge-deprecated { background: #dc3545; color: #fff; }
+    .warning-banner { background: #fff3cd; border: 1px solid #ffeeba; color: #856404; padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; }
+    .maint-section { margin-bottom: 30px; padding: 16px; border-radius: 6px; }
+    .warning-box { background: #fff8f8; border: 1px solid #f5c6cb; }
+    .info-box { background: #fffcf0; border: 1px solid #ffeba8; }
+    .danger-box { background: #fdf2f2; border: 1px solid #f5c6cb; }
+    .tag-cloud { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+    .tag-cloud-item { padding: 8px 14px; background: #f1f8ff; border: 1px solid #c8e1ff; border-radius: 20px; text-decoration: none; color: #0366d6; font-weight: bold; }
+    .tag-cloud-item:hover { background: #0366d6; color: #fff; }
+    .muted { color: #6a737d; font-size: 12px; }
+    .search-item { border-bottom: 1px solid #e1e4e8; padding: 12px 0; }
+    .search-item h3 { border: none; margin: 0 0 6px 0; font-size: 16px; }
 </style>
 </head>
 <body>
-    <nav>
-        <h2>📄 ドキュメント一覧</h2>
-        {1}
-    </nav>
-    <main>
-        <div class="markdown-body">
-            {2}
-        </div>
-    </main>
+    <header class="top-header">
+        <a href="/" class="brand">📖 SimpleWiki <span class="badge badge-active">OKF</span></a>
+        <nav class="top-nav">
+            <a href="/">🏠 Home</a>
+            <a href="/recent">🕒 最近の更新</a>
+            <a href="/tags">🏷️ タグ一覧</a>
+            <a href="/maintenance">🧹 メンテナンス</a>
+            <a href="/authors">👥 著者一覧</a>
+            <a href="/api/index.json" target="_blank">🤖 API (JSON)</a>
+        </nav>
+        <form action="/search" method="GET" class="search-form">
+            <input type="text" name="q" placeholder="Wikiを検索..." required>
+            <button type="submit">検索</button>
+        </form>
+    </header>
+    <div class="layout-container">
+        <nav class="sidebar">
+            <h2>📄 ドキュメント一覧</h2>
+            {1}
+        </nav>
+        <main>
+            <div class="markdown-body">
+                {2}
+            </div>
+        </main>
+    </div>
     <script src="/lib/mermaid.min.js"></script>
     <script>
         document.addEventListener("DOMContentLoaded", function() {
@@ -278,7 +957,7 @@ try {
 </body>
 </html>
 '@
-                $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyHtml)
+                $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent)
                 $bytes = [System.Text.Encoding]::UTF8.GetBytes($fullHtml)
                 $response.ContentType = "text/html; charset=utf-8"
                 $response.ContentLength64 = $bytes.Length
@@ -310,3 +989,4 @@ try {
         $listener.Close()
     }
 }
+

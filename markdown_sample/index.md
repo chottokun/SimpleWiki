@@ -1,4 +1,14 @@
-﻿# Markdig + PowerShell SimpleWiki へようこそ！
+---
+title: Markdig + PowerShell SimpleWiki へようこそ！
+description: 100% 完全なオフライン環境で動作する OKF (Open Knowledge Format) 対応 Markdown Wiki システムです。
+author: SimpleWiki コアチーム
+domain: ナレッジベース/ポータル
+tags: [Wiki, OKF, Markdig, PowerShell]
+last_updated: 2026-08-09
+status: active
+---
+
+# Markdig + PowerShell SimpleWiki へようこそ！
 
 100% 完全なオフライン環境で動作する軽量かつ高速な Markdown Wiki システムです。
 

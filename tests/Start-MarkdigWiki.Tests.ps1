@@ -109,5 +109,183 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
         # アクティブでないフォルダ guides は open なし
         $subHtmlContent | Should Match "<details>\s*<summary class='folder-title'>📁 guides</summary>"
     }
+
+    It "Embeds OKF top bar and footer card in exported static HTML files" {
+        $indexHtmlPath = Join-Path $testExportDir "index.html"
+        $htmlContent   = [System.IO.File]::ReadAllText($indexHtmlPath)
+
+        $htmlContent | Should Match "class=""okf-top-bar"""
+        $htmlContent | Should Match "class=""okf-footer-card"""
+    }
 }
+
+Describe "OKF Metadata Extraction & Fallback Tests (Get-DocumentMetadata)" {
+    BeforeAll {
+        $serverScript = Join-Path $projectRoot "Start-MarkdigWiki.ps1"
+        . $serverScript -DotSourceOnly
+    }
+
+    It "Parses full OKF YAML Front Matter correctly" {
+        $mdText = @"
+---
+title: DB Recovery Manual
+description: PostgreSQL recovery steps
+author: Taro Yamada
+domain: infrastructure/database
+tags: [PostgreSQL, Runbook]
+last_updated: 2026-08-01
+status: active
+---
+# Body Title
+This is body text.
+"@
+        $fakeFile = [PSCustomObject]@{
+            FullName      = "C:\wiki\docs\db\manual.md"
+            LastWriteTime = (Get-Date "2026-01-01")
+            BaseName      = "manual"
+        }
+        $meta = Get-DocumentMetadata -File $fakeFile -RelPath "docs/db/manual.md" -MdText $mdText
+        $meta.Title | Should Be "DB Recovery Manual"
+        $meta.Description | Should Be "PostgreSQL recovery steps"
+        $meta.Author | Should Be "Taro Yamada"
+        $meta.Domain | Should Be "infrastructure/database"
+        $meta.Tags -contains "PostgreSQL" | Should Be $true
+        $meta.Tags -contains "Runbook" | Should Be $true
+        $meta.LastUpdated.ToString("yyyy-MM-dd") | Should Be "2026-08-01"
+        $meta.Status | Should Be "active"
+        $meta.HasYaml | Should Be $true
+    }
+
+    It "Parses bullet-list tags, quoted title with colons, and handles comments" {
+        $mdText = @"
+---
+# This is a YAML comment
+title: "System: Recovery Manual"
+tags:
+  - Database
+  - PostgreSQL
+---
+# Header
+"@
+        $fakeFile = [PSCustomObject]@{
+            FullName      = "C:\wiki\docs\bullet.md"
+            LastWriteTime = (Get-Date "2026-01-01")
+            BaseName      = "bullet"
+        }
+        $meta = Get-DocumentMetadata -File $fakeFile -RelPath "docs/bullet.md" -MdText $mdText
+        $meta.Title | Should Be "System: Recovery Manual"
+        $meta.Tags -contains "Database" | Should Be $true
+        $meta.Tags -contains "PostgreSQL" | Should Be $true
+    }
+
+
+    It "Falls back to H1 header when title is missing in YAML" {
+        $mdText = @"
+---
+description: No title in YAML
+---
+# Header Title from H1
+Body text...
+"@
+        $fakeFile = [PSCustomObject]@{
+            FullName      = "C:\wiki\docs\test.md"
+            LastWriteTime = (Get-Date "2026-01-01")
+            BaseName      = "test"
+        }
+        $meta = Get-DocumentMetadata -File $fakeFile -RelPath "docs/test.md" -MdText $mdText
+        $meta.Title | Should Be "Header Title from H1"
+    }
+
+    It "Falls back to BaseName when no title in YAML and no H1 in body" {
+        $mdText = "Plain markdown text without headers or YAML."
+        $fakeFile = [PSCustomObject]@{
+            FullName      = "C:\wiki\docs\my-doc.md"
+            LastWriteTime = (Get-Date "2026-01-01")
+            BaseName      = "my-doc"
+        }
+        $meta = Get-DocumentMetadata -File $fakeFile -RelPath "docs/my-doc.md" -MdText $mdText
+        $meta.Title | Should Be "my-doc"
+        $meta.Domain | Should Be "docs"
+        $meta.Status | Should Be "active"
+        $meta.HasYaml | Should Be $false
+    }
+
+    It "Gracefully handles malformed YAML syntax without throwing exceptions" {
+        $mdText = @"
+---
+title: Malformed YAML
+tags: [broken array
+status: : : invalid syntax
+---
+# Header
+"@
+        $fakeFile = [PSCustomObject]@{
+            FullName      = "C:\wiki\docs\broken.md"
+            LastWriteTime = (Get-Date "2026-01-01")
+            BaseName      = "broken"
+        }
+        { $script:testMeta = Get-DocumentMetadata -File $fakeFile -RelPath "docs/broken.md" -MdText $mdText } | Should Not Throw
+        $script:testMeta.Title | Should Be "Malformed YAML"
+    }
+}
+
+Describe "OKF Dynamic View & API Endpoint Tests" {
+    BeforeAll {
+        $serverScript = Join-Path $projectRoot "Start-MarkdigWiki.ps1"
+        . $serverScript -DotSourceOnly
+        $sampleDir = Join-Path $projectRoot "markdown_sample"
+        Build-WikiIndex -TargetWikiDir $sampleDir -ForceRefresh | Out-Null
+    }
+
+    It "Builds WikiIndex from sample directory successfully" {
+        $script:WikiIndex.Count | Should BeGreaterThan 0
+    }
+
+    It "Generates JSON for /api/index.json containing OKF metadata" {
+        $json = Get-ApiIndexJson
+        $json | Should Not Be $null
+        $json | Should Match "Title"
+        $json | Should Match "RelPath"
+    }
+
+    It "Generates pre-chunked JSON for /api/chunks.json containing section-level RAG chunks" {
+        $json = Get-ApiChunksJson
+        $json | Should Not Be $null
+        $json | Should Match "ChunkId"
+        $json | Should Match "EnrichedText"
+        $json | Should Match "Section"
+        
+        $chunksObj = $json | ConvertFrom-Json
+        $chunksObj.Count | Should BeGreaterThan 0
+        $chunksObj[0].ChunkId | Should Match "#chunk-"
+        $chunksObj[0].EnrichedText | Should Match "\[Document:"
+    }
+
+    It "Generates HTML for /recent view" {
+        $html = Get-RecentViewHtml
+        $html | Should Match "最近の更新"
+    }
+
+    It "Generates HTML for /tags view" {
+        $html = Get-TagsViewHtml
+        $html | Should Match "タグ"
+    }
+
+    It "Generates HTML for /maintenance view" {
+        $html = Get-MaintenanceViewHtml
+        $html | Should Match "品質"
+    }
+
+    It "Generates HTML for /authors view" {
+        $html = Get-AuthorsViewHtml
+        $html | Should Match "著者"
+    }
+
+    It "Generates HTML for /search view" {
+        $html = Get-SearchViewHtml -Query "API"
+        $html | Should Match "検索結果"
+    }
+}
+
+
 

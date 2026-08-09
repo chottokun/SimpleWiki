@@ -1,4 +1,14 @@
-﻿# REST API 仕様書
+---
+title: REST API 仕様書
+description: SimpleWiki が提供する REST エンドポイントおよびデータ形式に関する仕様書です。
+author: API開発チーム
+domain: 開発/API
+tags: [REST, API, JSON, 仕様書]
+last_updated: 2026-08-08
+status: active
+---
+
+# REST API 仕様書
 
 SimpleWiki が提供する REST エンドポイントおよびデータ形式に関する仕様書です。
 
