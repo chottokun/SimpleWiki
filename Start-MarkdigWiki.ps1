@@ -701,16 +701,21 @@ function Get-HighlightText {
     return $sb.ToString()
 }
 
-# --- 検索結果ビュー生成関数 (OKF 文脈検索エンジン) ---
-function Get-SearchViewHtml {
+# --- OKF スコアリングドキュメント検索共通関数 ---
+function Search-OkfDocs {
     param (
         [string]$Query = "",
         [string]$StatusFilter = "active",
-        [string]$DomainFilter = ""
+        [string]$DomainFilter = "",
+        [string]$WikiDir = "",
+        [int]$MaxResults = 0
     )
 
+    $targetDir = if (-not [string]::IsNullOrWhiteSpace($WikiDir)) { $WikiDir } else { $script:wikiDir }
+    if ([string]::IsNullOrWhiteSpace($targetDir)) { $targetDir = $scriptDir }
+
     if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
-        Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+        Build-WikiIndex -TargetWikiDir $targetDir | Out-Null
     }
 
     if ([string]::IsNullOrWhiteSpace($StatusFilter)) { $StatusFilter = "active" }
@@ -828,10 +833,199 @@ function Get-SearchViewHtml {
                 Meta        = $item
                 Score       = $score
                 Snippet     = $snippet
-                LastUpdated = $item.LastUpdated
             })
         }
     }
+
+    $sorted = @($results | Sort-Object Score -Descending)
+    if ($MaxResults -gt 0 -and $sorted.Count -gt $MaxResults) {
+        return @($sorted[0..($MaxResults - 1)])
+    }
+    return $sorted
+}
+
+# --- Agentic Tools (PowerShell 内部実行ファンクション) ---
+function Invoke-ToolSearchOkf {
+    param (
+        [string]$Query = "",
+        [string]$Domain = "",
+        [string]$WikiDir = ""
+    )
+    $res = Search-OkfDocs -Query $Query -DomainFilter $Domain -StatusFilter "active" -WikiDir $WikiDir -MaxResults 3
+    if ($res.Count -eq 0) {
+        return "検索結果は見つかりませんでした。"
+    }
+    $sb = [System.Text.StringBuilder]::new()
+    foreach ($r in $res) {
+        $meta = $r.Meta
+        [void]$sb.AppendLine("---")
+        [void]$sb.AppendLine("■ タイトル: $($meta.Title) (Path: $($meta.RelPath))")
+        [void]$sb.AppendLine("・ドメイン: $($meta.Domain) | 著者: $($meta.Author) | 更新: $($meta.LastUpdated.ToString('yyyy-MM-dd'))")
+        [void]$sb.AppendLine("・概要: $($meta.Description)")
+        [void]$sb.AppendLine("・スニペット: $($r.Snippet)")
+    }
+    return $sb.ToString()
+}
+
+function Invoke-ToolReadDoc {
+    param (
+        [string]$RelPath = "",
+        [string]$WikiDir = "",
+        [int]$MaxChars = 2000
+    )
+    if ([string]::IsNullOrWhiteSpace($RelPath)) { return "エラー: RelPath が指定されていません。" }
+
+    $targetDir = if (-not [string]::IsNullOrWhiteSpace($WikiDir)) { $WikiDir } else { $script:wikiDir }
+    if ([string]::IsNullOrWhiteSpace($targetDir)) { $targetDir = $scriptDir }
+
+    $cleanRel = $RelPath.TrimStart('\', '/').Replace('/', '\')
+    $full = Join-Path $targetDir $cleanRel
+
+    if (-not (Test-Path $full)) {
+        Build-WikiIndex -TargetWikiDir $targetDir | Out-Null
+        $found = $script:WikiIndex | Where-Object { $_.RelPath -eq $cleanRel -or $_.RelPath -like "*$cleanRel*" } | Select-Object -First 1
+        if ($found) {
+            $full = Join-Path $targetDir $found.RelPath
+            $cleanRel = $found.RelPath
+        } else {
+            return "エラー: ドキュメント 『$RelPath』 が見つかりません。"
+        }
+    }
+
+    $fileObj = Get-Item $full
+    $meta = Get-DocumentMetadata -File $fileObj -RelPath $cleanRel
+    if ($meta.Status -eq "deprecated") {
+        return "⚠️ 警告: ドキュメント 『$cleanRel』 は非推奨 (deprecated) です。現行Active情報ではありません。"
+    }
+
+    $body = $meta.BodyText
+    if ([string]::IsNullOrWhiteSpace($body)) { return "ドキュメント本文は空です。" }
+
+    if ($MaxChars -gt 0 -and $body.Length -gt $MaxChars) {
+        $body = $body.Substring(0, $MaxChars) + "`n...[文字数制限により以降省略 (最大 $MaxChars 文字)]"
+    }
+
+    return "■ ドキュメント: $($meta.Title) ($cleanRel)`n$body"
+}
+
+function Invoke-ToolLookupGlossary {
+    param (
+        [string]$Term = "",
+        [string]$WikiDir = ""
+    )
+    if ([string]::IsNullOrWhiteSpace($Term)) { return "エラー: Term が指定されていません。" }
+
+    $targetDir = if (-not [string]::IsNullOrWhiteSpace($WikiDir)) { $WikiDir } else { $script:wikiDir }
+    if ([string]::IsNullOrWhiteSpace($targetDir)) { $targetDir = $scriptDir }
+
+    Build-WikiIndex -TargetWikiDir $targetDir | Out-Null
+
+    $glossaryDoc = $script:WikiIndex | Where-Object { $_.RelPath -like "*glossary.md*" -or $_.Title -like "*用語*" } | Select-Object -First 1
+    if ($glossaryDoc -and $glossaryDoc.BodyText) {
+        $lines = $glossaryDoc.BodyText -split "\r?\n"
+        $termRegex = [regex]::Escape($Term)
+        $matchedBlock = [System.Collections.Generic.List[string]]::new()
+        $recording = $false
+
+        foreach ($line in $lines) {
+            if ($line -match "(?i)^\s*#{1,4}\s+.*$termRegex" -or $line -match "(?i)^\s*[\*\-]\s+.*$termRegex") {
+                $recording = $true
+            } elseif ($recording -and $line -match "^\s*#{1,3}\s+") {
+                break
+            }
+            if ($recording) {
+                $matchedBlock.Add($line)
+            }
+        }
+
+        if ($matchedBlock.Count -gt 0) {
+            return "📖 用語集 ($($glossaryDoc.RelPath)) より抽出:`n" + ($matchedBlock -join "`n")
+        }
+    }
+
+    $results = Search-OkfDocs -Query $Term -StatusFilter "active" -WikiDir $targetDir -MaxResults 2
+    if ($results.Count -gt 0) {
+        $sb = [System.Text.StringBuilder]::new()
+        [void]$sb.AppendLine("📖 用語 『$Term』 に関連するドキュメント記述:")
+        foreach ($r in $results) {
+            [void]$sb.AppendLine("・$($r.Meta.Title) ($($r.Meta.RelPath)): $($r.Snippet)")
+        }
+        return $sb.ToString()
+    }
+
+    return "用語 『$Term』 の定義は Wiki 内で見つかりませんでした。"
+}
+
+function Invoke-ToolGetLinkedDocs {
+    param (
+        [string]$RelPath = "",
+        [string]$WikiDir = ""
+    )
+    if ([string]::IsNullOrWhiteSpace($RelPath)) { return @() }
+
+    $targetDir = if (-not [string]::IsNullOrWhiteSpace($WikiDir)) { $WikiDir } else { $script:wikiDir }
+    if ([string]::IsNullOrWhiteSpace($targetDir)) { $targetDir = $scriptDir }
+
+    $cleanRel = $RelPath.TrimStart('\', '/').Replace('/', '\')
+    $full = Join-Path $targetDir $cleanRel
+    if (-not (Test-Path $full)) {
+        return @()
+    }
+
+    $mdText = Get-Content -Path $full -Raw -Encoding UTF8
+    $matches = [regex]::Matches($mdText, '\[([^\]]+)\]\(([^)]+\.md)(?:#[^)]*)?\)')
+
+    if ($matches.Count -eq 0) {
+        return @()
+    }
+
+    $linkedItems = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $baseDir = [System.IO.Path]::GetDirectoryName($cleanRel)
+
+    foreach ($m in $matches) {
+        $linkText = $m.Groups[1].Value
+        $linkTarget = $m.Groups[2].Value
+
+        $resolvedRel = if ([string]::IsNullOrWhiteSpace($baseDir)) { $linkTarget } else { Join-Path $baseDir $linkTarget }
+        $resolvedRel = $resolvedRel.Replace('/', '\')
+
+        $targetFull = Join-Path $targetDir $resolvedRel
+        $status = "not_found"
+        $title = $linkText
+
+        if (Test-Path $targetFull) {
+            $meta = Get-DocumentMetadata -File (Get-Item $targetFull) -RelPath $resolvedRel
+            $status = $meta.Status
+            $title = $meta.Title
+        }
+
+        $linkedItems.Add([PSCustomObject]@{
+            LinkText = $linkText
+            RelPath  = $resolvedRel
+            Title    = $title
+            Status   = $status
+        })
+    }
+
+    return $linkedItems
+}
+
+# --- 検索結果ビュー生成関数 (OKF 文脈検索エンジン) ---
+function Get-SearchViewHtml {
+    param (
+        [string]$Query = "",
+        [string]$StatusFilter = "active",
+        [string]$DomainFilter = ""
+    )
+
+    if ([string]::IsNullOrWhiteSpace($StatusFilter)) { $StatusFilter = "active" }
+    $stFilterLower = $StatusFilter.ToLower().Trim()
+
+    $keywords = if (-not [string]::IsNullOrWhiteSpace($Query)) {
+        @($Query -split '\s+' | Where-Object { $_ -ne "" })
+    } else { @() }
+
+    $results = Search-OkfDocs -Query $Query -StatusFilter $StatusFilter -DomainFilter $DomainFilter
 
     # スコア降順ソート
     $sortedResults = @($results | Sort-Object -Property Score, LastUpdated -Descending)
@@ -1176,6 +1370,285 @@ function Invoke-OpenAiChatCompletions {
     }
 }
 
+# --- Agentic RAG ReAct ループ実行関数 ---
+function Invoke-AgenticRagChat {
+    param (
+        [string]$ApiUrl,
+        [string]$ApiKey,
+        [string]$Model,
+        [string]$UserMessage,
+        [array]$History = @(),
+        [string]$WikiDir = "",
+        [int]$MaxTurns = 5,
+        [int]$MaxDocChars = 2000,
+        [int]$TimeoutSec = 30
+    )
+
+    $targetDir = if (-not [string]::IsNullOrWhiteSpace($WikiDir)) { $WikiDir } else { $script:wikiDir }
+    if ([string]::IsNullOrWhiteSpace($targetDir)) { $targetDir = $scriptDir }
+
+    $thinkingLog = [System.Collections.Generic.List[string]]::new()
+    $sourcesList = [System.Collections.Generic.List[PSObject]]::new()
+    $visitedPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+    $tools = @(
+        @{
+            type = "function"
+            function = @{
+                name = "search_okf"
+                description = "OKFスコアリングによりWiki内のActiveドキュメントを検索します。"
+                parameters = @{
+                    type = "object"
+                    properties = @{
+                        query = @{ type = "string"; description = "検索キーワード" }
+                        domain = @{ type = "string"; description = "絞り込みドメイン (任意)" }
+                    }
+                    required = @("query")
+                }
+            }
+        },
+        @{
+            type = "function"
+            function = @{
+                name = "lookup_glossary"
+                description = "用語集 (glossary.md) またはWiki内の記述から特定用語の定義を調べます。"
+                parameters = @{
+                    type = "object"
+                    properties = @{
+                        term = @{ type = "string"; description = "調べたい社内用語" }
+                    }
+                    required = @("term")
+                }
+            }
+        },
+        @{
+            type = "function"
+            function = @{
+                name = "read_doc"
+                description = "指定したドキュメントの本文を取得します (YAMLヘッダー除外)。"
+                parameters = @{
+                    type = "object"
+                    properties = @{
+                        relPath = @{ type = "string"; description = "Markdownファイルの相対パス (例: docs/infrastructure/db.md)" }
+                    }
+                    required = @("relPath")
+                }
+            }
+        },
+        @{
+            type = "function"
+            function = @{
+                name = "get_linked_docs"
+                description = "指定ドキュメント内に含まれる他のMarkdownファイルへのハイパーリンク一覧を取得します。"
+                parameters = @{
+                    type = "object"
+                    properties = @{
+                        relPath = @{ type = "string"; description = "調査対象のMarkdownファイルパス" }
+                    }
+                    required = @("relPath")
+                }
+            }
+        }
+    )
+
+    $sysPrompt = "あなたは社内Wikiのナレッジを自律調査して回答する Agentic RAG アシスタントです。`n" +
+        "必要に応じて利用可能なツール (search_okf, lookup_glossary, read_doc, get_linked_docs) を呼び出し、情報を深掘りして正確な最終回答を作成してください。`n" +
+        "非推奨 (status: deprecated) の記述は避け、常に現行 (active) 情報のみを根拠にしてください。"
+
+    $messages = [System.Collections.Generic.List[PSObject]]::new()
+    [void]$messages.Add(@{ role = "system"; content = $sysPrompt })
+
+    if ($History -and $History.Count -gt 0) {
+        foreach ($h in $History) {
+            if ($h -and $h.role -and $h.content) {
+                [void]$messages.Add(@{ role = $h.role.ToString(); content = $h.content.ToString() })
+            }
+        }
+    }
+    [void]$messages.Add(@{ role = "user"; content = $UserMessage })
+
+    $resolvedKey = Get-ResolvedSecret -SecretValue $ApiKey
+    $cleanApiUrl = $ApiUrl.TrimEnd('/')
+    $endpointUrl = "$cleanApiUrl/chat/completions"
+    if ($cleanApiUrl.EndsWith("/chat/completions")) {
+        $endpointUrl = $cleanApiUrl
+    }
+
+    $currentTurn = 0
+    $finalAnswer = ""
+
+    while ($currentTurn -lt $MaxTurns) {
+        $currentTurn++
+
+        $payloadObj = @{
+            model       = $Model
+            temperature = 0.2
+            messages    = $messages
+            tools       = $tools
+        }
+
+        $jsonBody = $payloadObj | ConvertTo-Json -Depth 6
+        $reqBytes = [System.Text.Encoding]::UTF8.GetBytes($jsonBody)
+
+        $webReq = [System.Net.HttpWebRequest]::Create($endpointUrl)
+        $webReq.Method = "POST"
+        $webReq.ContentType = "application/json; charset=utf-8"
+        $webReq.Timeout = $TimeoutSec * 1000
+        if (-not [string]::IsNullOrWhiteSpace($resolvedKey)) {
+            $webReq.Headers["Authorization"] = "Bearer $resolvedKey"
+        }
+
+        $resMsg = $null
+        try {
+            $reqStream = $webReq.GetRequestStream()
+            $reqStream.Write($reqBytes, 0, $reqBytes.Length)
+            $reqStream.Close()
+
+            $webRes = $webReq.GetResponse()
+            try {
+                $resStream = $webRes.GetResponseStream()
+                $reader = New-Object System.IO.StreamReader($resStream, [System.Text.Encoding]::UTF8)
+                $resJson = $reader.ReadToEnd()
+                $parsed = $resJson | ConvertFrom-Json
+                if ($parsed -and $parsed.choices -and $parsed.choices.Count -gt 0) {
+                    $resMsg = $parsed.choices[0].message
+                }
+            } finally {
+                $webRes.Close()
+            }
+        } catch {
+            [void]$thinkingLog.Add("⚠️ LLM API Tool Calling 通信エラー。Fast モードへフォールバックします。")
+            break
+        }
+
+        if (-not $resMsg) { break }
+
+        $msgHashtable = @{ role = "assistant" }
+        if ($resMsg.content) { $msgHashtable["content"] = $resMsg.content }
+        if ($resMsg.tool_calls) { $msgHashtable["tool_calls"] = $resMsg.tool_calls }
+        [void]$messages.Add($msgHashtable)
+
+        if ($resMsg.tool_calls -and $resMsg.tool_calls.Count -gt 0) {
+            foreach ($toolCall in $resMsg.tool_calls) {
+                $callId = $toolCall.id
+                $fnName = $toolCall.function.name
+                $argsJson = $toolCall.function.arguments
+                $argsObj = try { $argsJson | ConvertFrom-Json } catch { @{} }
+
+                $toolResult = ""
+
+                switch ($fnName) {
+                    "search_okf" {
+                        $q = if ($argsObj.query) { $argsObj.query } else { "" }
+                        $d = if ($argsObj.domain) { $argsObj.domain } else { "" }
+                        [void]$thinkingLog.Add("🔍 Tool Call: search_okf (query: '$q', domain: '$d')")
+                        $toolResult = Invoke-ToolSearchOkf -Query $q -Domain $d -WikiDir $targetDir
+                    }
+                    "lookup_glossary" {
+                        $t = if ($argsObj.term) { $argsObj.term } else { "" }
+                        [void]$thinkingLog.Add("📖 Tool Call: lookup_glossary (term: '$t')")
+                        $toolResult = Invoke-ToolLookupGlossary -Term $t -WikiDir $targetDir
+                    }
+                    "read_doc" {
+                        $p = if ($argsObj.relPath) { $argsObj.relPath } else { "" }
+                        [void]$thinkingLog.Add("📄 Tool Call: read_doc (relPath: '$p')")
+                        $toolResult = Invoke-ToolReadDoc -RelPath $p -WikiDir $targetDir -MaxChars $MaxDocChars
+                        if ($p -and -not $visitedPaths.Contains($p)) {
+                            [void]$visitedPaths.Add($p)
+                        }
+                    }
+                    "get_linked_docs" {
+                        $p = if ($argsObj.relPath) { $argsObj.relPath } else { "" }
+                        [void]$thinkingLog.Add("🔗 Tool Call: get_linked_docs (relPath: '$p')")
+                        $links = Invoke-ToolGetLinkedDocs -RelPath $p -WikiDir $targetDir
+                        if ($links -and $links.Count -gt 0) {
+                            $linkStrList = foreach ($l in $links) { "・[$($l.LinkText)]($($l.RelPath)) [Status: $($l.Status)]" }
+                            $toolResult = "リンク一覧:`n" + ($linkStrList -join "`n")
+                        } else {
+                            $toolResult = "リンクは見つかりませんでした。"
+                        }
+                    }
+                    default {
+                        $toolResult = "未知のツール名: $fnName"
+                    }
+                }
+
+                [void]$messages.Add(@{
+                    role         = "tool"
+                    tool_call_id = $callId
+                    content      = $toolResult
+                })
+            }
+        } else {
+            $finalAnswer = $resMsg.content
+            break
+        }
+    }
+
+    Build-WikiIndex -TargetWikiDir $targetDir | Out-Null
+    foreach ($vp in $visitedPaths) {
+        $found = $script:WikiIndex | Where-Object { $_.RelPath -eq $vp -or $_.RelPath -like "*$vp*" } | Select-Object -First 1
+        if ($found) {
+            $relUri = "/" + [Uri]::EscapeUriString($found.RelPath.Replace('\', '/'))
+            [void]$sourcesList.Add([PSCustomObject]@{
+                title       = $found.Title
+                relPath     = $found.RelPath
+                relUri      = $relUri
+                lastUpdated = $found.LastUpdated.ToString("yyyy-MM-dd")
+                author      = $found.Author
+                status      = $found.Status
+            })
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($finalAnswer)) {
+        [void]$thinkingLog.Add("⏱️ ターン上限 ($MaxTurns) に達したため、収集情報から要約回答を生成します。")
+        [void]$messages.Add(@{ role = "user"; content = "これまでに取得した情報を元に、結論を要約して出力してください。" })
+
+        $payloadObj = @{
+            model       = $Model
+            temperature = 0.2
+            messages    = $messages
+        }
+        $jsonBody = $payloadObj | ConvertTo-Json -Depth 5
+        $reqBytes = [System.Text.Encoding]::UTF8.GetBytes($jsonBody)
+
+        $webReq = [System.Net.HttpWebRequest]::Create($endpointUrl)
+        $webReq.Method = "POST"
+        $webReq.ContentType = "application/json; charset=utf-8"
+        $webReq.Timeout = $TimeoutSec * 1000
+        if (-not [string]::IsNullOrWhiteSpace($resolvedKey)) {
+            $webReq.Headers["Authorization"] = "Bearer $resolvedKey"
+        }
+        try {
+            $reqStream = $webReq.GetRequestStream()
+            $reqStream.Write($reqBytes, 0, $reqBytes.Length)
+            $reqStream.Close()
+
+            $webRes = $webReq.GetResponse()
+            try {
+                $resStream = $webRes.GetResponseStream()
+                $reader = New-Object System.IO.StreamReader($resStream, [System.Text.Encoding]::UTF8)
+                $resJson = $reader.ReadToEnd()
+                $parsed = $resJson | ConvertFrom-Json
+                if ($parsed -and $parsed.choices -and $parsed.choices.Count -gt 0) {
+                    $finalAnswer = $parsed.choices[0].message.content
+                }
+            } finally {
+                $webRes.Close()
+            }
+        } catch {
+            $finalAnswer = "調査結果の集約中にエラーが発生しました。"
+        }
+    }
+
+    return [PSCustomObject]@{
+        answer      = $finalAnswer
+        thinkingLog = $thinkingLog
+        sources     = $sourcesList
+    }
+}
+
 function Get-ChatWidgetHtml {
     $widget = @'
     <!-- Floating Chat Widget -->
@@ -1189,6 +1662,11 @@ function Get-ChatWidgetHtml {
                 <button id="okfChatCloseBtn" class="chat-header-close">✕</button>
             </div>
         </div>
+        <div class="chat-mode-selector">
+            <span class="mode-label">モード:</span>
+            <label><input type="radio" name="okfRagMode" value="fast" checked> ⚡ Fast</label>
+            <label><input type="radio" name="okfRagMode" value="agentic"> 🧠 Agentic</label>
+        </div>
         <div id="okfChatMessages" class="chat-messages">
             <div class="chat-msg assistant">こんにちは！Wiki内のナレッジを元にお答えします。質問を入力してください。</div>
         </div>
@@ -1200,17 +1678,27 @@ function Get-ChatWidgetHtml {
     <style>
         .chat-widget-btn { position: fixed; bottom: 20px; right: 20px; background: #0366d6; color: #fff; border: none; border-radius: 24px; padding: 10px 18px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 9999; font-size: 13px; display: flex; align-items: center; gap: 6px; }
         .chat-widget-btn:hover { background: #0255b3; }
-        .chat-box { position: fixed; bottom: 70px; right: 20px; width: 420px; height: 520px; background: #fff; border: 1px solid #e1e4e8; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); display: none; flex-direction: column; z-index: 9999; overflow: hidden; transition: all 0.2s ease-in-out; }
+        .chat-box { position: fixed; bottom: 70px; right: 20px; width: 440px; height: 550px; background: #fff; border: 1px solid #e1e4e8; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); display: none; flex-direction: column; z-index: 9999; overflow: hidden; transition: all 0.2s ease-in-out; }
         .chat-box.expanded { width: 85vw; height: 85vh; max-width: 980px; max-height: 850px; bottom: 20px; right: 20px; }
         .chat-header { background: #1b1f23; color: #fff; padding: 10px 14px; font-weight: bold; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
         .chat-header-actions { display: flex; align-items: center; gap: 6px; }
         .chat-header-expand, .chat-header-clear { background: #343a40; border: 1px solid #495057; color: #f8f9fa; font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer; }
         .chat-header-expand:hover, .chat-header-clear:hover { background: #495057; }
         .chat-header-close { background: none; border: none; color: #fff; font-size: 16px; cursor: pointer; margin-left: 4px; }
+        
+        .chat-mode-selector { background: #f1f8ff; border-bottom: 1px solid #c8e1ff; padding: 6px 14px; font-size: 12px; display: flex; align-items: center; gap: 12px; color: #0366d6; font-weight: bold; }
+        .chat-mode-selector .mode-label { color: #586069; font-weight: normal; }
+        .chat-mode-selector label { cursor: pointer; display: flex; align-items: center; gap: 3px; }
+
         .chat-messages { flex: 1; padding: 12px; overflow-y: auto; font-size: 13px; display: flex; flex-direction: column; gap: 10px; background: #f8f9fa; }
         .chat-msg { max-width: 90%; padding: 8px 12px; border-radius: 12px; line-height: 1.5; word-break: break-word; }
         .chat-msg.user { align-self: flex-end; background: #0366d6; color: #fff; border-bottom-right-radius: 2px; white-space: pre-wrap; }
         .chat-msg.assistant { align-self: flex-start; background: #fff; color: #24292e; border: 1px solid #e1e4e8; border-bottom-left-radius: 2px; }
+        .chat-thinking { margin-bottom: 8px; font-size: 12px; background: #fff8c5; border: 1px solid #ffeef0; border-radius: 6px; padding: 6px 10px; color: #735c0f; }
+        .chat-thinking summary { font-weight: bold; cursor: pointer; user-select: none; }
+        .chat-thinking ul { margin: 4px 0 0 16px; padding: 0; }
+        .chat-thinking li { margin-bottom: 2px; font-family: monospace; font-size: 11px; }
+
         .chat-sources { margin-top: 8px; font-size: 11px; color: #586069; border-top: 1px dashed #e1e4e8; padding-top: 6px; }
         .chat-msg-actions { margin-top: 6px; display: flex; justify-content: flex-end; border-top: 1px solid #eaecef; padding-top: 4px; }
         .chat-copy-btn { background: none; border: none; color: #0366d6; font-size: 11px; cursor: pointer; padding: 2px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: bold; }
@@ -1319,7 +1807,7 @@ function Get-ChatWidgetHtml {
                         var idx = parseInt(parts[k].replace("___CODEBLOCK_", "").replace("___", ""), 10);
                         parts[k] = codeBlocks[idx];
                     } else if (parts[k].indexOf("<div class='chat-table-wrapper'>") === 0) {
-                        // Table HTML preserved
+                        // Table Preserved
                     } else {
                         var lines = parts[k].split('\n');
                         var res = [];
@@ -1346,13 +1834,22 @@ function Get-ChatWidgetHtml {
                 return parts.join("");
             }
 
-            function appendMsg(role, text, sources) {
+            function appendMsg(role, text, sources, thinkingLog) {
                 var div = document.createElement("div");
                 div.className = "chat-msg " + role;
                 if (role === "user") {
                     div.textContent = text;
                 } else {
-                    div.innerHTML = renderMarkdown(text);
+                    var innerHtml = "";
+                    if (thinkingLog && thinkingLog.length > 0) {
+                        innerHtml += "<details class='chat-thinking'><summary>🧠 Agent 思考プロセス (" + thinkingLog.length + " ステップ)</summary><ul>";
+                        thinkingLog.forEach(function(item) {
+                            innerHtml += "<li>" + escapeHtml(item) + "</li>";
+                        });
+                        innerHtml += "</ul></details>";
+                    }
+                    innerHtml += renderMarkdown(text);
+                    div.innerHTML = innerHtml;
                 }
                 if (sources && sources.length > 0) {
                     var srcDiv = document.createElement("div");
@@ -1401,21 +1898,25 @@ function Get-ChatWidgetHtml {
             function sendMsg() {
                 var q = input.value.trim();
                 if (!q) return;
+
+                var modeRadio = document.querySelector('input[name="okfRagMode"]:checked');
+                var mode = modeRadio ? modeRadio.value : "fast";
+
                 appendMsg("user", q);
                 input.value = "";
                 sendBtn.disabled = true;
-                appendMsg("assistant", "🤔 思考中...");
+                appendMsg("assistant", mode === "agentic" ? "🧠 自律深掘り調査中..." : "⚡ 検索・生成中...");
 
                 fetch("/api/chat", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ message: q, history: chatHistory })
+                    body: JSON.stringify({ mode: mode, message: q, history: chatHistory })
                 }).then(function(res) { return res.json(); }).then(function(data) {
                     msgs.removeChild(msgs.lastChild);
                     if (data.error) {
                         appendMsg("assistant", "⚠️ エラー: " + data.message);
                     } else {
-                        appendMsg("assistant", data.answer, data.sources);
+                        appendMsg("assistant", data.answer, data.sources, data.thinkingLog);
                         chatHistory.push({ role: "user", content: q });
                         chatHistory.push({ role: "assistant", content: data.answer });
                     }
@@ -1572,6 +2073,44 @@ try {
                     $processedHistory = $validHist
                 }
 
+                $reqMode = "fast"
+                if ($reqObj -and $reqObj.mode -and $reqObj.mode.ToString().ToLower() -eq "agentic") {
+                    $reqMode = "agentic"
+                }
+
+                $timeoutSec = 30
+                if ($config.rag -and $config.rag.timeoutSec) {
+                    $timeoutSec = [int]$config.rag.timeoutSec
+                }
+
+                if ($reqMode -eq "agentic") {
+                    # --- Agentic RAG Mode (ReAct 自律調査) ---
+                    $maxTurns = 5
+                    if ($config.rag -and $config.rag.maxAgentTurns) {
+                        $maxTurns = [int]$config.rag.maxAgentTurns
+                    }
+                    $maxDocChars = 2000
+                    if ($config.rag -and $config.rag.maxDocCharLength) {
+                        $maxDocChars = [int]$config.rag.maxDocCharLength
+                    }
+
+                    try {
+                        $agentRes = Invoke-AgenticRagChat -ApiUrl $config.rag.apiUrl -ApiKey $config.rag.apiKey -Model $config.rag.model -UserMessage $userMsg -History $processedHistory -WikiDir $wikiDir -MaxTurns $maxTurns -MaxDocChars $maxDocChars -TimeoutSec $timeoutSec
+                        $jsonRes = @{
+                            mode        = "agentic"
+                            answer      = $agentRes.answer
+                            thinkingLog = $agentRes.thinkingLog
+                            sources     = $agentRes.sources
+                        } | ConvertTo-Json -Depth 5
+                        Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+                    } catch {
+                        $jsonRes = @{ error = "LLM_ERROR"; message = "Agentic RAG 実行中にエラーが発生しました: $_" } | ConvertTo-Json
+                        Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 500
+                    }
+                    continue
+                }
+
+                # --- Fast RAG Mode (1-Pass) ---
                 # 1. OKF 文脈検索 (WinRT 形態素解析エンジン)
                 Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
                 $activeDocs = @($script:WikiIndex | Where-Object { $_.Status -eq "active" })
@@ -1653,13 +2192,10 @@ try {
                 $fullSysPrompt = $baseSysPrompt + [System.Environment]::NewLine + [System.Environment]::NewLine + "[参照Wikiコンテキスト]" + [System.Environment]::NewLine + $contextStrBuilder.ToString()
 
                 # 3. LLM 呼び出し
-                $timeoutSec = 30
-                if ($config.rag -and $config.rag.timeoutSec) {
-                    $timeoutSec = [int]$config.rag.timeoutSec
-                }
                 try {
                     $answerText = Invoke-OpenAiChatCompletions -ApiUrl $config.rag.apiUrl -ApiKey $config.rag.apiKey -Model $config.rag.model -SystemPrompt $fullSysPrompt -UserMessage $userMsg -History $processedHistory -TimeoutSec $timeoutSec
                     $jsonRes = @{
+                        mode    = "fast"
                         answer  = $answerText
                         sources = $sourcesList
                     } | ConvertTo-Json -Depth 4

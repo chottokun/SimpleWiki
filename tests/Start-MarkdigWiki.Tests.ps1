@@ -613,6 +613,80 @@ Describe 'OKF LLM RAG Security & Encryption Tests' {
     }
 }
 
+Describe "Agentic RAG & OKF Tools Tests" {
+    BeforeAll {
+        # Import functions from Start-MarkdigWiki.ps1
+        $scriptPath = Join-Path $projectRoot "Start-MarkdigWiki.ps1"
+        . $scriptPath -DotSourceOnly
+    }
+
+    It "Start-MarkdigWiki.ps1 is encoded as UTF-8 with BOM" {
+        $scriptPath = Join-Path $projectRoot "Start-MarkdigWiki.ps1"
+        $bytes = [System.IO.File]::ReadAllBytes($scriptPath)
+        $bytes.Length | Should BeGreaterThan 3
+        $bytes[0] | Should Be 0xEF
+        $bytes[1] | Should Be 0xBB
+        $bytes[2] | Should Be 0xBF
+    }
+
+    It "Search-OkfDocs scores and filters active documents correctly" {
+        $sampleDir = Join-Path $projectRoot "markdown_sample"
+        Build-WikiIndex -TargetWikiDir $sampleDir -ForceRefresh | Out-Null
+        $results = Search-OkfDocs -Query "Markdown" -StatusFilter "active" -WikiDir $sampleDir
+        $results | Should Not Be $null
+        $results.Count | Should BeGreaterThan 0
+        $results[0].Score | Should BeGreaterThan 0
+    }
+
+    It "Invoke-ToolReadDoc trims body text and strips YAML header" {
+        $sampleDir = Join-Path $projectRoot "markdown_sample"
+        Build-WikiIndex -TargetWikiDir $sampleDir -ForceRefresh | Out-Null
+        $doc = $script:WikiIndex | Select-Object -First 1
+        if ($doc) {
+            $content = Invoke-ToolReadDoc -RelPath $doc.RelPath -WikiDir $sampleDir -MaxChars 50
+            $content | Should Not Be $null
+            $content | Should Not Match "^---"
+            $content.Length | Should BeLessThanObject 100
+        }
+    }
+
+    It "Invoke-ToolGetLinkedDocs extracts markdown relative links" {
+        $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_LinkTest"
+        if (-not (Test-Path $tempDir)) { New-Item -ItemType Directory -Path $tempDir | Out-Null }
+        try {
+            $doc1 = Join-Path $tempDir "doc1.md"
+            $doc2 = Join-Path $tempDir "doc2.md"
+            Set-Content -Path $doc1 -Value "# Doc 1`nSee [Doc 2](doc2.md) for details." -Encoding UTF8
+            Set-Content -Path $doc2 -Value "# Doc 2`nTarget content." -Encoding UTF8
+
+            Build-WikiIndex -TargetWikiDir $tempDir -ForceRefresh | Out-Null
+            $links = Invoke-ToolGetLinkedDocs -RelPath "doc1.md" -WikiDir $tempDir
+            $links | Should Not Be $null
+            $links.Count | Should Be 1
+            $links[0].RelPath | Should Be "doc2.md"
+        } finally {
+            Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "Invoke-ToolLookupGlossary finds terms in document content or tags" {
+        $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_GlossaryTest"
+        if (-not (Test-Path $tempDir)) { New-Item -ItemType Directory -Path $tempDir | Out-Null }
+        try {
+            $glossaryFile = Join-Path $tempDir "glossary.md"
+            Set-Content -Path $glossaryFile -Value "# 社内用語集`n`n## K-DAT`n研究所専用のバックアップツール。" -Encoding UTF8
+
+            Build-WikiIndex -TargetWikiDir $tempDir -ForceRefresh | Out-Null
+            $res = Invoke-ToolLookupGlossary -Term "K-DAT" -WikiDir $tempDir
+            $res | Should Not Be $null
+            $res | Should Match "K-DAT"
+        } finally {
+            Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+
 
 
 
