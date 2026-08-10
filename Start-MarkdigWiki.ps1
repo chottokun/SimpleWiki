@@ -1321,10 +1321,12 @@ try {
                 }
 
                 $topScored = @($docScores | Sort-Object Score -Descending | Select-Object -First $maxDocs)
-                $contextDocs = if ($topScored.Count -gt 0) {
-                    @($topScored | ForEach-Object { $_.Doc })
+                $contextDocs = @()
+                if ($topScored.Count -gt 0) {
+                    $contextDocs = @($topScored | ForEach-Object { $_.Doc })
                 } else {
-                    @($activeDocs | Sort-Object LastUpdated -Descending | Select-Object -First [Math]::Min($maxDocs, $activeDocs.Count))
+                    $takeCount = [Math]::Min($maxDocs, $activeDocs.Count)
+                    $contextDocs = @($activeDocs | Sort-Object LastUpdated -Descending | Select-Object -First $takeCount)
                 }
 
                 # 2. システムプロンプト構築 (OKF メタデータ + 本文スニペット)
