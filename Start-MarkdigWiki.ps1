@@ -1030,7 +1030,7 @@ function Get-ResolvedSecret {
     } elseif ($SecretValue.StartsWith("ENV:")) {
         $envName = $SecretValue.Substring(4).Trim()
         $envVal = [Environment]::GetEnvironmentVariable($envName)
-        return if ($envVal) { $envVal } else { "" }
+        if ($envVal) { return $envVal } else { return "" }
     }
     return $SecretValue
 }
@@ -1076,7 +1076,10 @@ function Invoke-OpenAiChatCompletions {
     }
 
     $cleanApiUrl = $ApiUrl.TrimEnd('/')
-    $endpointUrl = if ($cleanApiUrl.EndsWith("/chat/completions")) { $cleanApiUrl } else { "$cleanApiUrl/chat/completions" }
+    $endpointUrl = "$cleanApiUrl/chat/completions"
+    if ($cleanApiUrl.EndsWith("/chat/completions")) {
+        $endpointUrl = $cleanApiUrl
+    }
 
     $payloadObj = @{
         model       = $Model
@@ -1591,7 +1594,10 @@ try {
             # 画像やその他静的ファイルの返却処理
             } elseif (Test-Path $fullPath -PathType Leaf) {
                 $ext = [System.IO.Path]::GetExtension($fullPath).ToLower()
-                $cType = if ($mimeTypes.ContainsKey($ext)) { $mimeTypes[$ext] } else { "application/octet-stream" }
+                $cType = "application/octet-stream"
+                if ($mimeTypes.ContainsKey($ext)) {
+                    $cType = $mimeTypes[$ext]
+                }
                 $bytes = [System.IO.File]::ReadAllBytes($fullPath)
                 Write-SafeHttpResponse -Response $response -Bytes $bytes -ContentType $cType
 

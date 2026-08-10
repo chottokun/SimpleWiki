@@ -11,7 +11,10 @@ $scriptDir = [System.IO.Path]::GetFullPath($PSScriptRoot)
 
 # 標準の初期パス設定
 $defaultSampleDir = Join-Path $scriptDir "markdown_sample"
-$initialInputDir  = if (Test-Path $defaultSampleDir) { $defaultSampleDir } else { $scriptDir }
+$initialInputDir = $scriptDir
+if (Test-Path $defaultSampleDir) {
+    $initialInputDir = $defaultSampleDir
+}
 $initialOutputDir = Join-Path $scriptDir "dist"
 
 # --- Form 作成 ---
