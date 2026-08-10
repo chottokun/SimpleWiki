@@ -1,6 +1,6 @@
 ---
 title: "REST API 仕様書 ＆ AI Agent / RAG 連携ガイド"
-description: "AI エージェントおよび RAG パイプライン向け機械可読 JSON API エンドポイント (/api/index.json および /api/chunks.json) の詳細仕様書です。"
+description: "AI エージェントおよび RAG パイプライン向け機械可読 JSON API エンドポイント (/api/index.json, /api/chunks.json, /api/chat) の詳細仕様書です。"
 author: "API 開発チーム"
 domain: "仕様/API"
 tags:
@@ -9,7 +9,7 @@ tags:
   - JSON
   - LLM
   - Mermaid
-last_updated: 2026-08-09
+last_updated: 2026-08-10
 status: active
 ---
 
@@ -25,6 +25,7 @@ SimpleWiki が提供する AI エージェント（RAG / LLM）および外部�
 | :--- | :--- | :--- | :--- | :--- |
 | `GET` | `/api/index.json` | Wiki 全件の OKF メタデータ構造化一覧を取得 | なし | 不要 |
 | `GET` | `/api/chunks.json` | RAG 用自動 H2/H3 見出し分割済み JSON チャンク一覧を取得 | なし | 不要 |
+| `POST` | `/api/chat` | OKF 文脈検索 ＋ LLM RAG AI チャット応答を取得 | `{"message": "質問文"}` | 不要 (`config.json` 依存) |
 | `GET` | `/*.md` | 指定相対パスの Raw Markdown 本文を取得 | なし | 不要 |
 
 ---
@@ -94,12 +95,41 @@ Markdown 本文を `#`, `##`, `###` の見出し単位で自動分割し、文�
     "Domain": "仕様/API",
     "Section": "1. 全文書メタデータインデックス API (/api/index.json)",
     "Tags": ["API", "RAG", "JSON"],
-    "LastUpdated": "2026-08-09T00:00:00Z",
+    "LastUpdated": "2026-08-10T00:00:00Z",
     "Status": "active",
     "Content": "### レスポンス構造例:\n```json\n[ ... ]\n```",
     "EnrichedText": "[Document: REST API 仕様書 | Domain: 仕様/API | Section: 1. 全文書メタデータインデックス API | Tags: API, RAG]\n\n### レスポンス構造例:\n```json\n[ ... ]\n```"
   }
 ]
+```
+
+---
+
+## 3. OKF RAG LLM AI チャット API (`/api/chat`)
+
+Wiki 内の `status: active` ドキュメントを自動文脈検索し、グラウンディング（根拠に基づく回答）された AI 応答を取得する POST エンドポイントです。
+
+### リクエスト例 (POST):
+```json
+{
+  "message": "APIはどのようなものがありますか？"
+}
+```
+
+### レスポンス構造例:
+```json
+{
+  "answer": "SimpleWiki が提供する API は...",
+  "sources": [
+    {
+      "title": "REST API 仕様書 ＆ AI Agent / RAG 連携ガイド",
+      "relPath": "docs/api/REST-API.md",
+      "relUri": "/docs/api/REST-API.md",
+      "lastUpdated": "2026-08-10",
+      "author": "API 開発チーム"
+    }
+  ]
+}
 ```
 
 ---
