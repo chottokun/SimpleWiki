@@ -9,13 +9,13 @@ tags:
   - PowerShell
   - Wiki
   - RAG
-last_updated: 2026-08-09
+last_updated: 2026-08-10
 status: active
 ---
 
 # SimpleWiki OKF ナレッジベースへようこそ！
 
-SimpleWiki は、Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作する **100% オフライン対応 Markdown Wiki サーバー ＆ 静的 HTML エキスポートツール** です。
+SimpleWiki は、Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作する **100% オフライン対応 Markdown Wiki サーバー ＆ LLM RAG AI チャット ＆ 静的 HTML エキスポートツール** です。
 
 Google が提唱する **OKF (Open Knowledge Format)** の思想に基づき、Markdown ドキュメントに文脈（著者・最終更新日・状態・カテゴリ・タグ）を付与して人間（Human）と AI エージェント（RAG/LLM）の双方に最適化されたナレッジ管理環境を提供します。
 
@@ -26,12 +26,13 @@ Google が提唱する **OKF (Open Knowledge Format)** の思想に基づき、M
 - 🚀 **100% オフライン動作**: 外部 CDN やデータベース、Node.js / Python などの重いランタイムが一切不要。
 - 📁 **リアルタイム・フォルダツリー**: ディレクトリ内に `.md` ファイルを追加・編集するだけで自動的にサイドバーが更新。
 - 📄 **Google OKF (Open Knowledge Format) 準拠**: YAML Front Matter からの属性抽出・自動補完（フォールバック）に対応。
-- 🤖 **AI エージェント / RAG 用機械可読 API**:
+- 🤖 **LLM RAG AI チャットアシスタント ＆ 機械可読 API**:
   - `/api/index.json`: 全ドキュメントの構造化メタデータ一覧
   - `/api/chunks.json`: 見出し (H2/H3) 単位の自動セマンティック分割済み JSON チャンク API
+  - `/api/chat`: WinRT 日本語形態素解析 ＋ OKF 文脈検索 ＋ マルチターン対話履歴対応 LLM RAG AI チャット API
 - 🔍 **豊富な動的ナビゲーションビュー**:
   - 🕒 [最近の更新](/recent) | 🏷️ [タグ目録](/tags) | 🧹 [品質ダッシュボード](/maintenance) | 👥 [著者一覧](/authors) | 🔍 [全文検索](/search)
-- 🔒 **安全設計**: ディレクトリトラバーサル防止機能 (`403 Forbidden`)、XSS サニタイズ (`HtmlEncode`) を標準完備。
+- 🔒 **安全設計 ＆ キー暗号化**: ディレクトリトラバーサル防止 (`403 Forbidden`)、XSS サニタイズ、Windows DPAPI / AES-256 キー暗号化ユーティリティ (`Set-ApiKey.bat`)。
 - 🎨 **GitHub スタイル ＆ オフライン Mermaid.js**: GFM テーブル、コードハイライト、タスクリスト、100% オフラインダイアグラム表示対応。
 
 ---

@@ -1,6 +1,6 @@
 # SimpleWiki
 
-Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作する **100% オフライン対応 Markdown Wiki サーバー ＆ 静的 HTML エキスポートツール** です。
+Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作する **100% オフライン対応 Markdown Wiki サーバー ＆ LLM RAG AI チャット ＆ 静的 HTML エキスポートツール** です。
 
 ---
 
@@ -9,11 +9,19 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
 - **開発目的**:
   1. 任意ディレクトリの Markdown ドキュメント群を閉域網・オフライン環境で即座に Web Wiki 化。
   2. IIS, Nginx, Apache などの外部 Web サーバー向けに一括で静的 HTML サイトを生成・デプロイ。
-  3. GUI ツール (`Export-GUI.bat`) による直感的なフォルダ選択とエキスポート。
+  3. WinRT 形態素解析と LLM RAG による閉域網・ローカル AI チャットアシスタントの統合。
+  4. GUI ツール (`Export-GUI.bat`) による直感的なフォルダ選択とエキスポート。
 - **アーキテクチャ概要**:
   - **リアルタイム閲覧 & OKF ナレッジハブ**: `System.Net.HttpListener` によるローカル Web サーバー (`http://localhost:8080/`)
+  - **🤖 LLM RAG AI チャットアシスタント ＆ POST `/api/chat` API**:
+    - さくら AI API / Ollama / LM Studio / OpenAI 等の各種 REST LLM エンドポイントへ対応。
+    - **WinRT 日本語形態素解析 (`Get-JapaneseWordsWinRT`)**: Windows 10/11 OS 内蔵の `Windows.Data.Text.WordsSegmenter` による完全依存 0 の分かち書き ＆ 助詞ストップワード自動除去。
+    - **マルチターン対話履歴 (history) 管理 ＆ 安全文字数ガード**: `config.json` で可変調整（`maxHistoryTurns: 3`, `maxHistoryChars: 4000`）。
+    - **高度なチャット UI**: Markdown 表（`<table>`）、コードブロック（`<pre><code>`）、リストの完全描画、`📋 コピー` ボタン、`⛶ 拡大/縮小` トグル、`🧹 履歴クリア` ボタンを標準搭載。
+  - **🔒 API Key 暗号化ユーティリティ (`Set-ApiKey.bat` / `Set-ApiKey.ps1`)**:
+    - Windows DPAPI またはポータブル AES-256 暗号化（`ENC:...` / `DPAPI:...`）により、`config.json` 内の API キーを安全に保護。
   - **Google OKF (Open Knowledge Format) 思想の準拠**: YAML Front Matter からの文脈抽出・自動補完 (フォールバック)・OKF メタデータカード描画
-  - **AI エージェント / LLM 用機械可読 API**: `/api/index.json` エンドポイントによるドキュメント構造・メタデータの構造化データ提供
+  - **AI エージェント / LLM 用機械可読 API**: `/api/index.json` (メタデータ), `/api/chunks.json` (自動セマンティック分割チャンク), `/api/chat` (AI チャット)
   - **動的ナビゲーション & ビュー**: 最近の更新 (`/recent`), タグ集計/検索 (`/tags`), 品質・メンテナンスダッシュボード (`/maintenance`), 著者ディレクトリ (`/authors`), AND 検索 (`/search`)
   - **静的エキスポート**: `Export-MarkdigWiki.ps1` による OKF メタデータカード同梱型 HTML 一括出力
   - **Markdown レンダリング**: .NET 4.6.2 ビルド版 `Markdig.dll` (GFM テーブル・コードブロック・タスクリスト・YamlFrontMatter 対応)
@@ -31,12 +39,16 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
 
 ```text
 SimpleWiki/
-├── Start-MarkdigWiki.ps1   <-- Web サーバー & OKF ナレッジハブ起動スクリプト (UTF-8 with BOM)
+├── Start-MarkdigWiki.ps1   <-- Web サーバー & RAG AI チャット起動スクリプト (UTF-8 with BOM)
 ├── Start-MarkdigWiki.bat   <-- Web サーバー起動バッチ (UTF-8 No-BOM)
+├── Set-ApiKey.ps1          <-- LLM API キー暗号化・設定スクリプト (UTF-8 with BOM)
+├── Set-ApiKey.bat          <-- API キー設定用 ExecutionPolicy Bypass バッチ (UTF-8 No-BOM)
 ├── Export-MarkdigWiki.ps1  <-- OKF 対応静的 HTML エキスポートスクリプト (UTF-8 with BOM)
 ├── Export-MarkdigWiki.bat  <-- 静的 HTML エキスポートバッチ (UTF-8 No-BOM)
 ├── Export-GUI.ps1          <-- 静的 HTML エキスポート GUI (UTF-8 with BOM)
 ├── Export-GUI.bat          <-- GUI 起動用バッチ (UTF-8 No-BOM)
+├── config.json.example     <-- LLM RAG 設定ファイルテンプレート
+├── config.json             <-- ローカル LLM RAG 設定（自動生成・暗号化保存）
 ├── templates/
 │   └── okf-template.md     <-- OKF 準拠ドキュメント新規作成テンプレート
 ├── lib/
@@ -47,13 +59,13 @@ SimpleWiki/
 │   ├── index.md             <-- トップページ
 │   ├── 概要.md               <-- プロジェクト概要
 │   ├── docs/
-│   │   └── 詳細仕様.md       <-- サブフォルダ内サンプル
+│   │   ├── 詳細仕様.md       <-- サブフォルダ内サンプル
+│   │   └── api/
+│   │       └── REST-API.md   <-- REST API 仕様書 & AI Agent 連携ガイド
 │   └── images/
 │       └── architecture.svg <-- サンプル SVG 画像
-├── plan/
-│   └── okf.md              <-- OKF システム詳細実装計画書
 ├── tests/
-│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (21件)
+│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全50件)
 └── README.md                <-- プロジェクト記録
 ```
 
