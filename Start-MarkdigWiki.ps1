@@ -151,7 +151,8 @@ function Get-DocumentMetadata {
         if ($yamlDict["tags"] -is [System.Collections.IEnumerable] -and $yamlDict["tags"] -isnot [string]) {
             $tags = @($yamlDict["tags"])
         } elseif (-not [string]::IsNullOrWhiteSpace($yamlDict["tags"])) {
-            $tags = @($yamlDict["tags"])
+            $rawStr = $yamlDict["tags"].ToString()
+            $tags = @($rawStr -split ',\s*' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
         }
     }
 
@@ -552,7 +553,7 @@ function Get-TagsViewHtml {
 </div>
 "@
     } else {
-        $filtered = $script:WikiIndex | Where-Object { $_.Tags -contains $SelectedTag }
+        $filtered = @($script:WikiIndex | Where-Object { $_.Tags -contains $SelectedTag })
         $encTag   = [System.Net.WebUtility]::HtmlEncode($SelectedTag)
 
         $cardsHtml = foreach ($item in $filtered) {
@@ -577,13 +578,14 @@ function Get-MaintenanceViewHtml {
     Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
     $now = Get-Date
 
-    $staleDocs      = $script:WikiIndex | Where-Object { $_.Status -eq "active" -and ($now - $_.LastUpdated).TotalDays -ge 365 }
-    $draftDocs      = $script:WikiIndex | Where-Object { $_.Status -eq "draft" }
-    $deprecatedDocs = $script:WikiIndex | Where-Object { $_.Status -eq "deprecated" }
+    $staleDocs      = @($script:WikiIndex | Where-Object { $_.Status -eq "active" -and ($now - $_.LastUpdated).TotalDays -ge 365 })
+    $draftDocs      = @($script:WikiIndex | Where-Object { $_.Status -eq "draft" })
+    $deprecatedDocs = @($script:WikiIndex | Where-Object { $_.Status -eq "deprecated" })
 
     function Render-DocList ($docArray) {
-        if (-not $docArray -or $docArray.Count -eq 0) { return "<p class='empty-msg'>該当ドキュメントはありません。</p>" }
-        $items = foreach ($item in $docArray) {
+        $arr = @($docArray)
+        if ($arr.Count -eq 0) { return "<p class='empty-msg'>該当ドキュメントはありません。</p>" }
+        $items = foreach ($item in $arr) {
             $relUri  = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
             $title   = [System.Net.WebUtility]::HtmlEncode($item.Title)
             $lastUpd = $item.LastUpdated.ToString("yyyy-MM-dd")
@@ -620,7 +622,7 @@ function Get-AuthorsViewHtml {
     Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
 
     if ([string]::IsNullOrWhiteSpace($SelectedAuthor)) {
-        $authors = $script:WikiIndex | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Author) } | Group-Object Author
+        $authors = @($script:WikiIndex | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Author) } | Group-Object Author)
 
         $listHtml = foreach ($g in ($authors | Sort-Object Name)) {
             $encAuthor = [System.Net.WebUtility]::HtmlEncode($g.Name)
@@ -636,7 +638,7 @@ function Get-AuthorsViewHtml {
 </ul>
 "@
     } else {
-        $filtered  = $script:WikiIndex | Where-Object { $_.Author -eq $SelectedAuthor }
+        $filtered  = @($script:WikiIndex | Where-Object { $_.Author -eq $SelectedAuthor })
         $encAuthor = [System.Net.WebUtility]::HtmlEncode($SelectedAuthor)
 
         $itemsHtml = foreach ($item in $filtered) {
@@ -655,52 +657,283 @@ function Get-AuthorsViewHtml {
     }
 }
 
-# --- 検索結果ビュー生成関数 ---
+# --- キーワードハイライト処理関数 ---
+function Get-HighlightText {
+    param (
+        [string]$Text = "",
+        [string[]]$Keywords = @()
+    )
+    if ([string]::IsNullOrWhiteSpace($Text)) { return "" }
+
+    $validKws = @($Keywords | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($validKws.Count -eq 0) {
+        return [System.Net.WebUtility]::HtmlEncode($Text)
+    }
+
+    $escapedPatterns = foreach ($kw in $validKws) { [regex]::Escape($kw) }
+    $pattern = "(?i)(" + ($escapedPatterns -join "|") + ")"
+
+    $matches = [regex]::Matches($Text, $pattern)
+    if ($matches.Count -eq 0) {
+        return [System.Net.WebUtility]::HtmlEncode($Text)
+    }
+
+    $sb = New-Object System.Text.StringBuilder
+    $lastIdx = 0
+
+    foreach ($m in $matches) {
+        if ($m.Index -gt $lastIdx) {
+            $chunk = $Text.Substring($lastIdx, $m.Index - $lastIdx)
+            [void]$sb.Append([System.Net.WebUtility]::HtmlEncode($chunk))
+        }
+        $kwMatch = $m.Value
+        $encKw   = [System.Net.WebUtility]::HtmlEncode($kwMatch)
+        [void]$sb.Append("<mark style='background:#fff3cd; padding:0 2px; border-radius:2px;'>$encKw</mark>")
+        $lastIdx = $m.Index + $m.Length
+    }
+
+    if ($lastIdx -lt $Text.Length) {
+        $remaining = $Text.Substring($lastIdx)
+        [void]$sb.Append([System.Net.WebUtility]::HtmlEncode($remaining))
+    }
+
+    return $sb.ToString()
+}
+
+# --- 検索結果ビュー生成関数 (OKF 文脈検索エンジン) ---
 function Get-SearchViewHtml {
-    param ([string]$Query = "")
+    param (
+        [string]$Query = "",
+        [string]$StatusFilter = "active",
+        [string]$DomainFilter = ""
+    )
 
-    Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
-    $encQuery = [System.Net.WebUtility]::HtmlEncode($Query)
+    if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
+        Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+    }
 
-    if ([string]::IsNullOrWhiteSpace($Query)) {
-        return @"
-<h1>🔍 ドキュメント検索</h1>
-<p>キーワードを入力して検索してください。</p>
+    if ([string]::IsNullOrWhiteSpace($StatusFilter)) { $StatusFilter = "active" }
+    $stFilterLower = $StatusFilter.ToLower().Trim()
+
+    $keywords = if (-not [string]::IsNullOrWhiteSpace($Query)) {
+        @($Query -split '\s+' | Where-Object { $_ -ne "" })
+    } else { @() }
+
+    $results = [System.Collections.Generic.List[PSObject]]::new()
+
+    foreach ($item in $script:WikiIndex) {
+        # 1. Status Filter
+        $st = if ($item.Status) { $item.Status.ToString().ToLower().Trim() } else { "active" }
+        if ($stFilterLower -ne "all" -and $stFilterLower -ne "" -and $st -ne $stFilterLower) {
+            continue
+        }
+
+        # 2. Domain Filter
+        if (-not [string]::IsNullOrWhiteSpace($DomainFilter)) {
+            $itemDomain = if ($item.Domain) { $item.Domain } else { "" }
+            if ($itemDomain -notlike "*$DomainFilter*") { continue }
+        }
+
+        if ($keywords.Count -eq 0 -and [string]::IsNullOrWhiteSpace($DomainFilter) -and $stFilterLower -eq "all") {
+            continue
+        }
+
+        # 3. 重み付けスコアリング & AND 判定
+        $score = 0
+        $matchedKwCount = 0
+
+        foreach ($kw in $keywords) {
+            $kwRegex = [regex]::Escape($kw)
+            $kwMatched = $false
+
+            # Title (+10)
+            if ($item.Title -and $item.Title -match $kwRegex) {
+                $score += 10
+                $kwMatched = $true
+            }
+            # Tags (+8)
+            if ($item.Tags) {
+                $tagMatch = $item.Tags | Where-Object { $_ -match $kwRegex }
+                if ($tagMatch) {
+                    $score += 8
+                    $kwMatched = $true
+                }
+            }
+            # Description (+5)
+            if ($item.Description -and $item.Description -match $kwRegex) {
+                $score += 5
+                $kwMatched = $true
+            }
+            # Domain (+4)
+            if ($item.Domain -and $item.Domain -match $kwRegex) {
+                $score += 4
+                $kwMatched = $true
+            }
+            # Author (+3)
+            if ($item.Author -and $item.Author -match $kwRegex) {
+                $score += 3
+                $kwMatched = $true
+            }
+            # BodyText (+1 per hit, max 10)
+            if ($item.BodyText) {
+                $bodyMatches = ([regex]::Matches($item.BodyText, "(?i)$kwRegex")).Count
+                if ($bodyMatches -gt 0) {
+                    $score += [Math]::Min($bodyMatches, 10)
+                    $kwMatched = $true
+                }
+            }
+
+            if ($kwMatched) {
+                $matchedKwCount++
+            }
+        }
+
+        # AND条件検証
+        if ($keywords.Count -gt 0 -and $matchedKwCount -lt $keywords.Count) {
+            continue
+        }
+
+        # 非推奨 (deprecated) 70% スコア減点
+        if ($st -eq "deprecated") {
+            $score = [Math]::Floor($score * 0.3)
+        }
+
+        if ($score -gt 0 -or ($keywords.Count -eq 0 -and (-not [string]::IsNullOrWhiteSpace($DomainFilter) -or $stFilterLower -ne "all"))) {
+            # スニペット抽出
+            $snippet = ""
+            if ($item.BodyText) {
+                $lines = $item.BodyText -split "\r?\n"
+                foreach ($line in $lines) {
+                    if ($line -match '^\s*---') { continue }
+                    $hasMatch = $false
+                    if ($keywords.Count -gt 0) {
+                        foreach ($kw in $keywords) {
+                            if ($line -match [regex]::Escape($kw)) {
+                                $hasMatch = $true
+                                break
+                            }
+                        }
+                    } else {
+                        if (-not [string]::IsNullOrWhiteSpace($line)) { $hasMatch = $true }
+                    }
+                    if ($hasMatch) {
+                        $snippet = $line.Trim()
+                        break
+                    }
+                }
+            }
+
+            $results.Add([PSCustomObject]@{
+                Meta        = $item
+                Score       = $score
+                Snippet     = $snippet
+                LastUpdated = $item.LastUpdated
+            })
+        }
+    }
+
+    # スコア降順ソート
+    $sortedResults = @($results | Sort-Object -Property Score, LastUpdated -Descending)
+
+    $encQuery   = [System.Net.WebUtility]::HtmlEncode($Query)
+    $encDomain  = [System.Net.WebUtility]::HtmlEncode($DomainFilter)
+
+    $optActive     = if ($stFilterLower -eq "active")     { "selected" } else { "" }
+    $optDraft      = if ($stFilterLower -eq "draft")      { "selected" } else { "" }
+    $optDeprecated = if ($stFilterLower -eq "deprecated") { "selected" } else { "" }
+    $optAll        = if ($stFilterLower -eq "all")        { "selected" } else { "" }
+
+    $resultsHtmlList = foreach ($r in $sortedResults) {
+        $item   = $r.Meta
+        $relUri = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
+
+        $titleHtml = Get-HighlightText -Text $item.Title -Keywords $keywords
+        $descHtml  = Get-HighlightText -Text $item.Description -Keywords $keywords
+        $snipHtml  = Get-HighlightText -Text $r.Snippet -Keywords $keywords
+
+        $domainEnc = [System.Net.WebUtility]::HtmlEncode($item.Domain)
+        $authorEnc = [System.Net.WebUtility]::HtmlEncode($item.Author)
+        $lastUpd   = $item.LastUpdated.ToString("yyyy-MM-dd")
+
+        $statusBadge = switch ($item.Status) {
+            "draft"      { '<span class="badge badge-draft">📝 Draft</span>' }
+            "deprecated" { '<span class="badge badge-deprecated">🗑️ Deprecated</span>' }
+            default      { '<span class="badge badge-active">✅ Active</span>' }
+        }
+
+        $tagsHtml = ""
+        if ($item.Tags -and $item.Tags.Count -gt 0) {
+            $badges = foreach ($t in $item.Tags) {
+                $encT = [System.Net.WebUtility]::HtmlEncode($t)
+                "<span class='tag-badge'>🏷️ $encT</span>"
+            }
+            $tagsHtml = "<div class='okf-tags' style='margin-top:4px;'>" + ($badges -join " ") + "</div>"
+        }
+
+        $scoreHtml = if ($r.Score -gt 0) { "<span style='font-size:12px; color:#6a737d; margin-left:10px;'>(関連度スコア: $($r.Score))</span>" } else { "" }
+
+        @"
+<div class="search-item" style="border-bottom: 1px solid #e1e4e8; padding: 14px 0;">
+    <h3 style="margin: 0 0 6px 0; font-size: 16px;">
+        <a href="$relUri">$titleHtml</a> $statusBadge $scoreHtml
+    </h3>
+    <div style="font-size: 12px; color: #586069; margin-bottom: 6px;">
+        📁 ドメイン: $domainEnc | 📅 最終更新: $lastUpd | 👤 著者: $authorEnc
+    </div>
+    $tagsHtml
+    <p style="margin: 8px 0 0 0; font-size: 13px; color: #444; background: #f8f9fa; padding: 6px 10px; border-left: 3px solid #0366d6; border-radius: 2px;">
+        ... $snipHtml ...
+    </p>
+</div>
 "@
     }
 
-    $keywords = $Query.Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)
-    $results  = [System.Collections.Generic.List[PSObject]]::new()
-
-    foreach ($item in $script:WikiIndex) {
-        $searchTarget = "$($item.Title) $($item.Description) $($item.Author) $($item.Domain) $($item.Tags -join ' ') $($item.BodyText)"
-        $isMatch = $true
-        foreach ($kw in $keywords) {
-            if ($searchTarget.IndexOf($kw, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
-                $isMatch = $false
-                break
-            }
-        }
-        if ($isMatch) {
-            $results.Add($item)
-        }
-    }
-
-    $resultsHtml = foreach ($item in $results) {
-        $relUri = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
-        $title  = [System.Net.WebUtility]::HtmlEncode($item.Title)
-        $desc   = [System.Net.WebUtility]::HtmlEncode($item.Description)
-        "<div class='search-item'><h3><a href='$relUri'>$title</a></h3><p>$desc</p></div>"
+    $resultsContent = if ($sortedResults.Count -gt 0) {
+        $resultsHtmlList -join "`n"
+    } else {
+        "<p style='color: #666; margin-top: 20px;'>該当するドキュメントが見つかりませんでした。</p>"
     }
 
     return @"
-<h1>🔍 検索結果: $encQuery</h1>
-<p>該当件数: $($results.Count) 件</p>
+<h1>🔍 OKF ナレッジ検索結果 ($($sortedResults.Count) 件)</h1>
+<div style="background: #f6f8fa; padding: 16px; border: 1px solid #e1e4e8; border-radius: 6px; margin-bottom: 20px;">
+    <form action="/search" method="GET" accept-charset="UTF-8" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+        <div style="flex: 1; min-width: 200px;">
+            <input type="text" name="q" value="$encQuery" placeholder="キーワード (例: PostgreSQL 障害)" style="width: 100%; padding: 6px 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px;">
+        </div>
+        <div>
+            <label style="font-size: 12px; font-weight: bold; color: #586069;">ステータス:</label>
+            <select name="status" style="padding: 6px 10px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px;">
+                <option value="active" $optActive>現行 (Active)</option>
+                <option value="draft" $optDraft>下書き (Draft)</option>
+                <option value="deprecated" $optDeprecated>非推奨 (Deprecated)</option>
+                <option value="all" $optAll>すべて (All)</option>
+            </select>
+        </div>
+        <div>
+            <label style="font-size: 12px; font-weight: bold; color: #586069;">ドメイン:</label>
+            <input type="text" name="domain" value="$encDomain" placeholder="例: infrastructure" style="padding: 6px 10px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; width: 140px;">
+        </div>
+        <div>
+            <button type="submit" style="padding: 6px 16px; font-size: 14px; background: #0366d6; color: #fff; border: none; border-radius: 4px; cursor: pointer;">🔍 検索</button>
+        </div>
+    </form>
+</div>
 <div class="search-results">
-    $($resultsHtml -join "`n")
+    $resultsContent
 </div>
 "@
 }
+
+function Get-OKFSearchResultsHtml {
+    param (
+        [string]$query = "",
+        [string]$statusFilter = "active",
+        [string]$domainFilter = ""
+    )
+    return Get-SearchViewHtml -Query $query -StatusFilter $statusFilter -DomainFilter $domainFilter
+}
+
 
 if ($DotSourceOnly) { return }
 
@@ -736,6 +969,45 @@ $mimeTypes = @{
     ".js"   = "application/javascript; charset=utf-8"
 }
 
+# --- UTF-8 URL クエリパラメータ解析関数 ---
+function Get-QueryParams {
+    param ([Parameter(Mandatory = $true)][System.Net.HttpListenerRequest]$Request)
+    $queryDict = @{}
+    $rawQuery = $Request.Url.Query
+    if (-not [string]::IsNullOrWhiteSpace($rawQuery)) {
+        $trimmed = $rawQuery.TrimStart('?')
+        $pairs = $trimmed -split '&'
+        foreach ($pair in $pairs) {
+            if ([string]::IsNullOrWhiteSpace($pair)) { continue }
+            $kv = $pair -split '=', 2
+            $key = [System.Net.WebUtility]::UrlDecode($kv[0])
+            $val = if ($kv.Length -gt 1) { [System.Net.WebUtility]::UrlDecode($kv[1]) } else { "" }
+            $queryDict[$key] = $val
+        }
+    }
+    return $queryDict
+}
+
+# --- 安全な HTTP レスポンス送信関数 ---
+function Write-SafeHttpResponse {
+    param (
+        [Parameter(Mandatory = $true)]$Response,
+        [Parameter(Mandatory = $true)][byte[]]$Bytes,
+        [string]$ContentType = "text/html; charset=utf-8",
+        [int]$StatusCode = 200
+    )
+    try {
+        $Response.StatusCode = $StatusCode
+        $Response.ContentType = $ContentType
+        $Response.ContentLength64 = $Bytes.Length
+        $Response.OutputStream.Write($Bytes, 0, $Bytes.Length)
+    } catch [System.Net.HttpListenerException], [System.IO.IOException], [System.ObjectDisposedException] {
+        # クライアントが応答完了前に接続を切断・再読み込みした場合の不必要なエラー出力を安全に抑制
+    } catch {
+        Write-Warning "HTTP応答送信エラー: $_"
+    }
+}
+
 try {
     while ($listener.IsListening) {
         $context  = $listener.GetContext()
@@ -744,22 +1016,19 @@ try {
 
         try {
             $rawPath = [System.Net.WebUtility]::UrlDecode($request.Url.LocalPath)
+            $queryParams = Get-QueryParams -Request $request
 
             # 1. API エンドポイント (/api/index.json, /api/chunks.json)
             if ($rawPath -eq "/api/index.json") {
                 $jsonStr = Get-ApiIndexJson
                 $bytes   = [System.Text.Encoding]::UTF8.GetBytes($jsonStr)
-                $response.ContentType = "application/json; charset=utf-8"
-                $response.ContentLength64 = $bytes.Length
-                $response.OutputStream.Write($bytes, 0, $bytes.Length)
+                Write-SafeHttpResponse -Response $response -Bytes $bytes -ContentType "application/json; charset=utf-8"
                 continue
             }
             if ($rawPath -eq "/api/chunks.json") {
                 $jsonStr = Get-ApiChunksJson
                 $bytes   = [System.Text.Encoding]::UTF8.GetBytes($jsonStr)
-                $response.ContentType = "application/json; charset=utf-8"
-                $response.ContentLength64 = $bytes.Length
-                $response.OutputStream.Write($bytes, 0, $bytes.Length)
+                Write-SafeHttpResponse -Response $response -Bytes $bytes -ContentType "application/json; charset=utf-8"
                 continue
             }
 
@@ -774,7 +1043,7 @@ try {
                 $bodyContent   = Get-RecentViewHtml
             } elseif ($rawPath -eq "/tags") {
                 $isDynamicView = $true
-                $tagParam      = $request.QueryString["tag"]
+                $tagParam      = $queryParams["tag"]
                 $pageTitle     = if ($tagParam) { "タグ: $tagParam" } else { "タグ一覧" }
                 $bodyContent   = Get-TagsViewHtml -SelectedTag $tagParam
             } elseif ($rawPath -eq "/maintenance") {
@@ -783,14 +1052,17 @@ try {
                 $bodyContent   = Get-MaintenanceViewHtml
             } elseif ($rawPath -eq "/authors") {
                 $isDynamicView = $true
-                $authorParam   = $request.QueryString["name"]
+                $authorParam   = $queryParams["name"]
                 $pageTitle     = if ($authorParam) { "著者: $authorParam" } else { "著者一覧" }
                 $bodyContent   = Get-AuthorsViewHtml -SelectedAuthor $authorParam
             } elseif ($rawPath -eq "/search") {
                 $isDynamicView = $true
-                $qParam        = $request.QueryString["q"]
+                $qParam        = $queryParams["q"]
+                $stParam       = $queryParams["status"]
+                $domParam      = $queryParams["domain"]
+                $stValue       = if (-not [string]::IsNullOrWhiteSpace($stParam)) { $stParam } else { "active" }
                 $pageTitle     = if ($qParam) { "検索: $qParam" } else { "検索" }
-                $bodyContent   = Get-SearchViewHtml -Query $qParam
+                $bodyContent   = Get-SearchViewHtml -Query $qParam -StatusFilter $stValue -DomainFilter $domParam
             }
 
             # Markdown ファイルの物理存在チェックと決定
@@ -816,10 +1088,8 @@ try {
             $isAllowed = $fullPath.StartsWith($fullWikiDir, [System.StringComparison]::OrdinalIgnoreCase) -or $fullPath.StartsWith($fullScriptLibDir, [System.StringComparison]::OrdinalIgnoreCase)
             
             if (-not $isDynamicView -and -not $isAllowed) {
-                $response.StatusCode = 403
                 $forbiddenBytes = [System.Text.Encoding]::UTF8.GetBytes("<h1>403 Forbidden</h1>")
-                $response.ContentLength64 = $forbiddenBytes.Length
-                $response.OutputStream.Write($forbiddenBytes, 0, $forbiddenBytes.Length)
+                Write-SafeHttpResponse -Response $response -Bytes $forbiddenBytes -StatusCode 403
                 continue
             }
 
@@ -923,7 +1193,7 @@ try {
             <a href="/authors">👥 著者一覧</a>
             <a href="/api/index.json" target="_blank">🤖 API (JSON)</a>
         </nav>
-        <form action="/search" method="GET" class="search-form">
+        <form action="/search" method="GET" accept-charset="UTF-8" class="search-form">
             <input type="text" name="q" placeholder="Wikiを検索..." required>
             <button type="submit">検索</button>
         </form>
@@ -959,28 +1229,23 @@ try {
 '@
                 $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent)
                 $bytes = [System.Text.Encoding]::UTF8.GetBytes($fullHtml)
-                $response.ContentType = "text/html; charset=utf-8"
-                $response.ContentLength64 = $bytes.Length
-                $response.OutputStream.Write($bytes, 0, $bytes.Length)
+                Write-SafeHttpResponse -Response $response -Bytes $bytes
 
             # 画像やその他静的ファイルの返却処理
             } elseif (Test-Path $fullPath -PathType Leaf) {
                 $ext = [System.IO.Path]::GetExtension($fullPath).ToLower()
-                $response.ContentType = if ($mimeTypes.ContainsKey($ext)) { $mimeTypes[$ext] } else { "application/octet-stream" }
+                $cType = if ($mimeTypes.ContainsKey($ext)) { $mimeTypes[$ext] } else { "application/octet-stream" }
                 $bytes = [System.IO.File]::ReadAllBytes($fullPath)
-                $response.ContentLength64 = $bytes.Length
-                $response.OutputStream.Write($bytes, 0, $bytes.Length)
+                Write-SafeHttpResponse -Response $response -Bytes $bytes -ContentType $cType
 
             # 404 Not Found (XSS 対策済み)
             } else {
-                $response.StatusCode = 404
                 $safePath = [System.Net.WebUtility]::HtmlEncode($rawPath)
                 $notFoundBytes = [System.Text.Encoding]::UTF8.GetBytes("<h1>404 Not Found</h1><p>$safePath</p>")
-                $response.ContentLength64 = $notFoundBytes.Length
-                $response.OutputStream.Write($notFoundBytes, 0, $notFoundBytes.Length)
+                Write-SafeHttpResponse -Response $response -Bytes $notFoundBytes -StatusCode 404
             }
         } finally {
-            $response.Close()
+            try { $response.Close() } catch {}
         }
     }
 } finally {

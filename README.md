@@ -110,21 +110,36 @@ SimpleWiki/
 
 ---
 
+## 依存ライブラリと Windows 11 互換性について
+
+### **完全スタンドアロン（追加インストール不要）**
+- **Windows 11 標準動作保証**: Windows 11 に標準でプリインストールされている **Windows PowerShell 5.1** および **.NET Framework 4.8** の環境のみでそのまま起動・動作します。
+- **事前同梱ライブラリ (`lib/`)**:
+  - `Markdig.dll`: .NET Framework 4.6.2 ビルド版 Markdown パーサー (GFM / YAML Front Matter 対応)
+  - `System.Memory.dll` / `System.Buffers.dll` / `System.Numerics.Vectors.dll` / `System.Runtime.CompilerServices.Unsafe.dll`: .NET 依存補助アセンブリ
+  - `mermaid.min.js`: オフライン表示用 Mermaid.js ライブラリ
+- **インターネット接続不要**: `nuget` や `npm` によるオンラインパッケージ取得、管理者権限のインストール作業は一切不要です。リポジトリを展開するだけで 100% 閉域網・オフライン環境で動作します。
+
+---
+
 ## テストと品質検証
 
 ### 3段階の品質検証フェーズ (Syntax AST / Pester / E2E Export)
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\tests\Start-MarkdigWiki.Tests.ps1"
 ```
-- **検証結果**: 3段階すべての検証フェーズにおいて **100% PASS**（全 24 件の Pester テスト合格）。
+- **検証結果**: 全 40 件の Pester 自動テストが **100% PASS**。
   - **1. スクリプト構文・AST検証**: 全 `.ps1` ファイルの構文解析・トークン検証に合格
-  - **2. Pester 単体・統合テスト (全 24 件)**:
+  - **2. Pester 単体・統合・セキュリティテスト (全 40 件)**:
     - Markdig アセンブリロード & GFM パイプライン構築
     - ディレクトリトラバーサル防止 (`403 Forbidden`)
-    - XSS サニタイズ (404 パス、タイトル、OKF 属性値)
-    - OKF メタデータ解析・YAML パース例外処理・自動補完 (フォールバック) 検証
-    - 箇条書きリスト形式タグ (`- tag`)、クォートタイトル、コメント無視検証
+    - XSS サニタイズ (404 パス、タイトル、検索フォーム、OKF 属性値)
+    - OKF メタデータ解析・YAML パース例外処理・自動補完 (フォールバック)・カンマ区切りタグ対応
     - OKF 動的ビュー生成 (`/recent`, `/tags`, `/maintenance`, `/authors`, `/search`)
+    - OKF 文脈検索エンジン重み付けスコアリング & AND 条件検索
+    - 全角スペース（`U+3000`）による検索単語分解対応
+    - URL エンコードされた UTF-8 日本語クエリパラメータのデコード (`Get-QueryParams`)
+    - クライアント接続切断時のソケット例外非破壊保護 (`Write-SafeHttpResponse`)
     - AI エージェント用 API JSON 出力 (`/api/index.json`)
     - RAG 用セマンティックチャンク自動分割 API 出力 (`/api/chunks.json`)
     - 静的 HTML エキスポート (`Export-MarkdigWiki.ps1`) とトップバー/フッターメタデータカード統合
@@ -141,3 +156,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\te
   - `.NET System.*` アセンブリ: MIT License (by .NET Foundation)
 
 詳細なライセンス全文および著作権表示は [LICENSE.md](LICENSE.md) をご覧ください。商用・個人利用・社内展開を含め自由に再配布いただけます。
+

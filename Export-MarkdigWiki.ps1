@@ -246,7 +246,8 @@ function Get-DocumentMetadata {
         if ($yamlDict["tags"] -is [System.Collections.IEnumerable] -and $yamlDict["tags"] -isnot [string]) {
             $tags = @($yamlDict["tags"])
         } elseif (-not [string]::IsNullOrWhiteSpace($yamlDict["tags"])) {
-            $tags = @($yamlDict["tags"])
+            $rawStr = $yamlDict["tags"].ToString()
+            $tags = @($rawStr -split ',\s*' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
         }
     }
 

@@ -287,5 +287,236 @@ Describe "OKF Dynamic View & API Endpoint Tests" {
     }
 }
 
+Describe "Get-HighlightText Utility Tests" {
+    BeforeAll {
+        $serverScript = Join-Path $projectRoot "Start-MarkdigWiki.ps1"
+        . $serverScript -DotSourceOnly
+    }
+
+    It "Highlights keyword in safe HTML text" {
+        $result = Get-HighlightText -Text 'PostgreSQL Database Manual' -Keywords @('PostgreSQL')
+        $result | Should Match '<mark[^>]*>PostgreSQL</mark>'
+    }
+
+    It "Handles special regex metacharacters in keywords without error" {
+        $result = Get-HighlightText -Text 'C# & (Notes) Guide' -Keywords @('C#', '(Notes)')
+        $result | Should Match '<mark[^>]*>C#</mark>'
+        $result | Should Match '<mark[^>]*>\(Notes\)</mark>'
+    }
+
+    It "Does not corrupt HTML tags when keyword is style, mark, or background" {
+        $result = Get-HighlightText -Text 'This is a style and mark test' -Keywords @('style', 'mark')
+        $result | Should Not Match '<mark[^>]*<mark'
+        $result | Should Match '<mark[^>]*>style</mark>'
+        $result | Should Match '<mark[^>]*>mark</mark>'
+    }
+}
+
+Describe 'OKF Search Engine Advanced Scoring & Filtering Tests' {
+    BeforeAll {
+        $serverScript = Join-Path $projectRoot "Start-MarkdigWiki.ps1"
+        . $serverScript -DotSourceOnly
+        $sampleDir = Join-Path $projectRoot "markdown_sample"
+        $script:WikiIndexDirWriteTime = (Get-Item $sampleDir).LastWriteTime
+
+        $script:WikiIndex = @(
+            [PSCustomObject]@{
+                Title       = "PostgreSQL DB Recovery"
+                Description = "Database recovery steps"
+                Author      = "Taro Yamada"
+                Domain      = "infrastructure/database"
+                Tags        = @("PostgreSQL", "Database")
+                LastUpdated = (Get-Date "2026-08-01")
+                Status      = "active"
+                HasYaml     = $true
+                RelPath     = "docs/db-recovery.md"
+                FullPath    = "C:\wiki\docs\db-recovery.md"
+                BodyText    = "How to recover PostgreSQL when crash occurs."
+            },
+            [PSCustomObject]@{
+                Title       = "General Troubleshooting"
+                Description = "General system issues"
+                Author      = "Jiro Sato"
+                Domain      = "support"
+                Tags        = @("System")
+                LastUpdated = (Get-Date "2026-07-01")
+                Status      = "active"
+                HasYaml     = $true
+                RelPath     = "docs/general.md"
+                FullPath    = "C:\wiki\docs\general.md"
+                BodyText    = "Check logs for PostgreSQL database errors and recovery."
+            },
+            [PSCustomObject]@{
+                Title       = "Old Legacy Database Setup"
+                Description = "Deprecated setup guide for PostgreSQL"
+                Author      = "Saburo Tanaka"
+                Domain      = "infrastructure/database"
+                Tags        = @("PostgreSQL", "Legacy")
+                LastUpdated = (Get-Date "2024-01-01")
+                Status      = "deprecated"
+                HasYaml     = $true
+                RelPath     = "docs/legacy-db.md"
+                FullPath    = "C:\wiki\docs\legacy-db.md"
+                BodyText    = "PostgreSQL setup instructions for legacy server."
+            },
+            [PSCustomObject]@{
+                Title       = 'C# & (Notes) Guide'
+                Description = 'Guide for C# development with (Notes)'
+                Author      = 'Hanako Suzuki'
+                Domain      = 'dev'
+                Tags        = @('C#', 'Notes')
+                LastUpdated = (Get-Date "2026-08-05")
+                Status      = 'active'
+                HasYaml     = $true
+                RelPath     = 'docs/csharp-notes.md'
+                FullPath    = 'C:\wiki\docs\csharp-notes.md'
+                BodyText    = 'This document covers C# programming and (Notes).'
+            }
+        )
+    }
+
+    It 'TC-01: Single keyword search returns matching items' {
+        $html = Get-SearchViewHtml -Query 'PostgreSQL' -StatusFilter 'all'
+        $html | Should Match 'docs/db-recovery.md'
+        $html | Should Match 'General Troubleshooting'
+        $html | Should Match 'Old Legacy Database Setup'
+    }
+
+    It 'TC-02: Multi-word AND search returns only documents matching ALL keywords' {
+        $html = Get-SearchViewHtml -Query 'PostgreSQL crash' -StatusFilter 'all'
+        $html | Should Match 'docs/db-recovery.md'
+        $html | Should Not Match 'General Troubleshooting'
+        $html | Should Not Match 'Old Legacy Database Setup'
+    }
+
+    It 'TC-03: Ranks document with Title match higher than Body-only match' {
+        $html = Get-SearchViewHtml -Query 'PostgreSQL' -StatusFilter 'all'
+        $recoveryPos   = $html.IndexOf('docs/db-recovery.md')
+        $troublePos    = $html.IndexOf('General Troubleshooting')
+        $recoveryPos | Should BeGreaterThan -1
+        $troublePos  | Should BeGreaterThan -1
+        $recoveryPos | Should BeLessThan $troublePos
+    }
+
+    It 'TC-04: StatusFilter active excludes deprecated documents' {
+        $html = Get-SearchViewHtml -Query 'PostgreSQL' -StatusFilter 'active'
+        $html | Should Match 'docs/db-recovery.md'
+        $html | Should Not Match 'Old Legacy Database Setup'
+    }
+
+    It 'TC-05: StatusFilter deprecated includes deprecated documents' {
+        $html = Get-SearchViewHtml -Query 'PostgreSQL' -StatusFilter 'deprecated'
+        $html | Should Match 'Old Legacy Database Setup'
+        $html | Should Not Match 'docs/db-recovery.md'
+    }
+
+    It 'TC-06: Highlight keywords in search results snippet' {
+        $html = Get-SearchViewHtml -Query 'PostgreSQL' -StatusFilter 'active'
+        $html | Should Match '<mark[^>]*>PostgreSQL</mark>'
+    }
+
+    It 'TC-07: Special character query executes safely without regex exception' {
+        { $script:specHtml = Get-SearchViewHtml -Query 'C# (Notes)' -StatusFilter 'all' } | Should Not Throw
+        $script:specHtml | Should Match 'docs/csharp-notes.md'
+        $script:specHtml | Should Match '&amp;'
+    }
+}
+
+Describe 'Critical Edge Case & Security Tests' {
+    BeforeAll {
+        $serverScript = Join-Path $projectRoot "Start-MarkdigWiki.ps1"
+        . $serverScript -DotSourceOnly
+        $sampleDir = Join-Path $projectRoot "markdown_sample"
+        $script:WikiIndexDirWriteTime = (Get-Item $sampleDir).LastWriteTime
+
+        $script:WikiIndex = @(
+            [PSCustomObject]@{
+                Title       = "PostgreSQL DB Recovery"
+                Description = "Database recovery steps"
+                Author      = "Taro Yamada"
+                Domain      = "infrastructure/database"
+                Tags        = @("PostgreSQL", "Database")
+                LastUpdated = (Get-Date "2026-08-01")
+                Status      = "active"
+                HasYaml     = $true
+                RelPath     = "docs/db-recovery.md"
+                FullPath    = "C:\wiki\docs\db-recovery.md"
+                BodyText    = "How to recover PostgreSQL when crash occurs."
+            },
+            [PSCustomObject]@{
+                Title       = "General Troubleshooting"
+                Description = "General system issues"
+                Author      = "Jiro Sato"
+                Domain      = "support"
+                Tags        = @("System")
+                LastUpdated = (Get-Date "2026-07-01")
+                Status      = "active"
+                HasYaml     = $true
+                RelPath     = "docs/general.md"
+                FullPath    = "C:\wiki\docs\general.md"
+                BodyText    = "Check logs for PostgreSQL database errors and recovery."
+            }
+        )
+    }
+
+    It 'Splits keywords correctly with Japanese full-width space' {
+        $queryWithJpSpace = "PostgreSQL" + [char]0x3000 + "crash"
+        $html = Get-SearchViewHtml -Query $queryWithJpSpace -StatusFilter 'all'
+        $html | Should Match 'docs/db-recovery.md'
+        $html | Should Not Match 'General Troubleshooting'
+    }
+
+    It 'Encodes XSS payload in search query input cleanly without raw HTML injection' {
+        $xssQuery = '<script>alert("xss")</script>'
+        $html = Get-SearchViewHtml -Query $xssQuery -StatusFilter 'all'
+        $html | Should Not Match '<script>alert\("xss"\)</script>'
+        $html | Should Match '&lt;script&gt;'
+    }
+
+    It 'Executes facet-only domain filter search without keywords' {
+        $html = Get-SearchViewHtml -Query '' -StatusFilter 'all' -DomainFilter 'infrastructure'
+        $html | Should Match 'docs/db-recovery.md'
+        $html | Should Not Match 'General Troubleshooting'
+    }
+
+    It 'Gracefully handles invalid StatusFilter parameter without crashing' {
+        { $script:invalidHtml = Get-SearchViewHtml -Query 'PostgreSQL' -StatusFilter 'invalid_status_value' } | Should Not Throw
+        $script:invalidHtml | Should Not Match 'docs/db-recovery.md'
+    }
+
+    It 'Parses comma-separated tag string in YAML correctly into array' {
+        $sampleMd = @"
+---
+title: "Comma Tag Test"
+tags: "PostgreSQL, Database, Recovery"
+---
+# Test
+"@
+        $meta = Get-DocumentMetadata -MdText $sampleMd -RelPath "test.md"
+        $meta.Tags.Count | Should Be 3
+        $meta.Tags | Should Contain "PostgreSQL"
+        $meta.Tags | Should Contain "Database"
+        $meta.Tags | Should Contain "Recovery"
+    }
+
+    It 'Get-QueryParams decodes percent-encoded UTF-8 Japanese query string without mojibake' {
+        # %E3%83%8F%E3%83%B3%E3%83%89%E3%83%96%E3%83%83%E3%82%AF = "ハンドブック"
+        $mockReq = [PSCustomObject]@{
+            Url = [PSCustomObject]@{
+                Query = "?q=%E3%83%8F%E3%83%B3%E3%83%89%E3%83%96%E3%83%83%E3%82%AF&status=active"
+            }
+        }
+        $params = Get-QueryParams -Request $mockReq
+        $params["q"] | Should Be "ハンドブック"
+        $params["status"] | Should Be "active"
+    }
+}
+
+
+
+
+
+
+
 
 
