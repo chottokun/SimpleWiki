@@ -1184,6 +1184,7 @@ function Get-ChatWidgetHtml {
         <div class="chat-header">
             <span>🤖 OKF Wiki AI アシスタント</span>
             <div class="chat-header-actions">
+                <button id="okfChatExpandBtn" class="chat-header-expand" title="ウィンドウを拡大/縮小">⛶ 拡大</button>
                 <button id="okfChatClearBtn" class="chat-header-clear" title="会話履歴をクリア">🧹 履歴クリア</button>
                 <button id="okfChatCloseBtn" class="chat-header-close">✕</button>
             </div>
@@ -1199,17 +1200,21 @@ function Get-ChatWidgetHtml {
     <style>
         .chat-widget-btn { position: fixed; bottom: 20px; right: 20px; background: #0366d6; color: #fff; border: none; border-radius: 24px; padding: 10px 18px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 9999; font-size: 13px; display: flex; align-items: center; gap: 6px; }
         .chat-widget-btn:hover { background: #0255b3; }
-        .chat-box { position: fixed; bottom: 70px; right: 20px; width: 420px; height: 520px; background: #fff; border: 1px solid #e1e4e8; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); display: none; flex-direction: column; z-index: 9999; overflow: hidden; }
+        .chat-box { position: fixed; bottom: 70px; right: 20px; width: 420px; height: 520px; background: #fff; border: 1px solid #e1e4e8; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); display: none; flex-direction: column; z-index: 9999; overflow: hidden; transition: all 0.2s ease-in-out; }
+        .chat-box.expanded { width: 85vw; height: 85vh; max-width: 980px; max-height: 850px; bottom: 20px; right: 20px; }
         .chat-header { background: #1b1f23; color: #fff; padding: 10px 14px; font-weight: bold; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
-        .chat-header-actions { display: flex; align-items: center; gap: 8px; }
-        .chat-header-clear { background: #343a40; border: 1px solid #495057; color: #f8f9fa; font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer; }
-        .chat-header-clear:hover { background: #495057; }
-        .chat-header-close { background: none; border: none; color: #fff; font-size: 16px; cursor: pointer; }
+        .chat-header-actions { display: flex; align-items: center; gap: 6px; }
+        .chat-header-expand, .chat-header-clear { background: #343a40; border: 1px solid #495057; color: #f8f9fa; font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer; }
+        .chat-header-expand:hover, .chat-header-clear:hover { background: #495057; }
+        .chat-header-close { background: none; border: none; color: #fff; font-size: 16px; cursor: pointer; margin-left: 4px; }
         .chat-messages { flex: 1; padding: 12px; overflow-y: auto; font-size: 13px; display: flex; flex-direction: column; gap: 10px; background: #f8f9fa; }
         .chat-msg { max-width: 90%; padding: 8px 12px; border-radius: 12px; line-height: 1.5; word-break: break-word; }
         .chat-msg.user { align-self: flex-end; background: #0366d6; color: #fff; border-bottom-right-radius: 2px; white-space: pre-wrap; }
         .chat-msg.assistant { align-self: flex-start; background: #fff; color: #24292e; border: 1px solid #e1e4e8; border-bottom-left-radius: 2px; }
         .chat-sources { margin-top: 8px; font-size: 11px; color: #586069; border-top: 1px dashed #e1e4e8; padding-top: 6px; }
+        .chat-msg-actions { margin-top: 6px; display: flex; justify-content: flex-end; border-top: 1px solid #eaecef; padding-top: 4px; }
+        .chat-copy-btn { background: none; border: none; color: #0366d6; font-size: 11px; cursor: pointer; padding: 2px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; font-weight: bold; }
+        .chat-copy-btn:hover { background: #f1f8ff; text-decoration: underline; }
         .chat-input-area { padding: 10px; border-top: 1px solid #e1e4e8; background: #fff; display: flex; gap: 6px; }
         .chat-input-area input { flex: 1; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
         .chat-input-area button { padding: 8px 14px; background: #0366d6; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
@@ -1232,6 +1237,7 @@ function Get-ChatWidgetHtml {
             var box = document.getElementById("okfChatBox");
             var closeBtn = document.getElementById("okfChatCloseBtn");
             var clearBtn = document.getElementById("okfChatClearBtn");
+            var expandBtn = document.getElementById("okfChatExpandBtn");
             var sendBtn = document.getElementById("okfChatSendBtn");
             var input = document.getElementById("okfChatInput");
             var msgs = document.getElementById("okfChatMessages");
@@ -1240,6 +1246,17 @@ function Get-ChatWidgetHtml {
             if (!btn || !box) return;
             btn.addEventListener("click", function() { box.style.display = box.style.display === "flex" ? "none" : "flex"; });
             closeBtn.addEventListener("click", function() { box.style.display = "none"; });
+
+            if (expandBtn) {
+                expandBtn.addEventListener("click", function() {
+                    box.classList.toggle("expanded");
+                    if (box.classList.contains("expanded")) {
+                        expandBtn.textContent = "🗗 縮小";
+                    } else {
+                        expandBtn.textContent = "⛶ 拡大";
+                    }
+                });
+            }
 
             if (clearBtn) {
                 clearBtn.addEventListener("click", function() {
@@ -1342,6 +1359,40 @@ function Get-ChatWidgetHtml {
                     srcDiv.className = "chat-sources";
                     srcDiv.innerHTML = "📖 <strong>出典:</strong> " + sources.map(function(s) { return "<a href='" + s.relUri + "' target='_blank'>" + s.title + "</a> (" + s.lastUpdated + ")"; }).join(", ");
                     div.appendChild(srcDiv);
+                }
+                if (role === "assistant" && text !== "🤔 思考中...") {
+                    var actionDiv = document.createElement("div");
+                    actionDiv.className = "chat-msg-actions";
+                    var copyBtn = document.createElement("button");
+                    copyBtn.className = "chat-copy-btn";
+                    copyBtn.innerHTML = "📋 コピー";
+                    copyBtn.addEventListener("click", function() {
+                        var performCopy = function() {
+                            copyBtn.innerHTML = "✓ コピー完了";
+                            setTimeout(function() { copyBtn.innerHTML = "📋 コピー"; }, 1500);
+                        };
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                            navigator.clipboard.writeText(text).then(performCopy).catch(function() {
+                                var ta = document.createElement("textarea");
+                                ta.value = text;
+                                document.body.appendChild(ta);
+                                ta.select();
+                                document.execCommand("copy");
+                                document.body.removeChild(ta);
+                                performCopy();
+                            });
+                        } else {
+                            var ta = document.createElement("textarea");
+                            ta.value = text;
+                            document.body.appendChild(ta);
+                            ta.select();
+                            document.execCommand("copy");
+                            document.body.removeChild(ta);
+                            performCopy();
+                        }
+                    });
+                    actionDiv.appendChild(copyBtn);
+                    div.appendChild(actionDiv);
                 }
                 msgs.appendChild(div);
                 msgs.scrollTop = msgs.scrollHeight;
