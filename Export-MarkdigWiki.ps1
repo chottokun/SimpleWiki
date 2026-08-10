@@ -53,6 +53,7 @@ if (-not (Test-Path $markdigDll)) {
 }
 
 Get-ChildItem -Path $libDir -Filter "*.dll" | ForEach-Object {
+    Unblock-File -Path $_.FullName -ErrorAction SilentlyContinue
     Add-Type -Path $_.FullName
 }
 

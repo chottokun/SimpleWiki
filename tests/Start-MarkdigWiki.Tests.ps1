@@ -510,7 +510,13 @@ tags: "PostgreSQL, Database, Recovery"
         $params["q"] | Should Be "ハンドブック"
         $params["status"] | Should Be "active"
     }
+
+    It 'Executes Unblock-File safely on lib DLLs without throwing exceptions' {
+        $libPath = Join-Path $projectRoot "lib"
+        { Get-ChildItem -Path $libPath -Filter "*.dll" | Unblock-File -ErrorAction SilentlyContinue } | Should Not Throw
+    }
 }
+
 
 
 
