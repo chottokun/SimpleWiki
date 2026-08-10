@@ -1422,7 +1422,24 @@ try {
                 if ($config.rag -and $config.rag.maxContextDocs) {
                     $maxDocs = [int]$config.rag.maxContextDocs
                 }
-                $keywords = @($userMsg -split '\s+' | Where-Object { $_ -ne "" })
+                # 日本語自然言語クエリからの形態素 / キーワード抽出 (漢字・カタカナ・英数字)
+                $termMatches = [regex]::Matches($userMsg, '[一-龠]+|[ァ-ヴー]{2,}|[a-zA-Z0-9]+')
+                $keywords = [System.Collections.Generic.List[string]]::new()
+                foreach ($m in $termMatches) {
+                    $val = $m.Value.Trim()
+                    if ($val.Length -ge 2 -and $keywords -notcontains $val) {
+                        $keywords.Add($val)
+                    }
+                }
+                # シノニム / 同義概念の自動拡張
+                if ($keywords -contains "セットアップ" -and $keywords -notcontains "環境構築") { $keywords.Add("環境構築") }
+                if ($keywords -contains "環境構築" -and $keywords -notcontains "セットアップ") { $keywords.Add("セットアップ") }
+
+                if ($keywords.Count -eq 0) {
+                    foreach ($w in ($userMsg -split '\s+')) {
+                        if (-not [string]::IsNullOrWhiteSpace($w)) { $keywords.Add($w) }
+                    }
+                }
 
                 $docScores = [System.Collections.Generic.List[PSObject]]::new()
                 foreach ($doc in $activeDocs) {
