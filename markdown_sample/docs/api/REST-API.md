@@ -105,32 +105,40 @@ Markdown 本文を `#`, `##`, `###` の見出し単位で自動分割し、文�
 
 ---
 
-## 3. OKF RAG LLM AI チャット API (`/api/chat`)
+## 3. 2モード制 OKF RAG LLM AI チャット API (`/api/chat`)
 
 Wiki 内の `status: active` ドキュメントを自動文脈検索し、グラウンディング（根拠に基づく回答）された AI 応答を取得する POST エンドポイントです。
+**`mode` パラメータ**に `"fast"` (低遅延1-Pass) または `"agentic"` (ReAct自律調査) を指定できます。
 
 ### リクエスト例 (POST):
 ```json
 {
-  "message": "それの使い方は？",
+  "mode": "agentic",
+  "message": "基幹DBの復旧手順と、そこで使う用語『K-DAT』の注意点をまとめて",
   "history": [
-    { "role": "user", "content": "APIはどのようなものがありますか？" },
-    { "role": "assistant", "content": "SimpleWiki が提供する API は /api/index.json, /api/chunks.json, /api/chat の 3 つです。" }
+    { "role": "user", "content": "こんにちは" },
+    { "role": "assistant", "content": "社内Wikiアシスタントです。何かお手伝いできますか？" }
   ]
 }
 ```
 
-### レスポンス構造例:
+### レスポンス構造例 (Agentic モード):
 ```json
 {
-  "answer": "SimpleWiki が提供する API は...",
+  "mode": "agentic",
+  "answer": "『K-DAT』はデータバックアップツールです。基幹DBの復旧は以下の手順で行います...",
+  "thinkingLog": [
+    "🔍 Tool Call: lookup_glossary (term: 'K-DAT')",
+    "🔍 Tool Call: search_okf (query: '基幹DB 復旧', domain: '')",
+    "📄 Tool Call: read_doc (relPath: 'docs/infrastructure/db.md')"
+  ],
   "sources": [
     {
-      "title": "REST API 仕様書 ＆ AI Agent / RAG 連携ガイド",
-      "relPath": "docs/api/REST-API.md",
-      "relUri": "/docs/api/REST-API.md",
+      "title": "社内用語定義集",
+      "relPath": "glossary.md",
+      "relUri": "/glossary.md",
       "lastUpdated": "2026-08-10",
-      "author": "API 開発チーム"
+      "author": "ナレッジ管理チーム"
     }
   ]
 }
