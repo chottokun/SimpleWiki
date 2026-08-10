@@ -112,7 +112,11 @@ Wiki 内の `status: active` ドキュメントを自動文脈検索し、グラ
 ### リクエスト例 (POST):
 ```json
 {
-  "message": "APIはどのようなものがありますか？"
+  "message": "それの使い方は？",
+  "history": [
+    { "role": "user", "content": "APIはどのようなものがありますか？" },
+    { "role": "assistant", "content": "SimpleWiki が提供する API は /api/index.json, /api/chunks.json, /api/chat の 3 つです。" }
+  ]
 }
 ```
 

@@ -595,6 +595,22 @@ Describe 'OKF LLM RAG Security & Encryption Tests' {
             Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
+
+    It 'Get-JapaneseWordsWinRT tokenizes Japanese queries and filters Japanese stop words' {
+        $words = Get-JapaneseWordsWinRT -Text 'セットアップの方法は？'
+        $words | Should Contain 'セットアップ'
+        $words | Should Contain '環境構築'
+        $words | Should Not Contain 'は'
+        $words | Should Not Contain 'の'
+    }
+
+    It 'Invoke-OpenAiChatCompletions builds message payload with history array' {
+        $history = @(
+            @{ role = 'user'; content = '質問1' },
+            @{ role = 'assistant'; content = '回答1' }
+        )
+        { Invoke-OpenAiChatCompletions -ApiUrl 'http://invalid-endpoint-for-test-xyz' -ApiKey 'test-key' -Model 'test-model' -SystemPrompt 'System Prompt' -UserMessage '質問2' -History $history -TimeoutSec 1 } | Should Throw
+    }
 }
 
 

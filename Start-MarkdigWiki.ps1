@@ -1020,6 +1020,42 @@ function Unprotect-StringDpapi {
     }
 }
 
+# --- WinRT 日本語形態素解析 ＆ 単語抽出関数 ---
+function Get-JapaneseWordsWinRT {
+    param ([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+
+    $words = [System.Collections.Generic.List[string]]::new()
+    try {
+        [void][Windows.Data.Text.WordsSegmenter, Windows.Foundation.UniversalApiContract, ContentType = WindowsRuntime]
+        $segmenter = [Windows.Data.Text.WordsSegmenter]::CreateWithLanguage("ja-JP")
+        $tokens = $segmenter.DetermineProperties($Text)
+        foreach ($t in $tokens) {
+            $w = $t.Text.Trim()
+            if ($w.Length -gt 0 -and $w -notmatch '^[\s\?\!\:\;\,\.\-\_\(\)「」『』【】（）！％＆＝￥？]+$') {
+                if ($w -notmatch '^(は|が|の|を|に|で|と|へ|より|から|です|ます|ですか|について|に関して|やり方|方法|教えて|したい|するには)$') {
+                    if (-not $words.Contains($w)) {
+                        $words.Add($w)
+                    }
+                }
+            }
+        }
+    } catch {
+        # フォールバック (正規表現トークナイズ)
+        $termMatches = [regex]::Matches($Text, '[一-龠]+|[ァ-ヴー]{2,}|[a-zA-Z0-9]+')
+        foreach ($m in $termMatches) {
+            $v = $m.Value.Trim()
+            if ($v.Length -ge 2 -and -not $words.Contains($v)) { $words.Add($v) }
+        }
+    }
+
+    # シノニム / 同義語概念拡張
+    if ($words.Contains("セットアップ") -and -not $words.Contains("環境構築")) { $words.Add("環境構築") }
+    if ($words.Contains("環境構築") -and -not $words.Contains("セットアップ")) { $words.Add("セットアップ") }
+
+    return $words.ToArray()
+}
+
 function Get-ResolvedSecret {
     param ([string]$SecretValue)
     if ([string]::IsNullOrWhiteSpace($SecretValue)) { return "" }
@@ -1041,7 +1077,11 @@ function Get-ConfigJson {
     if (-not (Test-Path $configPath)) {
         return [PSCustomObject]@{
             rag = [PSCustomObject]@{
-                enabled = $false
+                enabled         = $false
+                maxContextDocs  = 3
+                maxHistoryTurns = 3
+                maxHistoryChars = 4000
+                timeoutSec      = 30
             }
         }
     }
@@ -1051,7 +1091,11 @@ function Get-ConfigJson {
     } catch {
         return [PSCustomObject]@{
             rag = [PSCustomObject]@{
-                enabled = $false
+                enabled         = $false
+                maxContextDocs  = 3
+                maxHistoryTurns = 3
+                maxHistoryChars = 4000
+                timeoutSec      = 30
             }
         }
     }
@@ -1064,6 +1108,7 @@ function Invoke-OpenAiChatCompletions {
         [string]$Model,
         [string]$SystemPrompt,
         [string]$UserMessage,
+        [array]$History = @(),
         [int]$TimeoutSec = 30
     )
 
@@ -1074,13 +1119,22 @@ function Invoke-OpenAiChatCompletions {
         $endpointUrl = $cleanApiUrl
     }
 
+    $msgList = [System.Collections.Generic.List[PSObject]]::new()
+    $msgList.Add(@{ role = "system"; content = $SystemPrompt })
+
+    if ($History -and $History.Count -gt 0) {
+        foreach ($h in $History) {
+            if ($h -and $h.role -and $h.content) {
+                $msgList.Add(@{ role = $h.role.ToString(); content = $h.content.ToString() })
+            }
+        }
+    }
+    $msgList.Add(@{ role = "user"; content = $UserMessage })
+
     $payloadObj = @{
         model       = $Model
         temperature = 0.3
-        messages    = @(
-            @{ role = "system"; content = $SystemPrompt },
-            @{ role = "user";   content = $UserMessage }
-        )
+        messages    = $msgList
     }
     $jsonBody = $payloadObj | ConvertTo-Json -Depth 5
     $reqBytes = [System.Text.Encoding]::UTF8.GetBytes($jsonBody)
@@ -1129,7 +1183,10 @@ function Get-ChatWidgetHtml {
     <div id="okfChatBox" class="chat-box">
         <div class="chat-header">
             <span>🤖 OKF Wiki AI アシスタント</span>
-            <button id="okfChatCloseBtn" class="chat-header-close">✕</button>
+            <div class="chat-header-actions">
+                <button id="okfChatClearBtn" class="chat-header-clear" title="会話履歴をクリア">🧹 履歴クリア</button>
+                <button id="okfChatCloseBtn" class="chat-header-close">✕</button>
+            </div>
         </div>
         <div id="okfChatMessages" class="chat-messages">
             <div class="chat-msg assistant">こんにちは！Wiki内のナレッジを元にお答えします。質問を入力してください。</div>
@@ -1144,6 +1201,9 @@ function Get-ChatWidgetHtml {
         .chat-widget-btn:hover { background: #0255b3; }
         .chat-box { position: fixed; bottom: 70px; right: 20px; width: 420px; height: 520px; background: #fff; border: 1px solid #e1e4e8; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); display: none; flex-direction: column; z-index: 9999; overflow: hidden; }
         .chat-header { background: #1b1f23; color: #fff; padding: 10px 14px; font-weight: bold; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+        .chat-header-actions { display: flex; align-items: center; gap: 8px; }
+        .chat-header-clear { background: #343a40; border: 1px solid #495057; color: #f8f9fa; font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer; }
+        .chat-header-clear:hover { background: #495057; }
         .chat-header-close { background: none; border: none; color: #fff; font-size: 16px; cursor: pointer; }
         .chat-messages { flex: 1; padding: 12px; overflow-y: auto; font-size: 13px; display: flex; flex-direction: column; gap: 10px; background: #f8f9fa; }
         .chat-msg { max-width: 90%; padding: 8px 12px; border-radius: 12px; line-height: 1.5; word-break: break-word; }
@@ -1171,13 +1231,22 @@ function Get-ChatWidgetHtml {
             var btn = document.getElementById("okfChatBtn");
             var box = document.getElementById("okfChatBox");
             var closeBtn = document.getElementById("okfChatCloseBtn");
+            var clearBtn = document.getElementById("okfChatClearBtn");
             var sendBtn = document.getElementById("okfChatSendBtn");
             var input = document.getElementById("okfChatInput");
             var msgs = document.getElementById("okfChatMessages");
+            var chatHistory = [];
 
             if (!btn || !box) return;
             btn.addEventListener("click", function() { box.style.display = box.style.display === "flex" ? "none" : "flex"; });
             closeBtn.addEventListener("click", function() { box.style.display = "none"; });
+
+            if (clearBtn) {
+                clearBtn.addEventListener("click", function() {
+                    chatHistory = [];
+                    msgs.innerHTML = '<div class="chat-msg assistant">会話履歴をリセットしました。質問を入力してください。</div>';
+                });
+            }
 
             function escapeHtml(str) {
                 return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -1289,13 +1358,15 @@ function Get-ChatWidgetHtml {
                 fetch("/api/chat", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ message: q })
+                    body: JSON.stringify({ message: q, history: chatHistory })
                 }).then(function(res) { return res.json(); }).then(function(data) {
                     msgs.removeChild(msgs.lastChild);
                     if (data.error) {
                         appendMsg("assistant", "⚠️ エラー: " + data.message);
                     } else {
                         appendMsg("assistant", data.answer, data.sources);
+                        chatHistory.push({ role: "user", content: q });
+                        chatHistory.push({ role: "assistant", content: data.answer });
                     }
                 }).catch(function(err) {
                     msgs.removeChild(msgs.lastChild);
@@ -1414,7 +1485,43 @@ try {
                     continue
                 }
 
-                # 1. OKF 文脈検索 (status: active ドキュメントのみ)
+                # 会話履歴 (history) と設定パラメータの取得
+                $maxHistoryTurns = 3
+                if ($config.rag -and $config.rag.maxHistoryTurns -ne $null) {
+                    $maxHistoryTurns = [Math]::Max(0, [Math]::Min(10, [int]$config.rag.maxHistoryTurns))
+                }
+                $maxHistoryChars = 4000
+                if ($config.rag -and $config.rag.maxHistoryChars -ne $null) {
+                    $maxHistoryChars = [Math]::Max(500, [int]$config.rag.maxHistoryChars)
+                }
+
+                $processedHistory = [System.Collections.Generic.List[PSObject]]::new()
+                if ($maxHistoryTurns -gt 0 -and $reqObj -and $reqObj.history) {
+                    $rawHist = @($reqObj.history)
+                    $maxMsgs = $maxHistoryTurns * 2
+                    if ($rawHist.Count -gt $maxMsgs) {
+                        $rawHist = $rawHist[($rawHist.Count - $maxMsgs)..($rawHist.Count - 1)]
+                    }
+                    
+                    $currentTotalChars = 0
+                    $validHist = [System.Collections.Generic.List[PSObject]]::new()
+                    for ($hIdx = $rawHist.Count - 1; $hIdx -ge 0; $hIdx--) {
+                        $item = $rawHist[$hIdx]
+                        if ($item -and $item.role -and $item.content) {
+                            $cText = $item.content.ToString()
+                            if (($currentTotalChars + $cText.Length) -le $maxHistoryChars -or $validHist.Count -eq 0) {
+                                if ($cText.Length -gt $maxHistoryChars) {
+                                    $cText = $cText.Substring(0, $maxHistoryChars) + "..."
+                                }
+                                $currentTotalChars += $cText.Length
+                                $validHist.Insert(0, [PSCustomObject]@{ role = $item.role.ToString(); content = $cText })
+                            }
+                        }
+                    }
+                    $processedHistory = $validHist
+                }
+
+                # 1. OKF 文脈検索 (WinRT 形態素解析エンジン)
                 Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
                 $activeDocs = @($script:WikiIndex | Where-Object { $_.Status -eq "active" })
 
@@ -1422,24 +1529,16 @@ try {
                 if ($config.rag -and $config.rag.maxContextDocs) {
                     $maxDocs = [int]$config.rag.maxContextDocs
                 }
-                # 日本語自然言語クエリからの形態素 / キーワード抽出 (漢字・カタカナ・英数字)
-                $termMatches = [regex]::Matches($userMsg, '[一-龠]+|[ァ-ヴー]{2,}|[a-zA-Z0-9]+')
-                $keywords = [System.Collections.Generic.List[string]]::new()
-                foreach ($m in $termMatches) {
-                    $val = $m.Value.Trim()
-                    if ($val.Length -ge 2 -and $keywords -notcontains $val) {
-                        $keywords.Add($val)
-                    }
-                }
-                # シノニム / 同義概念の自動拡張
-                if ($keywords -contains "セットアップ" -and $keywords -notcontains "環境構築") { $keywords.Add("環境構築") }
-                if ($keywords -contains "環境構築" -and $keywords -notcontains "セットアップ") { $keywords.Add("セットアップ") }
 
-                if ($keywords.Count -eq 0) {
-                    foreach ($w in ($userMsg -split '\s+')) {
-                        if (-not [string]::IsNullOrWhiteSpace($w)) { $keywords.Add($w) }
+                # 会話履歴 + 現在の質問を統合して単語抽出
+                $searchQueryText = $userMsg
+                if ($processedHistory.Count -gt 0) {
+                    $lastUserTurn = $processedHistory | Where-Object { $_.role -eq "user" } | Select-Object -Last 1
+                    if ($lastUserTurn) {
+                        $searchQueryText = $lastUserTurn.content + " " + $userMsg
                     }
                 }
+                $keywords = Get-JapaneseWordsWinRT -Text $searchQueryText
 
                 $docScores = [System.Collections.Generic.List[PSObject]]::new()
                 foreach ($doc in $activeDocs) {
@@ -1508,7 +1607,7 @@ try {
                     $timeoutSec = [int]$config.rag.timeoutSec
                 }
                 try {
-                    $answerText = Invoke-OpenAiChatCompletions -ApiUrl $config.rag.apiUrl -ApiKey $config.rag.apiKey -Model $config.rag.model -SystemPrompt $fullSysPrompt -UserMessage $userMsg -TimeoutSec $timeoutSec
+                    $answerText = Invoke-OpenAiChatCompletions -ApiUrl $config.rag.apiUrl -ApiKey $config.rag.apiKey -Model $config.rag.model -SystemPrompt $fullSysPrompt -UserMessage $userMsg -History $processedHistory -TimeoutSec $timeoutSec
                     $jsonRes = @{
                         answer  = $answerText
                         sources = $sourcesList
