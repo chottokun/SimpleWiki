@@ -935,8 +935,285 @@ function Get-OKFSearchResultsHtml {
     return Get-SearchViewHtml -Query $query -StatusFilter $statusFilter -DomainFilter $domainFilter
 }
 
+# --- UTF-8 URL クエリパラメータ解析関数 ---
+function Get-QueryParams {
+    param ([Parameter(Mandatory = $true)][System.Net.HttpListenerRequest]$Request)
+    $queryDict = @{}
+    $rawQuery = $Request.Url.Query
+    if (-not [string]::IsNullOrWhiteSpace($rawQuery)) {
+        $trimmed = $rawQuery.TrimStart('?')
+        $pairs = $trimmed -split '&'
+        foreach ($pair in $pairs) {
+            if ([string]::IsNullOrWhiteSpace($pair)) { continue }
+            $kv = $pair -split '=', 2
+            $key = [System.Net.WebUtility]::UrlDecode($kv[0])
+            $val = if ($kv.Length -gt 1) { [System.Net.WebUtility]::UrlDecode($kv[1]) } else { "" }
+            $queryDict[$key] = $val
+        }
+    }
+    return $queryDict
+}
+
+# --- LLM / RAG 暗号解読 ＆ 設定管理関数 ---
+function Protect-StringAes {
+    param ([string]$PlainText)
+    $salt = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-OKF-RAG-2026-Salt")
+    $pass = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-Portable-Secret-Key-2026")
+    $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($pass, $salt, 1000)
+    $key = $derive.GetBytes(32)
+    $iv  = $derive.GetBytes(16)
+
+    $aes = [System.Security.Cryptography.Aes]::Create()
+    $aes.Key = $key
+    $aes.IV  = $iv
+    $encryptor = $aes.CreateEncryptor()
+
+    $plainBytes = [System.Text.Encoding]::UTF8.GetBytes($PlainText)
+    $encBytes   = $encryptor.TransformFinalBlock($plainBytes, 0, $plainBytes.Length)
+    return "ENC:" + [System.Convert]::ToBase64String($encBytes)
+}
+
+function Protect-StringDpapi {
+    param ([string]$PlainText)
+    Add-Type -AssemblyName System.Security
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($PlainText)
+    $enc   = [System.Security.Cryptography.ProtectedData]::Protect($bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+    return "DPAPI:" + [System.Convert]::ToBase64String($enc)
+}
+
+function Unprotect-StringAes {
+    param ([string]$EncryptedText)
+    if ([string]::IsNullOrWhiteSpace($EncryptedText) -or -not $EncryptedText.StartsWith("ENC:")) { return "" }
+    try {
+        $cipherText = $EncryptedText.Substring(4)
+        $cipherBytes = [System.Convert]::FromBase64String($cipherText)
+        $salt = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-OKF-RAG-2026-Salt")
+        $pass = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-Portable-Secret-Key-2026")
+        $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($pass, $salt, 1000)
+        $key = $derive.GetBytes(32)
+        $iv  = $derive.GetBytes(16)
+
+        $aes = [System.Security.Cryptography.Aes]::Create()
+        $aes.Key = $key
+        $aes.IV  = $iv
+        $decryptor = $aes.CreateDecryptor()
+        $decBytes = $decryptor.TransformFinalBlock($cipherBytes, 0, $cipherBytes.Length)
+        return [System.Text.Encoding]::UTF8.GetString($decBytes)
+    } catch {
+        Write-Warning "AES 復号に失敗しました: $_"
+        return ""
+    }
+}
+
+function Unprotect-StringDpapi {
+    param ([string]$EncryptedText)
+    if ([string]::IsNullOrWhiteSpace($EncryptedText) -or -not $EncryptedText.StartsWith("DPAPI:")) { return "" }
+    try {
+        Add-Type -AssemblyName System.Security
+        $cipherText = $EncryptedText.Substring(6)
+        $bytes = [System.Convert]::FromBase64String($cipherText)
+        $dec = [System.Security.Cryptography.ProtectedData]::Unprotect($bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+        return [System.Text.Encoding]::UTF8.GetString($dec)
+    } catch {
+        Write-Warning "DPAPI 復号に失敗しました: $_"
+        return ""
+    }
+}
+
+function Get-ResolvedSecret {
+    param ([string]$SecretValue)
+    if ([string]::IsNullOrWhiteSpace($SecretValue)) { return "" }
+    if ($SecretValue.StartsWith("ENC:")) {
+        return Unprotect-StringAes -EncryptedText $SecretValue
+    } elseif ($SecretValue.StartsWith("DPAPI:")) {
+        return Unprotect-StringDpapi -EncryptedText $SecretValue
+    } elseif ($SecretValue.StartsWith("ENV:")) {
+        $envName = $SecretValue.Substring(4).Trim()
+        $envVal = [Environment]::GetEnvironmentVariable($envName)
+        return if ($envVal) { $envVal } else { "" }
+    }
+    return $SecretValue
+}
+
+function Get-ConfigJson {
+    param ([string]$TargetScriptDir = $scriptDir)
+    $configPath = Join-Path $TargetScriptDir "config.json"
+    if (-not (Test-Path $configPath)) {
+        return [PSCustomObject]@{
+            rag = [PSCustomObject]@{
+                enabled = $false
+            }
+        }
+    }
+    try {
+        $raw = Get-Content -Path $configPath -Raw -Encoding UTF8
+        return ($raw | ConvertFrom-Json)
+    } catch {
+        return [PSCustomObject]@{
+            rag = [PSCustomObject]@{
+                enabled = $false
+            }
+        }
+    }
+}
+
+function Invoke-OpenAiChatCompletions {
+    param (
+        [string]$ApiUrl,
+        [string]$ApiKey,
+        [string]$Model,
+        [string]$SystemPrompt,
+        [string]$UserMessage,
+        [int]$TimeoutSec = 30
+    )
+
+    $resolvedKey = Get-ResolvedSecret -SecretValue $ApiKey
+    $headers = @{
+        "Content-Type" = "application/json; charset=utf-8"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($resolvedKey)) {
+        $headers["Authorization"] = "Bearer $resolvedKey"
+    }
+
+    $cleanApiUrl = $ApiUrl.TrimEnd('/')
+    $endpointUrl = if ($cleanApiUrl.EndsWith("/chat/completions")) { $cleanApiUrl } else { "$cleanApiUrl/chat/completions" }
+
+    $payloadObj = @{
+        model       = $Model
+        temperature = 0.3
+        messages    = @(
+            @{ role = "system"; content = $SystemPrompt },
+            @{ role = "user";   content = $UserMessage }
+        )
+    }
+    $jsonBody = $payloadObj | ConvertTo-Json -Depth 5
+    $bytes    = [System.Text.Encoding]::UTF8.GetBytes($jsonBody)
+
+    $response = Invoke-RestMethod -Uri $endpointUrl -Method Post -Headers $headers -Body $bytes -TimeoutSec $TimeoutSec
+    if ($response -and $response.choices -and $response.choices.Count -gt 0) {
+        return $response.choices[0].message.content
+    }
+    throw "LLM から無効なレスポンスが返却されました。"
+}
+
+function Get-ChatWidgetHtml {
+    $widget = @'
+    <!-- Floating Chat Widget -->
+    <button id="okfChatBtn" class="chat-widget-btn">🤖 Wiki AI チャット</button>
+    <div id="okfChatBox" class="chat-box">
+        <div class="chat-header">
+            <span>🤖 OKF Wiki AI アシスタント</span>
+            <button id="okfChatCloseBtn" class="chat-header-close">✕</button>
+        </div>
+        <div id="okfChatMessages" class="chat-messages">
+            <div class="chat-msg assistant">こんにちは！Wiki内のナレッジを元にお答えします。質問を入力してください。</div>
+        </div>
+        <div class="chat-input-area">
+            <input type="text" id="okfChatInput" placeholder="Wikiに質問..." />
+            <button id="okfChatSendBtn">送信</button>
+        </div>
+    </div>
+    <style>
+        .chat-widget-btn { position: fixed; bottom: 20px; right: 20px; background: #0366d6; color: #fff; border: none; border-radius: 24px; padding: 10px 18px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 9999; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+        .chat-widget-btn:hover { background: #0255b3; }
+        .chat-box { position: fixed; bottom: 70px; right: 20px; width: 380px; height: 480px; background: #fff; border: 1px solid #e1e4e8; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); display: none; flex-direction: column; z-index: 9999; overflow: hidden; }
+        .chat-header { background: #1b1f23; color: #fff; padding: 10px 14px; font-weight: bold; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+        .chat-header-close { background: none; border: none; color: #fff; font-size: 16px; cursor: pointer; }
+        .chat-messages { flex: 1; padding: 12px; overflow-y: auto; font-size: 13px; display: flex; flex-direction: column; gap: 10px; background: #f8f9fa; }
+        .chat-msg { max-width: 85%; padding: 8px 12px; border-radius: 12px; line-height: 1.4; word-break: break-word; white-space: pre-wrap; }
+        .chat-msg.user { align-self: flex-end; background: #0366d6; color: #fff; border-bottom-right-radius: 2px; }
+        .chat-msg.assistant { align-self: flex-start; background: #fff; color: #24292e; border: 1px solid #e1e4e8; border-bottom-left-radius: 2px; }
+        .chat-sources { margin-top: 6px; font-size: 11px; color: #586069; border-top: 1px dashed #e1e4e8; padding-top: 4px; }
+        .chat-input-area { padding: 10px; border-top: 1px solid #e1e4e8; background: #fff; display: flex; gap: 6px; }
+        .chat-input-area input { flex: 1; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+        .chat-input-area button { padding: 8px 14px; background: #0366d6; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+        .chat-input-area button:disabled { background: #94d1ff; cursor: not-allowed; }
+    </style>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            var btn = document.getElementById("okfChatBtn");
+            var box = document.getElementById("okfChatBox");
+            var closeBtn = document.getElementById("okfChatCloseBtn");
+            var sendBtn = document.getElementById("okfChatSendBtn");
+            var input = document.getElementById("okfChatInput");
+            var msgs = document.getElementById("okfChatMessages");
+
+            if (!btn || !box) return;
+            btn.addEventListener("click", function() { box.style.display = box.style.display === "flex" ? "none" : "flex"; });
+            closeBtn.addEventListener("click", function() { box.style.display = "none"; });
+
+            function appendMsg(role, text, sources) {
+                var div = document.createElement("div");
+                div.className = "chat-msg " + role;
+                div.textContent = text;
+                if (sources && sources.length > 0) {
+                    var srcDiv = document.createElement("div");
+                    srcDiv.className = "chat-sources";
+                    srcDiv.innerHTML = "📖 <strong>出典:</strong> " + sources.map(function(s) { return "<a href='" + s.relUri + "' target='_blank'>" + s.title + "</a> (" + s.lastUpdated + ")"; }).join(", ");
+                    div.appendChild(srcDiv);
+                }
+                msgs.appendChild(div);
+                msgs.scrollTop = msgs.scrollHeight;
+            }
+
+            function sendMsg() {
+                var q = input.value.trim();
+                if (!q) return;
+                appendMsg("user", q);
+                input.value = "";
+                sendBtn.disabled = true;
+                appendMsg("assistant", "🤔 思考中...");
+
+                fetch("/api/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ message: q })
+                }).then(function(res) { return res.json(); }).then(function(data) {
+                    msgs.removeChild(msgs.lastChild);
+                    if (data.error) {
+                        appendMsg("assistant", "⚠️ エラー: " + data.message);
+                    } else {
+                        appendMsg("assistant", data.answer, data.sources);
+                    }
+                }).catch(function(err) {
+                    msgs.removeChild(msgs.lastChild);
+                    appendMsg("assistant", "⚠️ 通信エラーが発生しました。");
+                }).finally(function() {
+                    sendBtn.disabled = false;
+                });
+            }
+
+            sendBtn.addEventListener("click", sendMsg);
+            input.addEventListener("keypress", function(e) { if (e.key === "Enter") sendMsg(); });
+        });
+    </script>
+'@
+    return $widget
+}
+
+# --- 安全な HTTP レスポンス送信関数 ---
+function Write-SafeHttpResponse {
+    param (
+        [Parameter(Mandatory = $true)]$Response,
+        [Parameter(Mandatory = $true)][byte[]]$Bytes,
+        [string]$ContentType = "text/html; charset=utf-8",
+        [int]$StatusCode = 200
+    )
+    try {
+        $Response.StatusCode = $StatusCode
+        $Response.ContentType = $ContentType
+        $Response.ContentLength64 = $Bytes.Length
+        $Response.OutputStream.Write($Bytes, 0, $Bytes.Length)
+    } catch [System.Net.HttpListenerException], [System.IO.IOException], [System.ObjectDisposedException] {
+        # クライアントが応答完了前に接続を切断・再読み込みした場合の不必要なエラー出力を安全に抑制
+    } catch {
+        Write-Warning "HTTP応答送信エラー: $_"
+    }
+}
 
 if ($DotSourceOnly) { return }
+
+if ($MyInvocation.InvocationName -eq '.') { return }
 
 # --- 3. HttpListener の起動 ---
 $listener = New-Object System.Net.HttpListener
@@ -970,45 +1247,6 @@ $mimeTypes = @{
     ".js"   = "application/javascript; charset=utf-8"
 }
 
-# --- UTF-8 URL クエリパラメータ解析関数 ---
-function Get-QueryParams {
-    param ([Parameter(Mandatory = $true)][System.Net.HttpListenerRequest]$Request)
-    $queryDict = @{}
-    $rawQuery = $Request.Url.Query
-    if (-not [string]::IsNullOrWhiteSpace($rawQuery)) {
-        $trimmed = $rawQuery.TrimStart('?')
-        $pairs = $trimmed -split '&'
-        foreach ($pair in $pairs) {
-            if ([string]::IsNullOrWhiteSpace($pair)) { continue }
-            $kv = $pair -split '=', 2
-            $key = [System.Net.WebUtility]::UrlDecode($kv[0])
-            $val = if ($kv.Length -gt 1) { [System.Net.WebUtility]::UrlDecode($kv[1]) } else { "" }
-            $queryDict[$key] = $val
-        }
-    }
-    return $queryDict
-}
-
-# --- 安全な HTTP レスポンス送信関数 ---
-function Write-SafeHttpResponse {
-    param (
-        [Parameter(Mandatory = $true)]$Response,
-        [Parameter(Mandatory = $true)][byte[]]$Bytes,
-        [string]$ContentType = "text/html; charset=utf-8",
-        [int]$StatusCode = 200
-    )
-    try {
-        $Response.StatusCode = $StatusCode
-        $Response.ContentType = $ContentType
-        $Response.ContentLength64 = $Bytes.Length
-        $Response.OutputStream.Write($Bytes, 0, $Bytes.Length)
-    } catch [System.Net.HttpListenerException], [System.IO.IOException], [System.ObjectDisposedException] {
-        # クライアントが応答完了前に接続を切断・再読み込みした場合の不必要なエラー出力を安全に抑制
-    } catch {
-        Write-Warning "HTTP応答送信エラー: $_"
-    }
-}
-
 try {
     while ($listener.IsListening) {
         $context  = $listener.GetContext()
@@ -1019,7 +1257,7 @@ try {
             $rawPath = [System.Net.WebUtility]::UrlDecode($request.Url.LocalPath)
             $queryParams = Get-QueryParams -Request $request
 
-            # 1. API エンドポイント (/api/index.json, /api/chunks.json)
+            # 1. API エンドポイント (/api/index.json, /api/chunks.json, /api/chat)
             if ($rawPath -eq "/api/index.json") {
                 $jsonStr = Get-ApiIndexJson
                 $bytes   = [System.Text.Encoding]::UTF8.GetBytes($jsonStr)
@@ -1030,6 +1268,115 @@ try {
                 $jsonStr = Get-ApiChunksJson
                 $bytes   = [System.Text.Encoding]::UTF8.GetBytes($jsonStr)
                 Write-SafeHttpResponse -Response $response -Bytes $bytes -ContentType "application/json; charset=utf-8"
+                continue
+            }
+            if ($rawPath -eq "/api/chat" -and $request.HttpMethod -eq "POST") {
+                $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
+                $bodyText = $reader.ReadToEnd()
+                $reqObj = try { $bodyText | ConvertFrom-Json } catch { $null }
+
+                $config = Get-ConfigJson -TargetScriptDir $scriptDir
+                if (-not $config.rag -or -not $config.rag.enabled) {
+                    $jsonRes = @{ error = "LLM_DISABLED"; message = "LLM RAG チャット機能は現在無効です。config.json を設定してください。" } | ConvertTo-Json
+                    Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 400
+                    continue
+                }
+
+                $userMsg = ""
+                if ($reqObj -and $reqObj.message) {
+                    $userMsg = $reqObj.message.Trim()
+                }
+                if ([string]::IsNullOrWhiteSpace($userMsg)) {
+                    $jsonRes = @{ error = "INVALID_REQUEST"; message = "質問メッセージが空です。" } | ConvertTo-Json
+                    Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 400
+                    continue
+                }
+
+                # 1. OKF 文脈検索 (status: active ドキュメントのみ)
+                Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+                $activeDocs = @($script:WikiIndex | Where-Object { $_.Status -eq "active" })
+
+                $maxDocs = 3
+                if ($config.rag -and $config.rag.maxContextDocs) {
+                    $maxDocs = [int]$config.rag.maxContextDocs
+                }
+                $keywords = @($userMsg -split '\s+' | Where-Object { $_ -ne "" })
+
+                $docScores = [System.Collections.Generic.List[PSObject]]::new()
+                foreach ($doc in $activeDocs) {
+                    $score = 0
+                    foreach ($kw in $keywords) {
+                        $kwRegex = [regex]::Escape($kw)
+                        if ($doc.Title -and $doc.Title -match $kwRegex) { $score += 10 }
+                        if ($doc.Tags) {
+                            $tm = $doc.Tags | Where-Object { $_ -match $kwRegex }
+                            if ($tm) { $score += 8 }
+                        }
+                        if ($doc.Description -and $doc.Description -match $kwRegex) { $score += 5 }
+                        if ($doc.BodyText -and $doc.BodyText -match $kwRegex) { $score += 2 }
+                    }
+                    if ($score -gt 0) {
+                        $docScores.Add([PSCustomObject]@{ Doc = $doc; Score = $score })
+                    }
+                }
+
+                $topScored = @($docScores | Sort-Object Score -Descending | Select-Object -First $maxDocs)
+                $contextDocs = if ($topScored.Count -gt 0) {
+                    @($topScored | ForEach-Object { $_.Doc })
+                } else {
+                    @($activeDocs | Sort-Object LastUpdated -Descending | Select-Object -First [Math]::Min($maxDocs, $activeDocs.Count))
+                }
+
+                # 2. システムプロンプト構築 (OKF メタデータ + 本文スニペット)
+                $contextStrBuilder = [System.Text.StringBuilder]::new()
+                $sourcesList = [System.Collections.Generic.List[PSObject]]::new()
+
+                foreach ($cDoc in $contextDocs) {
+                    $relUri = "/" + [Uri]::EscapeUriString($cDoc.RelPath.Replace('\', '/'))
+                    $sourcesList.Add([PSCustomObject]@{
+                        title       = $cDoc.Title
+                        relPath     = $cDoc.RelPath
+                        relUri      = $relUri
+                        lastUpdated = $cDoc.LastUpdated.ToString("yyyy-MM-dd")
+                        author      = $cDoc.Author
+                    })
+
+                    $snippet = $cDoc.BodyText
+                    if ($snippet -and $snippet.Length -gt 800) {
+                        $snippet = $snippet.Substring(0, 800) + "..."
+                    }
+                    [void]$contextStrBuilder.AppendLine("---")
+                    [void]$contextStrBuilder.AppendLine("■ ドキュメント: $($cDoc.Title)")
+                    [void]$contextStrBuilder.AppendLine("・ドメイン: $($cDoc.Domain)")
+                    [void]$contextStrBuilder.AppendLine("・著者: $($cDoc.Author)")
+                    [void]$contextStrBuilder.AppendLine("・最終更新日: $($cDoc.LastUpdated.ToString('yyyy-MM-dd'))")
+                    [void]$contextStrBuilder.AppendLine("・ステータス: $($cDoc.Status) (現行)")
+                    [void]$contextStrBuilder.AppendLine("本文:")
+                    [void]$contextStrBuilder.AppendLine($snippet)
+                }
+
+                $baseSysPrompt = "あなたは社内Wikiのナレッジを元に回答するアシスタントです。"
+                if ($config.rag -and $config.rag.systemPrompt) {
+                    $baseSysPrompt = $config.rag.systemPrompt
+                }
+                $fullSysPrompt = $baseSysPrompt + [System.Environment]::NewLine + [System.Environment]::NewLine + "[参照Wikiコンテキスト]" + [System.Environment]::NewLine + $contextStrBuilder.ToString()
+
+                # 3. LLM 呼び出し
+                $timeoutSec = 30
+                if ($config.rag -and $config.rag.timeoutSec) {
+                    $timeoutSec = [int]$config.rag.timeoutSec
+                }
+                try {
+                    $answerText = Invoke-OpenAiChatCompletions -ApiUrl $config.rag.apiUrl -ApiKey $config.rag.apiKey -Model $config.rag.model -SystemPrompt $fullSysPrompt -UserMessage $userMsg -TimeoutSec $timeoutSec
+                    $jsonRes = @{
+                        answer  = $answerText
+                        sources = $sourcesList
+                    } | ConvertTo-Json -Depth 4
+                    Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+                } catch {
+                    $jsonRes = @{ error = "LLM_ERROR"; message = "LLM との通信に失敗しました: $_" } | ConvertTo-Json
+                    Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 500
+                }
                 continue
             }
 
@@ -1229,6 +1576,13 @@ try {
 </html>
 '@
                 $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent)
+
+                $config = Get-ConfigJson -TargetScriptDir $scriptDir
+                if ($config.rag -and $config.rag.enabled) {
+                    $chatWidgetHtml = Get-ChatWidgetHtml
+                    $fullHtml = $fullHtml.Replace("</body>", "$chatWidgetHtml`n</body>")
+                }
+
                 $bytes = [System.Text.Encoding]::UTF8.GetBytes($fullHtml)
                 Write-SafeHttpResponse -Response $response -Bytes $bytes
 

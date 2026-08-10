@@ -536,6 +536,68 @@ Describe 'Export-GUI.ps1 GUI Component & Syntax Validation' {
     }
 }
 
+Describe 'OKF LLM RAG Security & Encryption Tests' {
+    BeforeAll {
+        . (Join-Path $projectRoot "Start-MarkdigWiki.ps1")
+    }
+
+    It 'Encrypts and decrypts API key with AES-256 (ENC: prefix)' {
+        $rawKey = "sk-proj-test123456789"
+        $encKey = Protect-StringAes -PlainText $rawKey
+        $encKey | Should Match "^ENC:"
+        $decKey = Unprotect-StringAes -EncryptedText $encKey
+        $decKey | Should Be $rawKey
+    }
+
+    It 'Encrypts and decrypts API key with Windows DPAPI (DPAPI: prefix)' {
+        $rawKey = "sk-proj-dpapitest98765"
+        $dpapiKey = Protect-StringDpapi -PlainText $rawKey
+        $dpapiKey | Should Match "^DPAPI:"
+        $decKey = Unprotect-StringDpapi -EncryptedText $dpapiKey
+        $decKey | Should Be $rawKey
+    }
+
+    It 'Resolves secret for ENV: prefix dynamically' {
+        [Environment]::SetEnvironmentVariable("TEST_OPENAI_KEY", "sk-env-secret-val")
+        try {
+            $resolved = Get-ResolvedSecret -SecretValue "ENV:TEST_OPENAI_KEY"
+            $resolved | Should Be "sk-env-secret-val"
+        } finally {
+            [Environment]::SetEnvironmentVariable("TEST_OPENAI_KEY", $null)
+        }
+    }
+
+    It 'Get-ConfigJson returns enabled = false when config.json does not exist' {
+        $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestNoConfig"
+        if (-not (Test-Path $tempDir)) { New-Item -ItemType Directory -Path $tempDir | Out-Null }
+        try {
+            $cfg = Get-ConfigJson -TargetScriptDir $tempDir
+            $cfg.rag.enabled | Should Be $false
+        } finally {
+            Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'Set-ApiKey.ps1 creates config.json with encrypted key' {
+        $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestSetApiKey"
+        if (-not (Test-Path $tempDir)) { New-Item -ItemType Directory -Path $tempDir | Out-Null }
+        $targetCfg = Join-Path $tempDir "config.json"
+        try {
+            $setScript = Join-Path $projectRoot "Set-ApiKey.ps1"
+            & $setScript -ApiKey "sk-test-portable-key" -Scope Portable -ConfigPath $targetCfg
+            (Test-Path $targetCfg) | Should Be $true
+            $cfg = Get-Content -Path $targetCfg -Raw | ConvertFrom-Json
+            $cfg.rag.enabled | Should Be $true
+            $cfg.rag.apiKey | Should Match "^ENC:"
+            $resolved = Get-ResolvedSecret -SecretValue $cfg.rag.apiKey
+            $resolved | Should Be "sk-test-portable-key"
+        } finally {
+            Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+
 
 
 

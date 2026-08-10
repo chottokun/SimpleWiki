@@ -1,0 +1,11 @@
+{
+  "rag": {
+    "enabled": false,
+    "apiUrl": "http://localhost:11434/v1",
+    "apiKey": "ENC:Base64EncryptedKeyHere==",
+    "model": "qwen2.5-coder-7b-instruct",
+    "maxContextDocs": 3,
+    "timeoutSec": 30,
+    "systemPrompt": "あなたは社内Wikiのナレッジを元に回答するアシスタントです。提供されたコンテキスト情報のみに基づいて、正確かつ丁寧に回答してください。情報がない場合は『Wiki内に該当する情報が見つかりませんでした』と答えてください。"
+  }
+}
