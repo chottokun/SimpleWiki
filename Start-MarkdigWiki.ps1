@@ -1068,13 +1068,6 @@ function Invoke-OpenAiChatCompletions {
     )
 
     $resolvedKey = Get-ResolvedSecret -SecretValue $ApiKey
-    $headers = @{
-        "Content-Type" = "application/json; charset=utf-8"
-    }
-    if (-not [string]::IsNullOrWhiteSpace($resolvedKey)) {
-        $headers["Authorization"] = "Bearer $resolvedKey"
-    }
-
     $cleanApiUrl = $ApiUrl.TrimEnd('/')
     $endpointUrl = "$cleanApiUrl/chat/completions"
     if ($cleanApiUrl.EndsWith("/chat/completions")) {
@@ -1090,13 +1083,43 @@ function Invoke-OpenAiChatCompletions {
         )
     }
     $jsonBody = $payloadObj | ConvertTo-Json -Depth 5
-    $bytes    = [System.Text.Encoding]::UTF8.GetBytes($jsonBody)
+    $reqBytes = [System.Text.Encoding]::UTF8.GetBytes($jsonBody)
 
-    $response = Invoke-RestMethod -Uri $endpointUrl -Method Post -Headers $headers -Body $bytes -TimeoutSec $TimeoutSec
-    if ($response -and $response.choices -and $response.choices.Count -gt 0) {
-        return $response.choices[0].message.content
+    $webReq = [System.Net.HttpWebRequest]::Create($endpointUrl)
+    $webReq.Method = "POST"
+    $webReq.ContentType = "application/json; charset=utf-8"
+    $webReq.Timeout = $TimeoutSec * 1000
+    if (-not [string]::IsNullOrWhiteSpace($resolvedKey)) {
+        $webReq.Headers["Authorization"] = "Bearer $resolvedKey"
     }
-    throw "LLM から無効なレスポンスが返却されました。"
+
+    try {
+        $reqStream = $webReq.GetRequestStream()
+        $reqStream.Write($reqBytes, 0, $reqBytes.Length)
+        $reqStream.Close()
+
+        $webRes = $webReq.GetResponse()
+        try {
+            $resStream = $webRes.GetResponseStream()
+            $reader = New-Object System.IO.StreamReader($resStream, [System.Text.Encoding]::UTF8)
+            $resJson = $reader.ReadToEnd()
+            $parsed = $resJson | ConvertFrom-Json
+            if ($parsed -and $parsed.choices -and $parsed.choices.Count -gt 0) {
+                return $parsed.choices[0].message.content
+            }
+            throw "LLM から無効なレスポンスが返却されました。"
+        } finally {
+            $webRes.Close()
+        }
+    } catch [System.Net.WebException] {
+        if ($_.Response) {
+            $errStream = $_.Response.GetResponseStream()
+            $errReader = New-Object System.IO.StreamReader($errStream, [System.Text.Encoding]::UTF8)
+            $errBody = $errReader.ReadToEnd()
+            throw "API エラー ($($_.Response.StatusCode)): $errBody"
+        }
+        throw $_
+    }
 }
 
 function Get-ChatWidgetHtml {
