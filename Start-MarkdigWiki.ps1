@@ -1142,18 +1142,29 @@ function Get-ChatWidgetHtml {
     <style>
         .chat-widget-btn { position: fixed; bottom: 20px; right: 20px; background: #0366d6; color: #fff; border: none; border-radius: 24px; padding: 10px 18px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 9999; font-size: 13px; display: flex; align-items: center; gap: 6px; }
         .chat-widget-btn:hover { background: #0255b3; }
-        .chat-box { position: fixed; bottom: 70px; right: 20px; width: 380px; height: 480px; background: #fff; border: 1px solid #e1e4e8; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); display: none; flex-direction: column; z-index: 9999; overflow: hidden; }
+        .chat-box { position: fixed; bottom: 70px; right: 20px; width: 420px; height: 520px; background: #fff; border: 1px solid #e1e4e8; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); display: none; flex-direction: column; z-index: 9999; overflow: hidden; }
         .chat-header { background: #1b1f23; color: #fff; padding: 10px 14px; font-weight: bold; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
         .chat-header-close { background: none; border: none; color: #fff; font-size: 16px; cursor: pointer; }
         .chat-messages { flex: 1; padding: 12px; overflow-y: auto; font-size: 13px; display: flex; flex-direction: column; gap: 10px; background: #f8f9fa; }
-        .chat-msg { max-width: 85%; padding: 8px 12px; border-radius: 12px; line-height: 1.4; word-break: break-word; white-space: pre-wrap; }
-        .chat-msg.user { align-self: flex-end; background: #0366d6; color: #fff; border-bottom-right-radius: 2px; }
+        .chat-msg { max-width: 90%; padding: 8px 12px; border-radius: 12px; line-height: 1.5; word-break: break-word; }
+        .chat-msg.user { align-self: flex-end; background: #0366d6; color: #fff; border-bottom-right-radius: 2px; white-space: pre-wrap; }
         .chat-msg.assistant { align-self: flex-start; background: #fff; color: #24292e; border: 1px solid #e1e4e8; border-bottom-left-radius: 2px; }
-        .chat-sources { margin-top: 6px; font-size: 11px; color: #586069; border-top: 1px dashed #e1e4e8; padding-top: 4px; }
+        .chat-sources { margin-top: 8px; font-size: 11px; color: #586069; border-top: 1px dashed #e1e4e8; padding-top: 6px; }
         .chat-input-area { padding: 10px; border-top: 1px solid #e1e4e8; background: #fff; display: flex; gap: 6px; }
         .chat-input-area input { flex: 1; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
         .chat-input-area button { padding: 8px 14px; background: #0366d6; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
         .chat-input-area button:disabled { background: #94d1ff; cursor: not-allowed; }
+        
+        /* Markdown Renderer Styles */
+        .chat-table-wrapper { overflow-x: auto; margin: 8px 0; border: 1px solid #e1e4e8; border-radius: 6px; }
+        .chat-table { border-collapse: collapse; width: 100%; font-size: 12px; }
+        .chat-table th, .chat-table td { border: 1px solid #e1e4e8; padding: 6px 10px; text-align: left; }
+        .chat-table th { background: #f6f8fa; font-weight: bold; }
+        .chat-table tr:nth-child(even) { background: #f8f9fa; }
+        .chat-msg.assistant code { background: #f1f8ff; color: #0366d6; padding: 2px 5px; border-radius: 4px; font-family: monospace; font-size: 12px; }
+        .chat-msg.assistant pre { background: #24292e; color: #f6f8fa; padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 12px; margin: 6px 0; }
+        .chat-msg.assistant pre code { background: none; color: inherit; padding: 0; }
+        .chat-msg.assistant ul, .chat-msg.assistant ol { margin: 6px 0 6px 20px; padding: 0; }
     </style>
     <script>
         document.addEventListener("DOMContentLoaded", function() {
@@ -1168,10 +1179,95 @@ function Get-ChatWidgetHtml {
             btn.addEventListener("click", function() { box.style.display = box.style.display === "flex" ? "none" : "flex"; });
             closeBtn.addEventListener("click", function() { box.style.display = "none"; });
 
+            function escapeHtml(str) {
+                return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+            }
+
+            function parseInline(str) {
+                var s = escapeHtml(str);
+                s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+                s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+                s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<a href='$2' target='_blank'>$1</a>");
+                return s;
+            }
+
+            function renderMarkdown(src) {
+                if (!src) return "";
+                var html = src;
+
+                var codeBlocks = [];
+                html = html.replace(/```([\s\S]*?)```/g, function(match, code) {
+                    var placeholder = "___CODEBLOCK_" + codeBlocks.length + "___";
+                    codeBlocks.push("<pre><code>" + escapeHtml(code.trim()) + "</code></pre>");
+                    return placeholder;
+                });
+
+                var tableRegex = /(?:(?:^|\n)\|[^\n]+\|\n\|[\s:\-\|]+\|\n(?:\|[^\n]+\|\n?)+)/g;
+                html = html.replace(tableRegex, function(match) {
+                    var lines = match.trim().split('\n');
+                    if (lines.length < 3) return match;
+                    
+                    var headerCols = lines[0].split('|').map(function(c) { return c.trim(); }).filter(function(c, i, a) { return i > 0 && i < a.length - 1; });
+                    var rows = [];
+                    for (var i = 2; i < lines.length; i++) {
+                        if (!lines[i].trim()) continue;
+                        var cols = lines[i].split('|').map(function(c) { return c.trim(); }).filter(function(c, j, a) { return j > 0 && j < a.length - 1; });
+                        rows.push(cols);
+                    }
+
+                    var tHtml = "<div class='chat-table-wrapper'><table class='chat-table'><thead><tr>";
+                    headerCols.forEach(function(h) { tHtml += "<th>" + parseInline(h) + "</th>"; });
+                    tHtml += "</tr></thead><tbody>";
+                    rows.forEach(function(r) {
+                        tHtml += "<tr>";
+                        r.forEach(function(c) { tHtml += "<td>" + parseInline(c) + "</td>"; });
+                        tHtml += "</tr>";
+                    });
+                    tHtml += "</tbody></table></div>";
+                    return tHtml;
+                });
+
+                var parts = html.split(/(___CODEBLOCK_\d+___|<div class='chat-table-wrapper'>[\s\S]*?<\/div>)/g);
+                for (var k = 0; k < parts.length; k++) {
+                    if (parts[k].indexOf("___CODEBLOCK_") === 0) {
+                        var idx = parseInt(parts[k].replace("___CODEBLOCK_", "").replace("___", ""), 10);
+                        parts[k] = codeBlocks[idx];
+                    } else if (parts[k].indexOf("<div class='chat-table-wrapper'>") === 0) {
+                        // Table HTML preserved
+                    } else {
+                        var lines = parts[k].split('\n');
+                        var res = [];
+                        var inList = false;
+                        for (var i = 0; i < lines.length; i++) {
+                            var line = lines[i];
+                            var listMatch = line.match(/^[\s]*[\-\*]\s+(.*)/);
+                            if (listMatch) {
+                                if (!inList) { res.push("<ul>"); inList = true; }
+                                res.push("<li>" + parseInline(listMatch[1]) + "</li>");
+                            } else {
+                                if (inList) { res.push("</ul>"); inList = false; }
+                                if (line.trim() === "") {
+                                    res.push("<br>");
+                                } else {
+                                    res.push(parseInline(line));
+                                }
+                            }
+                        }
+                        if (inList) res.push("</ul>");
+                        parts[k] = res.join("");
+                    }
+                }
+                return parts.join("");
+            }
+
             function appendMsg(role, text, sources) {
                 var div = document.createElement("div");
                 div.className = "chat-msg " + role;
-                div.textContent = text;
+                if (role === "user") {
+                    div.textContent = text;
+                } else {
+                    div.innerHTML = renderMarkdown(text);
+                }
                 if (sources && sources.length > 0) {
                     var srcDiv = document.createElement("div");
                     srcDiv.className = "chat-sources";
