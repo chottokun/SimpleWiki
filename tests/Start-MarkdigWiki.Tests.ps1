@@ -517,6 +517,26 @@ tags: "PostgreSQL, Database, Recovery"
     }
 }
 
+Describe 'Export-GUI.ps1 GUI Component & Syntax Validation' {
+    It 'Export-GUI.ps1 file exists and passes AST syntax parsing' {
+        $guiScript = Join-Path $projectRoot "Export-GUI.ps1"
+        (Test-Path $guiScript) | Should Be $true
+
+        $errs = $null
+        $tokens = $null
+        [System.Management.Automation.Language.Parser]::ParseFile($guiScript, [ref]$tokens, [ref]$errs)
+        $errs.Count | Should Be 0
+    }
+
+    It 'Export-GUI.bat exists and references Export-GUI.ps1' {
+        $guiBat = Join-Path $projectRoot "Export-GUI.bat"
+        (Test-Path $guiBat) | Should Be $true
+        $content = Get-Content -Path $guiBat -Raw
+        $content | Should Match "Export-GUI\.ps1"
+    }
+}
+
+
 
 
 
