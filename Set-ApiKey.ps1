@@ -38,6 +38,10 @@ function Protect-StringAes {
 
 function Protect-StringDpapi {
     param ([string]$PlainText)
+    $isWin = ($env:OS -eq "Windows_NT") -or $IsWindows
+    if (-not $isWin) {
+        throw [System.PlatformNotSupportedException]::new("DPAPI encryption is only supported on Windows.")
+    }
     Add-Type -AssemblyName System.Security
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($PlainText)
     $enc   = [System.Security.Cryptography.ProtectedData]::Protect($bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
@@ -82,9 +86,17 @@ if (-not [string]::IsNullOrWhiteSpace($Model)) {
 }
 
 if (-not [string]::IsNullOrWhiteSpace($ApiKey)) {
+    $isWin = ($env:OS -eq "Windows_NT") -or $IsWindows
     $protectedKey = switch ($Scope) {
         "Portable" { Protect-StringAes -PlainText $ApiKey }
-        "Dpapi"    { Protect-StringDpapi -PlainText $ApiKey }
+        "Dpapi"    {
+            if (-not $isWin) {
+                Write-Warning "DPAPI is only supported on Windows. Falling back to Portable (AES-256) encryption."
+                Protect-StringAes -PlainText $ApiKey
+            } else {
+                Protect-StringDpapi -PlainText $ApiKey
+            }
+        }
         "Plain"    { $ApiKey }
     }
     $configObj.rag.apiKey = $protectedKey

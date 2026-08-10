@@ -39,8 +39,11 @@ if (-not (Test-Path $markdigDll)) {
     exit 1
 }
 
+$isWin = ($env:OS -eq "Windows_NT") -or $IsWindows
 Get-ChildItem -Path $libDir -Filter "*.dll" | ForEach-Object {
-    Unblock-File -Path $_.FullName -ErrorAction SilentlyContinue
+    if ($isWin) {
+        Unblock-File -Path $_.FullName -ErrorAction SilentlyContinue
+    }
     Add-Type -Path $_.FullName
 }
 
@@ -1131,7 +1134,7 @@ function Get-OKFSearchResultsHtml {
 
 # --- UTF-8 URL クエリパラメータ解析関数 ---
 function Get-QueryParams {
-    param ([Parameter(Mandatory = $true)][System.Net.HttpListenerRequest]$Request)
+    param ([Parameter(Mandatory = $true)]$Request)
     $queryDict = @{}
     $rawQuery = $Request.Url.Query
     if (-not [string]::IsNullOrWhiteSpace($rawQuery)) {
@@ -1169,6 +1172,10 @@ function Protect-StringAes {
 
 function Protect-StringDpapi {
     param ([string]$PlainText)
+    $isWin = ($env:OS -eq "Windows_NT") -or $IsWindows
+    if (-not $isWin) {
+        throw [System.PlatformNotSupportedException]::new("DPAPI encryption is only supported on Windows.")
+    }
     Add-Type -AssemblyName System.Security
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($PlainText)
     $enc   = [System.Security.Cryptography.ProtectedData]::Protect($bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
@@ -1202,6 +1209,11 @@ function Unprotect-StringAes {
 function Unprotect-StringDpapi {
     param ([string]$EncryptedText)
     if ([string]::IsNullOrWhiteSpace($EncryptedText) -or -not $EncryptedText.StartsWith("DPAPI:")) { return "" }
+    $isWin = ($env:OS -eq "Windows_NT") -or $IsWindows
+    if (-not $isWin) {
+        Write-Warning "DPAPI decryption is only supported on Windows."
+        return ""
+    }
     try {
         Add-Type -AssemblyName System.Security
         $cipherText = $EncryptedText.Substring(6)
@@ -1220,32 +1232,43 @@ function Get-JapaneseWordsWinRT {
     if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
 
     $words = [System.Collections.Generic.List[string]]::new()
-    try {
-        [void][Windows.Data.Text.WordsSegmenter, Windows.Foundation.UniversalApiContract, ContentType = WindowsRuntime]
-        $segmenter = [Windows.Data.Text.WordsSegmenter]::CreateWithLanguage("ja-JP")
-        $tokens = $segmenter.DetermineProperties($Text)
-        foreach ($t in $tokens) {
-            $w = $t.Text.Trim()
-            if ($w.Length -gt 0 -and $w -notmatch '^[\s\?\!\:\;\,\.\-\_\(\)「」『』【】（）！％＆＝￥？]+$') {
-                if ($w -notmatch '^(は|が|の|を|に|で|と|へ|より|から|です|ます|ですか|について|に関して|やり方|方法|教えて|したい|するには)$') {
-                    if (-not $words.Contains($w)) {
-                        $words.Add($w)
+    $isWin = ($env:OS -eq "Windows_NT") -or $IsWindows
+    $useWinRT = $false
+    if ($isWin) {
+        try {
+            $winRtType = [Type]::GetType("Windows.Data.Text.WordsSegmenter, Windows.Foundation.UniversalApiContract, ContentType=WindowsRuntime")
+            if ($null -ne $winRtType) {
+                $segmenter = $winRtType::CreateWithLanguage("ja-JP")
+                $tokens = $segmenter.DetermineProperties($Text)
+                foreach ($t in $tokens) {
+                    $w = $t.Text.Trim()
+                    if ($w.Length -gt 0 -and $w -notmatch '^[\s\?\!\:\;\,\.\-\_\(\)「」『』【】（）！％＆＝￥？]+$') {
+                        if ($w -notmatch '^(は|が|の|を|に|で|と|へ|より|から|です|ます|ですか|について|に関して|やり方|方法|教えて|したい|するには)$') {
+                            if (-not $words.Contains($w)) {
+                                [void]$words.Add($w)
+                            }
+                        }
                     }
                 }
+                $useWinRT = $true
             }
+        } catch {
+            # Ignore and fallback
         }
-    } catch {
+    }
+
+    if (-not $useWinRT) {
         # フォールバック (正規表現トークナイズ)
         $termMatches = [regex]::Matches($Text, '[一-龠]+|[ァ-ヴー]{2,}|[a-zA-Z0-9]+')
         foreach ($m in $termMatches) {
             $v = $m.Value.Trim()
-            if ($v.Length -ge 2 -and -not $words.Contains($v)) { $words.Add($v) }
+            if ($v.Length -ge 2 -and -not $words.Contains($v)) { [void]$words.Add($v) }
         }
     }
 
     # シノニム / 同義語概念拡張
-    if ($words.Contains("セットアップ") -and -not $words.Contains("環境構築")) { $words.Add("環境構築") }
-    if ($words.Contains("環境構築") -and -not $words.Contains("セットアップ")) { $words.Add("セットアップ") }
+    if ($words.Contains("セットアップ") -and -not $words.Contains("環境構築")) { [void]$words.Add("環境構築") }
+    if ($words.Contains("環境構築") -and -not $words.Contains("セットアップ")) { [void]$words.Add("セットアップ") }
 
     return $words.ToArray()
 }
