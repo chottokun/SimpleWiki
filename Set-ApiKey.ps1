@@ -4,7 +4,9 @@
 #  文字コード: UTF-8 with BOM
 # ==============================================================================
 param (
-    [Parameter(Mandatory = $true)][string]$ApiKey,
+    [string]$ApiKey = "",
+    [string]$ApiUrl = "",
+    [string]$Model = "",
     [ValidateSet("Portable", "Dpapi", "Plain")][string]$Scope = "Portable",
     [string]$ConfigPath = ""
 )
@@ -71,21 +73,34 @@ if ($null -eq $configObj) {
     }
 }
 
-# 暗号化処理
-$protectedKey = switch ($Scope) {
-    "Portable" { Protect-StringAes -PlainText $ApiKey }
-    "Dpapi"    { Protect-StringDpapi -PlainText $ApiKey }
-    "Plain"    { $ApiKey }
+if (-not [string]::IsNullOrWhiteSpace($ApiUrl)) {
+    $configObj.rag.apiUrl = $ApiUrl
 }
 
-$configObj.rag.apiKey  = $protectedKey
+if (-not [string]::IsNullOrWhiteSpace($Model)) {
+    $configObj.rag.model = $Model
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ApiKey)) {
+    $protectedKey = switch ($Scope) {
+        "Portable" { Protect-StringAes -PlainText $ApiKey }
+        "Dpapi"    { Protect-StringDpapi -PlainText $ApiKey }
+        "Plain"    { $ApiKey }
+    }
+    $configObj.rag.apiKey = $protectedKey
+}
+
 $configObj.rag.enabled = $true
 
 $jsonOutput = $configObj | ConvertTo-Json -Depth 5
 [System.IO.File]::WriteAllText($targetConfig, $jsonOutput, [System.Text.Encoding]::UTF8)
 
 Write-Host "==========================================================" -ForegroundColor Green
-Write-Host "  API キーの暗号化設定が完了しました" -ForegroundColor Green
+Write-Host "  LLM / RAG 設定の保存が完了しました" -ForegroundColor Green
 Write-Host "  設定ファイル: $targetConfig" -ForegroundColor Yellow
-Write-Host "  保護モード  : $Scope ($($protectedKey.Substring(0, [Math]::Min(12, $protectedKey.Length)))...)" -ForegroundColor Cyan
+Write-Host "  Base URL    : $($configObj.rag.apiUrl)" -ForegroundColor Cyan
+Write-Host "  Model       : $($configObj.rag.model)" -ForegroundColor Cyan
+if (-not [string]::IsNullOrWhiteSpace($configObj.rag.apiKey)) {
+    Write-Host "  API Key     : $($configObj.rag.apiKey.Substring(0, [Math]::Min(12, $configObj.rag.apiKey.Length)))..." -ForegroundColor Cyan
+}
 Write-Host "==========================================================" -ForegroundColor Green
