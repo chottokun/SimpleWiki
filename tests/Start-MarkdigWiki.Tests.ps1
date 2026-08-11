@@ -25,6 +25,18 @@ Describe "Markdig Assembly & Pipeline Tests" {
         $html | Should Match "Hello World"
         $html | Should Match "task-list-item"
     }
+
+    It "Renders embedded HTML tables with colspan and rowspan correctly" {
+        $builder  = New-Object Markdig.MarkdownPipelineBuilder
+        $null     = [Markdig.MarkdownExtensions]::UseAdvancedExtensions($builder)
+        $pipeline = $builder.Build()
+
+        $mdText = "<table><thead><tr><th rowspan=`"2`">Cat</th><th colspan=`"2`">Details</th></tr></thead><tbody><tr><td>Server</td><td>8080</td></tr></tbody></table>"
+        $renderedHtml = [Markdig.Markdown]::ToHtml($mdText, $pipeline)
+        $renderedHtml | Should Match '<table'
+        $renderedHtml | Should Match 'rowspan="2"'
+        $renderedHtml | Should Match 'colspan="2"'
+    }
 }
 
 Describe "Path Traversal & Security Validation Tests" {

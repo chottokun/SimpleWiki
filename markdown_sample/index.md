@@ -45,6 +45,7 @@ Google が提唱する **OKF (Open Knowledge Format)** の思想に基づき、M
 
 - 📘 **[プロジェクト概要とシステムアーキテクチャ](概要.md)**: 開発背景、コンポーネント構成、OKF 思想の反映状況
 - ⚙️ **[詳細仕様書](docs/詳細仕様.md)**: ルーティング動作、メタデータ補完マトリクス、セキュリティ仕様
+- 📊 **[HTML埋め込み表サンプル](docs/complex-table.md)**: 縦横セル結合（colspan/rowspan）、ステータスバッジ、複雑なレイアウトの表表現
 - 🤖 **[REST API 仕様書](docs/api/REST-API.md)**: `/api/index.json` および RAG 用 `/api/chunks.json` の仕様と Python 連携コード
 - 🚀 **[クイックスタートガイド](docs/user-guide/クイックスタート.md)**: Web サーバー起動、GUI ツール、ドラッグ＆ドロップ運用
 - 🛠️ **[開発環境構築ガイド](guides/環境構築.md)**: 開発前提条件、文字コード規約 (BOM付き UTF-8)、Pester 自動テスト
