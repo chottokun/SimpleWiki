@@ -828,26 +828,37 @@ function Search-OkfDocs {
         }
 
         if ($score -gt 0 -or ($keywords.Count -eq 0 -and (-not [string]::IsNullOrWhiteSpace($DomainFilter) -or $stFilterLower -ne "all"))) {
-            # スニペット抽出
+            # スニペット抽出 (キーワードマッチ行の前後の文脈・表を含む最大400文字)
             $snippet = ""
             if ($item.BodyText) {
                 $lines = $item.BodyText -split "\r?\n"
-                foreach ($line in $lines) {
+                $matchIdx = -1
+                for ($lIdx = 0; $lIdx -lt $lines.Count; $lIdx++) {
+                    $line = $lines[$lIdx]
                     if ($line -match '^\s*---') { continue }
-                    $hasMatch = $false
                     if ($keywords.Count -gt 0) {
                         foreach ($kw in $keywords) {
                             if ($line -match [regex]::Escape($kw)) {
-                                $hasMatch = $true
+                                $matchIdx = $lIdx
                                 break
                             }
                         }
                     } else {
-                        if (-not [string]::IsNullOrWhiteSpace($line)) { $hasMatch = $true }
+                        if (-not [string]::IsNullOrWhiteSpace($line)) {
+                            $matchIdx = $lIdx
+                            break
+                        }
                     }
-                    if ($hasMatch) {
-                        $snippet = $line.Trim()
-                        break
+                    if ($matchIdx -ge 0) { break }
+                }
+
+                if ($matchIdx -ge 0) {
+                    $startLine = [Math]::Max(0, $matchIdx - 2)
+                    $endLine = [Math]::Min($lines.Count - 1, $matchIdx + 4)
+                    $snipLines = @($lines[$startLine..$endLine] | Where-Object { $_ -notmatch '^\s*---' })
+                    $snippet = ($snipLines -join "`n").Trim()
+                    if ($snippet.Length -gt 400) {
+                        $snippet = $snippet.Substring(0, 400) + "..."
                     }
                 }
             }
