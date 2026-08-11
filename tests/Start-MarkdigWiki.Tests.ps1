@@ -721,6 +721,12 @@ Describe "Agentic RAG & OKF Tools Tests" {
         $res | Should Match "RelPath"
         $res | Should Match "read_doc"
     }
+
+    It "Invoke-AgenticRagChat fallback prompt instructs to present related knowledge when direct hits are scarce" {
+        $res = Invoke-AgenticRagChat -ApiUrl "http://invalid-endpoint-xyz-999" -ApiKey "key" -Model "model" -UserMessage "未知のトピック" -WikiDir $projectRoot -MaxTurns 1 -TimeoutSec 1
+        $res | Should Not Be $null
+        $res.answer | Should Not BeNullOrEmpty
+    }
 }
 
 

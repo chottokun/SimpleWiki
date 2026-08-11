@@ -1511,12 +1511,13 @@ function Invoke-AgenticRagChat {
     )
 
     $sysPrompt = "あなたは社内Wikiのナレッジを自律調査して回答する Agentic RAG アシスタントです。`n" +
-        "【自律探索・複数ドキュメント回遊ルール】`n" +
-        "1. `search_okf` で複数の検索結果候補が得られた場合、最初に読んだ 1 つのファイルだけで満足せず、上位の他の関連候補ドキュメントに対しても `read_doc(relPath)` を順次実行して複数のドキュメントから網羅的に情報を集めてください。`n" +
-        "2. 最初に参照したドキュメントに一部の情報しか載っていない場合、同じ検索を繰り返すのではなく、検索結果候補に含まれている別のファイル（例: guides/ フォルダや index.md 等）を `read_doc` で回遊確認してください。`n" +
-        "3. 検索キーワード (query) はユーザーが入力した日本語単語（例: 'エラー', '想定されるエラー'）をそのまま使用し、勝手に英語へ翻訳しないでください。`n" +
-        "4. search_okf の domain パラメータは原則として空文字列 '' を指定し、Wiki 全域から広範にドキュメントを検索してください。`n" +
-        "5. 非推奨 (status: deprecated) の記述は避け、常に現行 (active) 情報のみを根拠にしてください。"
+        "【自律探索・キーワード限界突破ルール】`n" +
+        "1. 質問に対する直接の単語一致・該当記述が見つからない・薄い場合でも『該当なし』で諦めないでください。`n" +
+        "2. `search_okf` で得られた候補ドキュメント（上位 5 件）や `get_linked_docs` の関連リンクを積極的に `read_doc` で回遊・深掘りし、周辺知識や関連ガイドラインを探索してください。`n" +
+        "3. 直接の回答がない場合でも、『直接の記載はありませんが、関連する以下の仕様・手順が参考になります』として、収集した関連ナレッジや補足情報をユーザーに提示してください。`n" +
+        "4. 検索キーワード (query) はユーザーが入力した日本語単語（例: 'エラー', '想定されるエラー'）をそのまま使用し、勝手に英語へ翻訳しないでください。`n" +
+        "5. search_okf の domain パラメータは原則として空文字列 '' を指定し、Wiki 全域から広範にドキュメントを検索してください。`n" +
+        "6. 非推奨 (status: deprecated) の記述は避け、常に現行 (active) 情報のみを根拠にしてください。"
 
     $messages = [System.Collections.Generic.List[PSObject]]::new()
     [void]$messages.Add(@{ role = "system"; content = $sysPrompt })
@@ -1605,25 +1606,15 @@ function Invoke-AgenticRagChat {
                         $q = if ($argsObj.query) { $argsObj.query } else { "" }
                         $d = if ($argsObj.domain) { $argsObj.domain } else { "" }
                         [void]$thinkingLog.Add("🔍 Tool Call: search_okf (query: '$q', domain: '$d')")
-                        $searchHits = Search-OkfDocs -Query $q -DomainFilter $d -StatusFilter "active" -WikiDir $targetDir -MaxResults 3
-                        if ($searchHits -and $searchHits.Count -gt 0) {
-                            foreach ($sh in $searchHits) {
-                                if ($sh.Meta -and $sh.Meta.RelPath -and -not $visitedPaths.Contains($sh.Meta.RelPath)) {
-                                    [void]$visitedPaths.Add($sh.Meta.RelPath)
+                        $toolResult = Invoke-ToolSearchOkf -Query $q -Domain $d -WikiDir $targetDir
+                        # 検索ヒット候補を visitedPaths にも記録
+                        $rawHits = Search-OkfDocs -Query $q -DomainFilter $d -StatusFilter "active" -WikiDir $targetDir -MaxResults 5
+                        if ($rawHits) {
+                            foreach ($rh in $rawHits) {
+                                if ($rh.Meta -and $rh.Meta.RelPath -and -not $visitedPaths.Contains($rh.Meta.RelPath)) {
+                                    [void]$visitedPaths.Add($rh.Meta.RelPath)
                                 }
                             }
-                            $sb = [System.Text.StringBuilder]::new()
-                            foreach ($r in $searchHits) {
-                                $meta = $r.Meta
-                                [void]$sb.AppendLine("---")
-                                [void]$sb.AppendLine("■ タイトル: $($meta.Title) (Path: $($meta.RelPath))")
-                                [void]$sb.AppendLine("・ドメイン: $($meta.Domain) | 著者: $($meta.Author) | 更新: $($meta.LastUpdated.ToString('yyyy-MM-dd'))")
-                                [void]$sb.AppendLine("・概要: $($meta.Description)")
-                                [void]$sb.AppendLine("・スニペット: $($r.Snippet)")
-                            }
-                            $toolResult = $sb.ToString()
-                        } else {
-                            $toolResult = "検索結果は見つかりませんでした。"
                         }
                     }
                     "lookup_glossary" {
@@ -1685,7 +1676,7 @@ function Invoke-AgenticRagChat {
 
     if ([string]::IsNullOrWhiteSpace($finalAnswer)) {
         [void]$thinkingLog.Add("⏱️ ターン上限 ($MaxTurns) に達したため、収集情報から要約回答を生成します。")
-        [void]$messages.Add(@{ role = "user"; content = "※これ以上のツール呼び出しを行わず、ここまでに取得した情報を元に結論をテキストで要約して最終出力してください。該当情報が見つからない場合は『Wiki内に該当する情報が見つかりませんでした』と回答してください。" })
+        [void]$messages.Add(@{ role = "user"; content = "※これ以上のツール呼び出しを行わず、ここまでに取得・探索した情報を元に結論をテキストで最終出力してください。質問に対する完全な直接回答が無い場合でも『該当なし』で終わらせず、探索したドキュメントから得られる関連知識や補足情報を分かりやすく提示してください。" })
 
         $payloadObj = @{
             model       = $Model
@@ -1726,9 +1717,9 @@ function Invoke-AgenticRagChat {
 
         if ([string]::IsNullOrWhiteSpace($finalAnswer)) {
             if ($visitedPaths.Count -gt 0) {
-                $finalAnswer = "Wiki 内を自律調査しましたが、質問に直接該当する明確なエラー情報や定義は見つかりませんでした。"
+                $finalAnswer = "Wiki 内を自律調査しましたが、質問に完全一致する直接記述は見つかりませんでした。\n\n### 調査した関連ドキュメント\n" + (($visitedPaths | ForEach-Object { "- [$_]($_)" }) -join "`n")
             } else {
-                $finalAnswer = "Wiki 内を自律検索しましたが、該当する情報は見つかりませんでした。別の検索キーワードや具体名をお試しください。"
+                $finalAnswer = "Wiki 内を自律検索しましたが、質問に直接該当する明確な記載は見つかりませんでした。関連するガイド（`guides/環境構築.md` や `docs/詳細仕様.md` など）を参照してください。"
             }
         }
     }
