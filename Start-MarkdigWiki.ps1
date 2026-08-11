@@ -721,9 +721,23 @@ function Search-OkfDocs {
     if ([string]::IsNullOrWhiteSpace($StatusFilter)) { $StatusFilter = "active" }
     $stFilterLower = $StatusFilter.ToLower().Trim()
 
-    $keywords = if (-not [string]::IsNullOrWhiteSpace($Query)) {
-        @($Query -split '\s+' | Where-Object { $_ -ne "" })
-    } else { @() }
+    $cleanQuery = if ($Query) { $Query.Trim().Replace([char]0x3000, " ") } else { "" }
+
+    # キーワード抽出: WinRT 形態素解析を優先使用
+    $keywords = @()
+    if (-not [string]::IsNullOrWhiteSpace($cleanQuery)) {
+        # 英数字スペース区切りの場合はそのまま単語分割を優先
+        if ($cleanQuery -match '^[a-zA-Z0-9_\-\s]+$') {
+            $keywords = @($cleanQuery -split '\s+' | Where-Object { $_ -ne "" })
+        } else {
+            $winrtWords = Get-JapaneseWordsWinRT -Text $cleanQuery
+            if ($winrtWords -and $winrtWords.Count -gt 0) {
+                $keywords = @($winrtWords)
+            } else {
+                $keywords = @($cleanQuery -split '\s+' | Where-Object { $_ -ne "" })
+            }
+        }
+    }
 
     $results = [System.Collections.Generic.List[PSObject]]::new()
 
@@ -740,14 +754,23 @@ function Search-OkfDocs {
             if ($itemDomain -notlike "*$DomainFilter*") { continue }
         }
 
-        if ($keywords.Count -eq 0 -and [string]::IsNullOrWhiteSpace($DomainFilter) -and $stFilterLower -eq "all") {
+        if ($keywords.Count -eq 0 -and [string]::IsNullOrWhiteSpace($cleanQuery) -and [string]::IsNullOrWhiteSpace($DomainFilter) -and $stFilterLower -eq "all") {
             continue
         }
 
-        # 3. 重み付けスコアリング & AND 判定
+        # 3. 重み付けスコアリング
         $score = 0
         $matchedKwCount = 0
 
+        # --- A. フレーズ全体一致ボーナス (Exact Phrase Bonus) ---
+        if ($cleanQuery.Length -ge 2) {
+            $phraseRegex = [regex]::Escape($cleanQuery)
+            if ($item.Title -and $item.Title -match "(?i)$phraseRegex") { $score += 15 }
+            if ($item.Description -and $item.Description -match "(?i)$phraseRegex") { $score += 10 }
+            if ($item.BodyText -and $item.BodyText -match "(?i)$phraseRegex") { $score += 8 }
+        }
+
+        # --- B. 形態素単語単位スコアリング ---
         foreach ($kw in $keywords) {
             $kwRegex = [regex]::Escape($kw)
             $kwMatched = $false
@@ -794,8 +817,8 @@ function Search-OkfDocs {
             }
         }
 
-        # AND条件検証
-        if ($keywords.Count -gt 0 -and $matchedKwCount -lt $keywords.Count) {
+        # 英数字複数キーワード指定時のAND検証
+        if ($cleanQuery -match '^[a-zA-Z0-9_\-\s]+$' -and $keywords.Count -gt 1 -and $matchedKwCount -lt $keywords.Count) {
             continue
         }
 

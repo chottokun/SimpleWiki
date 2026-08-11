@@ -701,6 +701,17 @@ Describe "Agentic RAG & OKF Tools Tests" {
         $res | Should Not Be $null
         $res | Should Match "概要"
     }
+
+    It "Search-OkfDocs utilizes WinRT morph tokenization and exact phrase bonus on first attempt" {
+        $sampleDir = Join-Path $projectRoot "markdown_sample"
+        Build-WikiIndex -TargetWikiDir $sampleDir -ForceRefresh | Out-Null
+        # Query containing particles and full sentence
+        $results = Search-OkfDocs -Query "想定されるエラーは？" -StatusFilter "active" -WikiDir $sampleDir
+        $results | Should Not Be $null
+        $results.Count | Should BeGreaterThan 0
+        # Check that top result matched exact phrase or tokenized words
+        $results[0].Score | Should BeGreaterThan 10
+    }
 }
 
 
