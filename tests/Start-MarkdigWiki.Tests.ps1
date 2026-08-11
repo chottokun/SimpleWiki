@@ -712,6 +712,15 @@ Describe "Agentic RAG & OKF Tools Tests" {
         # Check that top result matched exact phrase or tokenized words
         $results[0].Score | Should BeGreaterThan 10
     }
+
+    It "Invoke-ToolSearchOkf returns multiple candidate results with formatting for Agentic traversal" {
+        $sampleDir = Join-Path $projectRoot "markdown_sample"
+        Build-WikiIndex -TargetWikiDir $sampleDir -ForceRefresh | Out-Null
+        $res = Invoke-ToolSearchOkf -Query "仕様" -WikiDir $sampleDir
+        $res | Should Not Be $null
+        $res | Should Match "RelPath"
+        $res | Should Match "read_doc"
+    }
 }
 
 

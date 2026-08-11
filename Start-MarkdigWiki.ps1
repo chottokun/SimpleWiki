@@ -888,11 +888,11 @@ function Invoke-ToolSearchOkf {
     $targetDir = if (-not [string]::IsNullOrWhiteSpace($WikiDir)) { $WikiDir } else { $script:wikiDir }
     if ([string]::IsNullOrWhiteSpace($targetDir)) { $targetDir = $scriptDir }
 
-    $res = Search-OkfDocs -Query $Query -DomainFilter $Domain -StatusFilter "active" -WikiDir $targetDir -MaxResults 3
+    $res = Search-OkfDocs -Query $Query -DomainFilter $Domain -StatusFilter "active" -WikiDir $targetDir -MaxResults 5
 
     # 1. ドメイン絞り込みで0件だった場合、全ドメインでフォールバック検索
     if ($res.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($Domain)) {
-        $res = Search-OkfDocs -Query $Query -DomainFilter "" -StatusFilter "active" -WikiDir $targetDir -MaxResults 3
+        $res = Search-OkfDocs -Query $Query -DomainFilter "" -StatusFilter "active" -WikiDir $targetDir -MaxResults 5
     }
 
     # 2. クエリ全体で0件だった場合、日本語形態素単語分割でフォールバック検索
@@ -901,7 +901,7 @@ function Invoke-ToolSearchOkf {
         if ($kwList -and $kwList.Count -gt 0) {
             $subQuery = $kwList -join " "
             if ($subQuery -ne $Query) {
-                $res = Search-OkfDocs -Query $subQuery -DomainFilter "" -StatusFilter "active" -WikiDir $targetDir -MaxResults 3
+                $res = Search-OkfDocs -Query $subQuery -DomainFilter "" -StatusFilter "active" -WikiDir $targetDir -MaxResults 5
             }
         }
     }
@@ -909,15 +909,20 @@ function Invoke-ToolSearchOkf {
     if ($res.Count -eq 0) {
         return "検索結果は見つかりませんでした。domain を空文字 '' に指定して全Wiki検索を試すか、別のキーワードを指定してください。"
     }
+
     $sb = [System.Text.StringBuilder]::new()
+    [void]$sb.AppendLine("🔍 検索結果候補 (計 $($res.Count) 件):")
+    $idx = 0
     foreach ($r in $res) {
+        $idx++
         $meta = $r.Meta
-        [void]$sb.AppendLine("---")
-        [void]$sb.AppendLine("■ タイトル: $($meta.Title) (Path: $($meta.RelPath))")
-        [void]$sb.AppendLine("・ドメイン: $($meta.Domain) | 著者: $($meta.Author) | 更新: $($meta.LastUpdated.ToString('yyyy-MM-dd'))")
-        [void]$sb.AppendLine("・概要: $($meta.Description)")
-        [void]$sb.AppendLine("・スニペット: $($r.Snippet)")
+        [void]$sb.AppendLine("[$idx] 📄 タイトル: $($meta.Title) | RelPath: '$($meta.RelPath)' | Domain: '$($meta.Domain)' | 更新: $($meta.LastUpdated.ToString('yyyy-MM-dd'))")
+        [void]$sb.AppendLine("    ・概要: $($meta.Description)")
+        if (-not [string]::IsNullOrWhiteSpace($r.Snippet)) {
+            [void]$sb.AppendLine("    ・本文スニペット:`n$($r.Snippet)")
+        }
     }
+    [void]$sb.AppendLine("`n※ 情報を網羅・検証するために、必要に応じて未確認の上記候補ドキュメントの RelPath に対して `read_doc(relPath)` を呼び出して参照してください。")
     return $sb.ToString()
 }
 
@@ -1506,11 +1511,12 @@ function Invoke-AgenticRagChat {
     )
 
     $sysPrompt = "あなたは社内Wikiのナレッジを自律調査して回答する Agentic RAG アシスタントです。`n" +
-        "【探索ガイドライン】`n" +
-        "1. 検索キーワード (query) はユーザーが入力した日本語単語（例: 'エラー', '想定されるエラー'）をそのまま使用し、勝手に英語へ翻訳しないでください。`n" +
-        "2. search_okf の domain パラメータは原則として空文字列 '' を指定し、Wiki 全域からドキュメントを検索してください。`n" +
-        "3. 必要に応じてツール (search_okf, lookup_glossary, read_doc, get_linked_docs) を呼び出し、情報を深掘りして正確な最終回答を作成してください。`n" +
-        "4. 非推奨 (status: deprecated) の記述は避け、常に現行 (active) 情報のみを根拠にしてください。"
+        "【自律探索・複数ドキュメント回遊ルール】`n" +
+        "1. `search_okf` で複数の検索結果候補が得られた場合、最初に読んだ 1 つのファイルだけで満足せず、上位の他の関連候補ドキュメントに対しても `read_doc(relPath)` を順次実行して複数のドキュメントから網羅的に情報を集めてください。`n" +
+        "2. 最初に参照したドキュメントに一部の情報しか載っていない場合、同じ検索を繰り返すのではなく、検索結果候補に含まれている別のファイル（例: guides/ フォルダや index.md 等）を `read_doc` で回遊確認してください。`n" +
+        "3. 検索キーワード (query) はユーザーが入力した日本語単語（例: 'エラー', '想定されるエラー'）をそのまま使用し、勝手に英語へ翻訳しないでください。`n" +
+        "4. search_okf の domain パラメータは原則として空文字列 '' を指定し、Wiki 全域から広範にドキュメントを検索してください。`n" +
+        "5. 非推奨 (status: deprecated) の記述は避け、常に現行 (active) 情報のみを根拠にしてください。"
 
     $messages = [System.Collections.Generic.List[PSObject]]::new()
     [void]$messages.Add(@{ role = "system"; content = $sysPrompt })
