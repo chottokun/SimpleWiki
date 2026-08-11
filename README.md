@@ -76,6 +76,7 @@ SimpleWiki/
 ### 1. 静的 HTML エキスポート GUI ツール (推奨)
 
 `Export-GUI.bat` をダブルクリックして起動します。
+※ **【注意】** GUI ツールは Windows 環境専用です。Linux / macOS などの非 Windows 環境では起動できません。非 Windows 環境（Linux/macOS）では、後述の **「3. バッチ / コマンドラインでのエキスポート」**（CUI/CLI バージョン）をご利用ください。
 
 1. **入力 Markdown フォルダ** を参照ボタン（または直接入力）で選択します。
 2. **出力先 HTML フォルダ** を選択します。
@@ -130,7 +131,12 @@ SimpleWiki/
   - `Markdig.dll`: .NET Framework 4.6.2 ビルド版 Markdown パーサー (GFM / YAML Front Matter 対応)
   - `System.Memory.dll` / `System.Buffers.dll` / `System.Numerics.Vectors.dll` / `System.Runtime.CompilerServices.Unsafe.dll`: .NET 依存補助アセンブリ
   - `mermaid.min.js`: オフライン表示用 Mermaid.js ライブラリ
-- **インターネット接続不要**: `nuget` や `npm` によるオンラインパッケージ取得、管理者権限のインストール作業は一切不要です。リポジトリを展開するだけで 100% 閉域網・オフライン環境で動作します。
+- **インターネット接続不要**: `nuget` や `npm` によるオンラインパッケージ取得、管理者権限 of インストール作業は一切不要です。リポジトリを展開するだけで 100% 閉域網・オフライン環境で動作します。
+
+### **非 Windows 環境 (Linux / macOS) での動作互換性について**
+- **CUI/CLI スクリプトの 100% 動作保証**: Web サーバー起動スクリプト (`Start-MarkdigWiki.ps1`) および静的 HTML エキスポートスクリプト (`Export-MarkdigWiki.ps1`) は、Linux / macOS 上の **PowerShell Core 7+ (pwsh)** 環境でも動作保証されています。
+- **Windows 固有機能の自動フォールバック**: Windows 固有の API やコマンドレット（DPAPI 暗号化、WinRT 日本語形態素解析、`Unblock-File`）が呼び出された場合、非 Windows 環境ではエラーにならず、自動的にポータブルな AES-256 暗号化や正規表現ベースのトークナイズ、プラットフォームに応じた処理スキップへとシームレスかつ安全にフォールバックされます。
+- **GUI ツールのみ非対応**: Windows フォームに強く依存する GUI ツール (`Export-GUI.ps1` / `Export-GUI.bat`) は Windows 専用となります。非 Windows 環境で起動した場合は、自動的に検知して CUI/CLI スクリプトの使用ガイドを表示し、安全に終了します。
 
 ---
 
