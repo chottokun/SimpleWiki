@@ -851,9 +851,29 @@ function Invoke-ToolSearchOkf {
         [string]$Domain = "",
         [string]$WikiDir = ""
     )
-    $res = Search-OkfDocs -Query $Query -DomainFilter $Domain -StatusFilter "active" -WikiDir $WikiDir -MaxResults 3
+    $targetDir = if (-not [string]::IsNullOrWhiteSpace($WikiDir)) { $WikiDir } else { $script:wikiDir }
+    if ([string]::IsNullOrWhiteSpace($targetDir)) { $targetDir = $scriptDir }
+
+    $res = Search-OkfDocs -Query $Query -DomainFilter $Domain -StatusFilter "active" -WikiDir $targetDir -MaxResults 3
+
+    # 1. ドメイン絞り込みで0件だった場合、全ドメインでフォールバック検索
+    if ($res.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($Domain)) {
+        $res = Search-OkfDocs -Query $Query -DomainFilter "" -StatusFilter "active" -WikiDir $targetDir -MaxResults 3
+    }
+
+    # 2. クエリ全体で0件だった場合、日本語形態素単語分割でフォールバック検索
+    if ($res.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($Query)) {
+        $kwList = Get-JapaneseWordsWinRT -Text $Query
+        if ($kwList -and $kwList.Count -gt 0) {
+            $subQuery = $kwList -join " "
+            if ($subQuery -ne $Query) {
+                $res = Search-OkfDocs -Query $subQuery -DomainFilter "" -StatusFilter "active" -WikiDir $targetDir -MaxResults 3
+            }
+        }
+    }
+
     if ($res.Count -eq 0) {
-        return "検索結果は見つかりませんでした。"
+        return "検索結果は見つかりませんでした。domain を空文字 '' に指定して全Wiki検索を試すか、別のキーワードを指定してください。"
     }
     $sb = [System.Text.StringBuilder]::new()
     foreach ($r in $res) {
@@ -1400,8 +1420,8 @@ function Invoke-AgenticRagChat {
                 parameters = @{
                     type = "object"
                     properties = @{
-                        query = @{ type = "string"; description = "検索キーワード" }
-                        domain = @{ type = "string"; description = "絞り込みドメイン (任意)" }
+                        query = @{ type = "string"; description = "検索キーワード (日本語キーワードをそのまま使用し、勝手に英語翻訳しないでください)" }
+                        domain = @{ type = "string"; description = "絞り込みドメイン (原則は空文字列 '' を指定してWiki全域を検索してください)" }
                     }
                     required = @("query")
                 }
@@ -1452,8 +1472,11 @@ function Invoke-AgenticRagChat {
     )
 
     $sysPrompt = "あなたは社内Wikiのナレッジを自律調査して回答する Agentic RAG アシスタントです。`n" +
-        "必要に応じて利用可能なツール (search_okf, lookup_glossary, read_doc, get_linked_docs) を呼び出し、情報を深掘りして正確な最終回答を作成してください。`n" +
-        "非推奨 (status: deprecated) の記述は避け、常に現行 (active) 情報のみを根拠にしてください。"
+        "【探索ガイドライン】`n" +
+        "1. 検索キーワード (query) はユーザーが入力した日本語単語（例: 'エラー', '想定されるエラー'）をそのまま使用し、勝手に英語へ翻訳しないでください。`n" +
+        "2. search_okf の domain パラメータは原則として空文字列 '' を指定し、Wiki 全域からドキュメントを検索してください。`n" +
+        "3. 必要に応じてツール (search_okf, lookup_glossary, read_doc, get_linked_docs) を呼び出し、情報を深掘りして正確な最終回答を作成してください。`n" +
+        "4. 非推奨 (status: deprecated) の記述は避け、常に現行 (active) 情報のみを根拠にしてください。"
 
     $messages = [System.Collections.Generic.List[PSObject]]::new()
     [void]$messages.Add(@{ role = "system"; content = $sysPrompt })

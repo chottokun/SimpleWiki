@@ -692,6 +692,15 @@ Describe "Agentic RAG & OKF Tools Tests" {
         $res.answer | Should Not BeNullOrEmpty
         $res.thinkingLog.Count | Should BeGreaterThan 0
     }
+
+    It "Invoke-ToolSearchOkf falls back to all domains when specific domain query yields zero hits" {
+        $sampleDir = Join-Path $projectRoot "markdown_sample"
+        Build-WikiIndex -TargetWikiDir $sampleDir -ForceRefresh | Out-Null
+        # '概要' is in domain 'root', but domain 'non_existent_domain' is passed
+        $res = Invoke-ToolSearchOkf -Query "概要" -Domain "non_existent_domain" -WikiDir $sampleDir
+        $res | Should Not Be $null
+        $res | Should Match "概要"
+    }
 }
 
 
