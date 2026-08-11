@@ -131,7 +131,7 @@ SimpleWiki/
   - `Markdig.dll`: .NET Framework 4.6.2 ビルド版 Markdown パーサー (GFM / YAML Front Matter 対応)
   - `System.Memory.dll` / `System.Buffers.dll` / `System.Numerics.Vectors.dll` / `System.Runtime.CompilerServices.Unsafe.dll`: .NET 依存補助アセンブリ
   - `mermaid.min.js`: オフライン表示用 Mermaid.js ライブラリ
-- **インターネット接続不要**: `nuget` や `npm` によるオンラインパッケージ取得、管理者権限 of インストール作業は一切不要です。リポジトリを展開するだけで 100% 閉域網・オフライン環境で動作します。
+- **インターネット接続不要**: `nuget` や `npm` によるオンラインパッケージ取得、管理者権限のインストール作業は一切不要です。リポジトリを展開するだけで 100% 閉域網・オフライン環境で動作します。
 
 ### **非 Windows 環境 (Linux / macOS) での動作互換性について**
 - **CUI/CLI スクリプトの 100% 動作保証**: Web サーバー起動スクリプト (`Start-MarkdigWiki.ps1`) および静的 HTML エキスポートスクリプト (`Export-MarkdigWiki.ps1`) は、Linux / macOS 上の **PowerShell Core 7+ (pwsh)** 環境でも動作保証されています。

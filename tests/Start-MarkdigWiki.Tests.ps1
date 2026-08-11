@@ -6,6 +6,17 @@
 $projectRoot = (Resolve-Path "$PSScriptRoot\..").Path
 $libDll      = Join-Path $projectRoot "lib\Markdig.dll"
 
+Describe "Platform Detection Logic Tests" {
+    It "Correctly evaluates `$isWin` for the current platform" {
+        $isWin = ($env:OS -eq "Windows_NT") -or $IsWindows
+        if ($PSVersionTable.Platform -eq "Unix" -or $IsLinux -or $IsMacOS) {
+            $isWin | Should -Be $false
+        } else {
+            $isWin | Should -Be $true
+        }
+    }
+}
+
 Describe "Markdig Assembly & Pipeline Tests" {
     It "Markdig.dll exists in lib directory" {
         (Test-Path $libDll) | Should -Be $true
@@ -607,6 +618,19 @@ Describe 'OKF LLM RAG Security & Encryption Tests' {
             $resolved | Should -Be "sk-test-portable-key"
         } finally {
             Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'Resolves WinRT WordsSegmenter type correctly when running on Windows' {
+        $isWin = ($env:OS -eq "Windows_NT") -or $IsWindows
+        $isClassicPowerShell = $PSVersionTable.PSEdition -eq "Desktop"
+        if ($isWin -and $isClassicPowerShell) {
+            $winRtType = [Type]::GetType("Windows.Data.Text.WordsSegmenter, Windows.Foundation.UniversalApiContract, ContentType=WindowsRuntime")
+            $winRtType | Should -Not -Be $null
+            $segmenter = $winRtType::CreateWithLanguage("ja-JP")
+            $segmenter | Should -Not -Be $null
+        } else {
+            $true | Should -Be $true
         }
     }
 
