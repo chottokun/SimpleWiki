@@ -1542,7 +1542,26 @@ function Invoke-AgenticRagChat {
                         $q = if ($argsObj.query) { $argsObj.query } else { "" }
                         $d = if ($argsObj.domain) { $argsObj.domain } else { "" }
                         [void]$thinkingLog.Add("🔍 Tool Call: search_okf (query: '$q', domain: '$d')")
-                        $toolResult = Invoke-ToolSearchOkf -Query $q -Domain $d -WikiDir $targetDir
+                        $searchHits = Search-OkfDocs -Query $q -DomainFilter $d -StatusFilter "active" -WikiDir $targetDir -MaxResults 3
+                        if ($searchHits -and $searchHits.Count -gt 0) {
+                            foreach ($sh in $searchHits) {
+                                if ($sh.Meta -and $sh.Meta.RelPath -and -not $visitedPaths.Contains($sh.Meta.RelPath)) {
+                                    [void]$visitedPaths.Add($sh.Meta.RelPath)
+                                }
+                            }
+                            $sb = [System.Text.StringBuilder]::new()
+                            foreach ($r in $searchHits) {
+                                $meta = $r.Meta
+                                [void]$sb.AppendLine("---")
+                                [void]$sb.AppendLine("■ タイトル: $($meta.Title) (Path: $($meta.RelPath))")
+                                [void]$sb.AppendLine("・ドメイン: $($meta.Domain) | 著者: $($meta.Author) | 更新: $($meta.LastUpdated.ToString('yyyy-MM-dd'))")
+                                [void]$sb.AppendLine("・概要: $($meta.Description)")
+                                [void]$sb.AppendLine("・スニペット: $($r.Snippet)")
+                            }
+                            $toolResult = $sb.ToString()
+                        } else {
+                            $toolResult = "検索結果は見つかりませんでした。"
+                        }
                     }
                     "lookup_glossary" {
                         $t = if ($argsObj.term) { $argsObj.term } else { "" }
@@ -1603,7 +1622,7 @@ function Invoke-AgenticRagChat {
 
     if ([string]::IsNullOrWhiteSpace($finalAnswer)) {
         [void]$thinkingLog.Add("⏱️ ターン上限 ($MaxTurns) に達したため、収集情報から要約回答を生成します。")
-        [void]$messages.Add(@{ role = "user"; content = "これまでに取得した情報を元に、結論を要約して出力してください。" })
+        [void]$messages.Add(@{ role = "user"; content = "※これ以上のツール呼び出しを行わず、ここまでに取得した情報を元に結論をテキストで要約して最終出力してください。該当情報が見つからない場合は『Wiki内に該当する情報が見つかりませんでした』と回答してください。" })
 
         $payloadObj = @{
             model       = $Model
@@ -1613,14 +1632,15 @@ function Invoke-AgenticRagChat {
         $jsonBody = $payloadObj | ConvertTo-Json -Depth 5
         $reqBytes = [System.Text.Encoding]::UTF8.GetBytes($jsonBody)
 
-        $webReq = [System.Net.HttpWebRequest]::Create($endpointUrl)
-        $webReq.Method = "POST"
-        $webReq.ContentType = "application/json; charset=utf-8"
-        $webReq.Timeout = $TimeoutSec * 1000
-        if (-not [string]::IsNullOrWhiteSpace($resolvedKey)) {
-            $webReq.Headers["Authorization"] = "Bearer $resolvedKey"
-        }
         try {
+            $webReq = [System.Net.HttpWebRequest]::Create($endpointUrl)
+            $webReq.Method = "POST"
+            $webReq.ContentType = "application/json; charset=utf-8"
+            $webReq.Timeout = $TimeoutSec * 1000
+            if (-not [string]::IsNullOrWhiteSpace($resolvedKey)) {
+                $webReq.Headers["Authorization"] = "Bearer $resolvedKey"
+            }
+
             $reqStream = $webReq.GetRequestStream()
             $reqStream.Write($reqBytes, 0, $reqBytes.Length)
             $reqStream.Close()
@@ -1638,7 +1658,15 @@ function Invoke-AgenticRagChat {
                 $webRes.Close()
             }
         } catch {
-            $finalAnswer = "調査結果の集約中にエラーが発生しました。"
+            # 通信例外等のキャッチ
+        }
+
+        if ([string]::IsNullOrWhiteSpace($finalAnswer)) {
+            if ($visitedPaths.Count -gt 0) {
+                $finalAnswer = "Wiki 内を自律調査しましたが、質問に直接該当する明確なエラー情報や定義は見つかりませんでした。"
+            } else {
+                $finalAnswer = "Wiki 内を自律検索しましたが、該当する情報は見つかりませんでした。別の検索キーワードや具体名をお試しください。"
+            }
         }
     }
 

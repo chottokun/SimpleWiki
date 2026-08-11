@@ -684,6 +684,14 @@ Describe "Agentic RAG & OKF Tools Tests" {
             Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
+
+    It "Invoke-AgenticRagChat fallback generates informative answer when LLM fails or max turns reached without content" {
+        # Invalid API URL triggers fallback handling
+        $res = Invoke-AgenticRagChat -ApiUrl "http://invalid-endpoint-xyz-999" -ApiKey "key" -Model "model" -UserMessage "質問" -WikiDir $projectRoot -MaxTurns 1 -TimeoutSec 1
+        $res | Should Not Be $null
+        $res.answer | Should Not BeNullOrEmpty
+        $res.thinkingLog.Count | Should BeGreaterThan 0
+    }
 }
 
 
