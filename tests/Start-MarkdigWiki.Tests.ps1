@@ -253,11 +253,93 @@ Describe "OKF Dynamic View & API Endpoint Tests" {
         $script:WikiIndex.Count | Should BeGreaterThan 0
     }
 
-    It "Generates JSON for /api/index.json containing OKF metadata" {
+    It "Generates JSON for /api/index.json containing Envelope structure and OKF metadata" {
         $json = Get-ApiIndexJson
         $json | Should Not Be $null
-        $json | Should Match "Title"
-        $json | Should Match "RelPath"
+        $obj = $json | ConvertFrom-Json
+        $obj.Total | Should BeGreaterThan 0
+        $obj.Count | Should BeGreaterThan 0
+        $obj.Limit | Should BeGreaterThan 0
+        $obj.Items[0].Title | Should Not Be $null
+        $obj.Items[0].RelPath | Should Not Be $null
+    }
+
+    It "TC-API-01: Correctly applies limit and offset pagination boundaries" {
+        $json = Get-ApiIndexJson -QueryParams @{ limit = "1"; offset = "0" }
+        $obj = $json | ConvertFrom-Json
+        $obj.Count | Should Be 1
+        $obj.Limit | Should Be 1
+        $obj.Offset | Should Be 0
+        $obj.IsTruncated | Should Be $true
+
+        # Boundary: offset out of bounds
+        $jsonOutOfBounds = Get-ApiIndexJson -QueryParams @{ limit = "10"; offset = "99999" }
+        $objOutOfBounds = $jsonOutOfBounds | ConvertFrom-Json
+        $objOutOfBounds.Count | Should Be 0
+        $objOutOfBounds.Items.Count | Should Be 0
+        $objOutOfBounds.IsTruncated | Should Be $false
+
+        # Boundary: negative offset fallback to 0
+        $jsonNegOffset = Get-ApiIndexJson -QueryParams @{ limit = "2"; offset = "-5" }
+        $objNegOffset = $jsonNegOffset | ConvertFrom-Json
+        $objNegOffset.Offset | Should Be 0
+    }
+
+    It "TC-API-02: Handles invalid limit and maxLimit enforcement" {
+        # Invalid string limit falls back to default limit
+        $jsonInvalidLimit = Get-ApiIndexJson -QueryParams @{ limit = "invalid_number" }
+        $objInvalidLimit = $jsonInvalidLimit | ConvertFrom-Json
+        $objInvalidLimit.Limit | Should Be 100
+
+        # Excess limit capped at maxLimit (1000)
+        $jsonExcessLimit = Get-ApiIndexJson -QueryParams @{ limit = "5000" }
+        $objExcessLimit = $jsonExcessLimit | ConvertFrom-Json
+        $objExcessLimit.Limit | Should Be 1000
+
+        # Bypass maxLimit with limit=all or -1
+        $jsonAll = Get-ApiIndexJson -QueryParams @{ limit = "all" }
+        $objAll = $jsonAll | ConvertFrom-Json
+        $objAll.Limit | Should Be $objAll.Total
+        $objAll.Count | Should Be $objAll.Total
+    }
+
+    It "TC-API-03: Filters by domain, tag, and since date accurately" {
+        # Non-existent domain returns empty result cleanly
+        $jsonNoDomain = Get-ApiIndexJson -QueryParams @{ domain = "non_existent_domain_xyz" }
+        $objNoDomain = $jsonNoDomain | ConvertFrom-Json
+        $objNoDomain.Total | Should Be 0
+        $objNoDomain.Count | Should Be 0
+
+        # Non-existent tag returns empty result cleanly
+        $jsonNoTag = Get-ApiIndexJson -QueryParams @{ tag = "NonExistentTag999" }
+        $objNoTag = $jsonNoTag | ConvertFrom-Json
+        $objNoTag.Total | Should Be 0
+        $objNoTag.Count | Should Be 0
+
+        # Invalid since date string is safely ignored
+        $jsonBadSince = Get-ApiIndexJson -QueryParams @{ since = "not-a-valid-date" }
+        $objBadSince = $jsonBadSince | ConvertFrom-Json
+        $objBadSince.Total | Should BeGreaterThan 0
+
+        # Valid since date filters out older documents
+        $futureDateStr = (Get-Date).AddYears(10).ToString("yyyy-MM-dd")
+        $jsonFutureSince = Get-ApiIndexJson -QueryParams @{ since = $futureDateStr }
+        $objFutureSince = $jsonFutureSince | ConvertFrom-Json
+        $objFutureSince.Total | Should Be 0
+    }
+
+    It "TC-API-04: Selects specific fields with case-insensitivity and handles single item array preservation" {
+        # Fields parameter selects only requested properties
+        $jsonFields = Get-ApiIndexJson -QueryParams @{ fields = "title,relpath"; limit = "1" }
+        $objFields = $jsonFields | ConvertFrom-Json
+        $firstItem = $objFields.Items[0]
+        $firstItem.Title | Should Not Be $null
+        $firstItem.RelPath | Should Not Be $null
+        $firstItem.PSObject.Properties["Description"] | Should Be $null
+        $firstItem.PSObject.Properties["Author"] | Should Be $null
+
+        # Single item response still preserves array type for Items
+        $objFields.Items -is [Array] | Should Be $true
     }
 
     It "Generates pre-chunked JSON for /api/chunks.json containing section-level RAG chunks" {

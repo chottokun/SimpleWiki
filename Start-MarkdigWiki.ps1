@@ -475,7 +475,7 @@ function Get-ApiIndexJson {
         $fields = ($QueryParams["fields"] -split ',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }
     }
 
-    $exportItems = foreach ($item in $slicedItems) {
+    $exportItems = @(foreach ($item in $slicedItems) {
         $lastUpdStr = if ($item.LastUpdated -is [DateTime]) { $item.LastUpdated.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $item.LastUpdated }
         $fullObj = [PSCustomObject]@{
             Title       = $item.Title
@@ -501,9 +501,9 @@ function Get-ApiIndexJson {
         } else {
             $fullObj
         }
-    }
+    })
 
-    $itemCount = ($exportItems | Measure-Object).Count
+    $itemCount = $exportItems.Count
     $isTruncated = ($offset + $itemCount) -lt $total
 
     $envelope = [PSCustomObject]@{
@@ -512,7 +512,7 @@ function Get-ApiIndexJson {
         Offset      = $offset
         Limit       = $limit
         IsTruncated = $isTruncated
-        Items       = @($exportItems)
+        Items       = $exportItems
     }
 
     return ($envelope | ConvertTo-Json -Depth 5)
