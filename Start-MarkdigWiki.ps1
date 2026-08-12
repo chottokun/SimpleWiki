@@ -407,21 +407,115 @@ function Get-OkfCardHtml {
 
 # --- 機械可読 API JSON 生成関数 (AI エージェント / LLM 用) ---
 function Get-ApiIndexJson {
+    param (
+        [hashtable]$QueryParams = @{}
+    )
     Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
-    $exportItems = foreach ($item in $script:WikiIndex) {
-        [PSCustomObject]@{
+    $config = Get-ConfigJson -TargetScriptDir $scriptDir
+
+    $defaultLimit = if ($config.api -and $config.api.defaultLimit) { [int]$config.api.defaultLimit } else { 100 }
+    $maxLimit     = if ($config.api -and $config.api.maxLimit) { [int]$config.api.maxLimit } else { 1000 }
+
+    $filteredItems = $script:WikiIndex
+
+    # 1. フィルタリング (Domain)
+    if ($QueryParams.ContainsKey("domain") -and -not [string]::IsNullOrWhiteSpace($QueryParams["domain"])) {
+        $targetDomain = $QueryParams["domain"].Trim()
+        $filteredItems = $filteredItems | Where-Object { $_.Domain -eq $targetDomain -or $_.Domain.StartsWith($targetDomain) }
+    }
+
+    # 2. フィルタリング (Tag)
+    if ($QueryParams.ContainsKey("tag") -and -not [string]::IsNullOrWhiteSpace($QueryParams["tag"])) {
+        $targetTag = $QueryParams["tag"].Trim()
+        $filteredItems = $filteredItems | Where-Object { $_.Tags -and ($_.Tags -contains $targetTag) }
+    }
+
+    # 3. フィルタリング (Since: YYYY-MM-DD or ISO 8601)
+    if ($QueryParams.ContainsKey("since") -and -not [string]::IsNullOrWhiteSpace($QueryParams["since"])) {
+        $sinceParsed = [DateTime]::MinValue
+        if ([DateTime]::TryParse($QueryParams["since"], [ref]$sinceParsed)) {
+            $filteredItems = $filteredItems | Where-Object { $_.LastUpdated -ge $sinceParsed }
+        }
+    }
+
+    $total = ($filteredItems | Measure-Object).Count
+
+    # 4. ページネーション (Offset & Limit)
+    $offset = 0
+    if ($QueryParams.ContainsKey("offset")) {
+        [int]::TryParse($QueryParams["offset"], [ref]$offset) | Out-Null
+        if ($offset -lt 0) { $offset = 0 }
+    }
+
+    $limit = $defaultLimit
+    if ($QueryParams.ContainsKey("limit")) {
+        $rawLimit = $QueryParams["limit"]
+        if ($rawLimit -eq "all" -or $rawLimit -eq "-1") {
+            $limit = $total
+        } else {
+            [int]::TryParse($rawLimit, [ref]$limit) | Out-Null
+            if ($limit -le 0) { $limit = $defaultLimit }
+        }
+    }
+
+    if ($limit -gt $maxLimit -and ($QueryParams["limit"] -ne "all" -and $QueryParams["limit"] -ne "-1")) {
+        $limit = $maxLimit
+    }
+
+    $slicedItems = if ($total -gt 0 -and $offset -lt $total) {
+        $countToTake = [Math]::Min($limit, $total - $offset)
+        $filteredItems[$offset..($offset + $countToTake - 1)]
+    } else {
+        @()
+    }
+
+    # 5. フィールド指定 (Fields: カンマ区切り)
+    $fields = $null
+    if ($QueryParams.ContainsKey("fields") -and -not [string]::IsNullOrWhiteSpace($QueryParams["fields"])) {
+        $fields = ($QueryParams["fields"] -split ',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+    }
+
+    $exportItems = foreach ($item in $slicedItems) {
+        $lastUpdStr = if ($item.LastUpdated -is [DateTime]) { $item.LastUpdated.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $item.LastUpdated }
+        $fullObj = [PSCustomObject]@{
             Title       = $item.Title
             Description = $item.Description
             Author      = $item.Author
             Domain      = $item.Domain
             Tags        = $item.Tags
-            LastUpdated = $item.LastUpdated.ToString("yyyy-MM-ddTHH:mm:ssZ")
+            LastUpdated = $lastUpdStr
             Status      = $item.Status
             HasYaml     = $item.HasYaml
             RelPath     = $item.RelPath
         }
+
+        if ($fields -and $fields.Count -gt 0) {
+            $selectedObj = [ordered]@{}
+            foreach ($f in $fields) {
+                $prop = $fullObj.psobject.Properties | Where-Object { $_.Name -eq $f } | Select-Object -First 1
+                if ($prop) {
+                    $selectedObj[$prop.Name] = $prop.Value
+                }
+            }
+            [PSCustomObject]$selectedObj
+        } else {
+            $fullObj
+        }
     }
-    return ($exportItems | ConvertTo-Json -Depth 3)
+
+    $itemCount = ($exportItems | Measure-Object).Count
+    $isTruncated = ($offset + $itemCount) -lt $total
+
+    $envelope = [PSCustomObject]@{
+        Total       = $total
+        Count       = $itemCount
+        Offset      = $offset
+        Limit       = $limit
+        IsTruncated = $isTruncated
+        Items       = @($exportItems)
+    }
+
+    return ($envelope | ConvertTo-Json -Depth 5)
 }
 
 # --- RAG / LLM 用セマンティックチャンク JSON 生成関数 (/api/chunks.json) ---
@@ -2086,7 +2180,7 @@ try {
 
             # 1. API エンドポイント (/api/index.json, /api/chunks.json, /api/chat)
             if ($rawPath -eq "/api/index.json") {
-                $jsonStr = Get-ApiIndexJson
+                $jsonStr = Get-ApiIndexJson -QueryParams $queryParams
                 $bytes   = [System.Text.Encoding]::UTF8.GetBytes($jsonStr)
                 Write-SafeHttpResponse -Response $response -Bytes $bytes -ContentType "application/json; charset=utf-8"
                 continue

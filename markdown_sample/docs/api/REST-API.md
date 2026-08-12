@@ -23,14 +23,14 @@ SimpleWiki が提供する AI エージェント（RAG / LLM）および外部�
 
 | メソッド | エンドポイント | 用途・説明 | パラメータ | 認証 |
 | :--- | :--- | :--- | :--- | :--- |
-| `GET` | `/api/index.json` | Wiki 全件の OKF メタデータ構造化一覧を取得 | なし | 不要 |
+| `GET` | `/api/index.json` | Wiki ドキュメントの OKF メタデータ一覧を取得（ページネーション・フィルタ可） | `domain`, `tag`, `since`, `limit`, `offset`, `fields` | 不要 |
 | `GET` | `/api/chunks.json` | RAG 用自動 H2/H3 見出し分割済み JSON チャンク一覧を取得 | なし | 不要 |
 | `POST` | `/api/chat` | OKF 文脈検索 ＋ LLM RAG AI チャット応答を取得 | `{"message": "質問文"}` | 不要 (`config.json` 依存) |
 | `GET` | `/*.md` | 指定相対パスの Raw Markdown 本文を取得 | なし | 不要 |
 
 ---
 
-## 🔄 RAG データ取得フロー (Mermaid シーケンス図デモ)
+## 3. 🔄 RAG データ取得フロー (Mermaid シーケンス図デモ)
 
 SimpleWiki を RAG のナレッジデータソース（Producer）として利用する際のシーケンス図です。
 
@@ -49,8 +49,8 @@ sequenceDiagram
     end
 
     note over RAG,Wiki: パターン B: 構造化インデックス API (/api/index.json) を利用
-    RAG->>Wiki: GET /api/index.json
-    Wiki-->>RAG: JSON (全文書メタデータ一覧)
+    RAG->>Wiki: GET /api/index.json?limit=100
+    Wiki-->>RAG: JSON Envelope (メタデータ一覧 ＋ total / limit 件数情報)
     loop active 文書の抽出と取得
         RAG->>Wiki: GET /docs/詳細仕様.md
         Wiki-->>RAG: Raw Markdown テキスト
@@ -62,21 +62,40 @@ sequenceDiagram
 
 ## 1. 全文書メタデータインデックス API (`/api/index.json`)
 
+ドキュメント数が大規模に増加した場合に備過剰なデータ転送や LLM コンテキストの圧迫を防ぐため、**エンベロープ（Envelope）レスポンス**、**ページネーション**、**フィルタリング**、および **`config.json` によるデフォルト上限制限** を提供しています。
+
+### クエリパラメータ:
+| パラメータ | 型 | 説明 | 例 |
+| :--- | :--- | :--- | :--- |
+| `domain` | string | 特定のドメイン（階層フォルダ）で絞り込み | `?domain=docs/api` |
+| `tag` | string | 特定のタグで絞り込み | `?tag=RAG` |
+| `since` | string | 指定日時以降に更新されたドキュメントのみ取得（差分同期用） | `?since=2026-08-01` |
+| `limit` | int/string | 1ページの取得件数（`config.json` の `api.defaultLimit` がデフォルト。全件は `all` または `-1`） | `?limit=50` |
+| `offset` | int | 取得開始位置（0オリジン） | `?offset=50` |
+| `fields` | string | 返却オブジェクトに含めるフィールドのカンマ区切り（軽量化用） | `?fields=Title,RelPath,LastUpdated` |
+
 ### レスポンス構造例:
 ```json
-[
-  {
-    "Title": "REST API 仕様書 ＆ AI Agent / RAG 連携ガイド",
-    "Description": "AI エージェントおよび RAG パイプライン向け機械可読 JSON API エンドポイントの仕様書です。",
-    "Author": "API 開発チーム",
-    "Domain": "仕様/API",
-    "Tags": ["API", "RAG", "JSON", "LLM"],
-    "LastUpdated": "2026-08-09T00:00:00Z",
-    "Status": "active",
-    "HasYaml": true,
-    "RelPath": "docs/api/REST-API.md"
-  }
-]
+{
+  "Total": 1250,
+  "Count": 1,
+  "Offset": 0,
+  "Limit": 100,
+  "IsTruncated": false,
+  "Items": [
+    {
+      "Title": "REST API 仕様書 ＆ AI Agent / RAG 連携ガイド",
+      "Description": "AI エージェントおよび RAG パイプライン向け機械可読 JSON API エンドポイントの仕様書です。",
+      "Author": "API 開発チーム",
+      "Domain": "仕様/API",
+      "Tags": ["API", "RAG", "JSON", "LLM"],
+      "LastUpdated": "2026-08-09T00:00:00Z",
+      "Status": "active",
+      "HasYaml": true,
+      "RelPath": "docs/api/REST-API.md"
+    }
+  ]
+}
 ```
 
 ---
