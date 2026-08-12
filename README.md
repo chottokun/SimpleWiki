@@ -4,6 +4,13 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
 
 ---
 
+## イメージ
+
+
+![SimpleWiki 画面イメージ](images/wiki_screen_shots.png)
+
+---
+
 ## プロジェクト記録 (Evidence-Based Project Record)
 
 - **開発目的**:
