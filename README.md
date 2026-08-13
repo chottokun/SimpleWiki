@@ -32,6 +32,11 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
     - Windows DPAPI またはポータブル AES-256 暗号化（`ENC:...` / `DPAPI:...`）により、`config.json` 内の API キーを安全に保護。
   - **Google OKF (Open Knowledge Format) 思想の準拠**: YAML Front Matter からの文脈抽出・自動補完 (フォールバック)・OKF メタデータカード描画
   - **AI エージェント / LLM 用機械可読 API**: `/api/index.json` (メタデータ), `/api/chunks.json` (自動セマンティック分割チャンク), `/api/chat` (AI チャット)
+  - **✏️ Web UI 内蔵 Markdown エディター ＆ 世代管理バックアップ・復元 ＆ OKF 構文検証**:
+    - Web ブラウザ上からの Markdown インプレース直接編集・保存機能 (`/api/raw`, `/api/save`)。
+    - `config.json` の `editor.maxBackups` (既定値 3) に基づく自動世代バックアップローテーション (`.bak1`, `.bak2`, ...)。
+    - エディターモーダル上での過去世代ドロップダウンプレビュー選択 ＆ ワンクリックでのロールバック復元 UI。
+    - 保存時の OKF (YAML Front Matter) 構文エラー自動検出 ＆ マイルドなアドバイス表示 (ソフトLint)。
   - **動的ナビゲーション & ビュー**: 最近の更新 (`/recent`), タグ集計/検索 (`/tags`), 品質・メンテナンスダッシュボード (`/maintenance`), 著者ディレクトリ (`/authors`), AND 検索 (`/search`)
   - **静的エキスポート**: `Export-MarkdigWiki.ps1` による OKF メタデータカード同梱型 HTML 一括出力
   - **Markdown レンダリング**: .NET 4.6.2 ビルド版 `Markdig.dll` (GFM テーブル・コードブロック・タスクリスト・YamlFrontMatter 対応)

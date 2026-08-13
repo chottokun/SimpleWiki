@@ -46,6 +46,56 @@ Get-ChildItem -Path $libDir -Filter "*.dll" | ForEach-Object {
     Add-Type -Path $_.FullName
 }
 
+# --- OKF YAML Front Matter 構文検証関数 ---
+function Test-YamlFrontMatterSyntax {
+    param (
+        [string]$MdText = ""
+    )
+
+    $result = @{
+        isValid  = $true
+        warnings = [System.Collections.Generic.List[string]]::new()
+    }
+
+    if ([string]::IsNullOrWhiteSpace($MdText)) {
+        return $result
+    }
+
+    if ($MdText -match '(?s)^\s*---\r?\n(.*)$') {
+        $afterFirstHeader = $matches[1]
+        if ($afterFirstHeader -notmatch '(?s)^(.*?)\r?\n---\r?\n(.*)$') {
+            $result.isValid = $false
+            [void]$result.warnings.Add("YAML Front Matter の閉じヘッダー ('---') が見つかりません。")
+            return $result
+        }
+
+        $rawYaml = $matches[1]
+        $lines = $rawYaml -split '\r?\n'
+        $lineNo = 1
+
+        foreach ($line in $lines) {
+            $lineNo++
+            if ([string]::IsNullOrWhiteSpace($line) -or $line -match '^\s*#') {
+                continue
+            }
+
+            if ($line -match '^\s*-\s+.*$') {
+                continue
+            }
+
+            if ($line -match '^\s*([a-zA-Z0-9_\-]+)\s*:\s*(.*)$') {
+                continue
+            }
+
+            $result.isValid = $false
+            $trimmedLine = if ($line.Length -gt 40) { $line.Substring(0, 40) + "..." } else { $line }
+            [void]$result.warnings.Add("${lineNo}行目: YAML の形式 (key: value) が不正です: `"$trimmedLine`"")
+        }
+    }
+
+    return $result
+}
+
 # --- OKF メタデータ抽出し ＆ 自動補完 (フォールバック) 関数 ---
 function Get-DocumentMetadata {
     param (
@@ -2200,7 +2250,7 @@ try {
                 Write-SafeHttpResponse -Response $response -Bytes $bytes -ContentType "application/json; charset=utf-8"
                 continue
             }
-            if ($rawPath -eq "/api/raw" -and $request.HttpMethod -eq "GET") {
+            if ($rawPath -eq "/api/backups" -and $request.HttpMethod -eq "GET") {
                 $relPath = $queryParams["relPath"]
                 if ([string]::IsNullOrWhiteSpace($relPath)) {
                     $jsonRes = @{ error = "INVALID_REQUEST"; message = "relPath が指定されていません。" } | ConvertTo-Json
@@ -2215,12 +2265,53 @@ try {
                     Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 403
                     continue
                 }
+                $backups = [System.Collections.Generic.List[PSObject]]::new()
+                $config = Get-ConfigJson -TargetScriptDir $scriptDir
+                $maxBackups = 3
+                if ($config.editor -and $config.editor.maxBackups -ne $null) {
+                    $maxBackups = [int]$config.editor.maxBackups
+                }
+                for ($i = 1; $i -le $maxBackups; $i++) {
+                    $bakPath = "$fullPath.bak$i"
+                    if (Test-Path $bakPath -PathType Leaf) {
+                        $item = Get-Item $bakPath
+                        $backups.Add(@{
+                            version      = "bak$i"
+                            label        = "世代 $i (.bak$i)"
+                            lastModified = $item.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
+                        })
+                    }
+                }
+                $jsonRes = @{ backups = $backups } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+                continue
+            }
+            if ($rawPath -eq "/api/raw" -and $request.HttpMethod -eq "GET") {
+                $relPath = $queryParams["relPath"]
+                $version = $queryParams["version"]
+                if ([string]::IsNullOrWhiteSpace($relPath)) {
+                    $jsonRes = @{ error = "INVALID_REQUEST"; message = "relPath が指定されていません。" } | ConvertTo-Json
+                    Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 400
+                    continue
+                }
+                $cleanRel = $relPath.TrimStart("/").Replace("/", "\")
+                $filePath = Join-Path $wikiDir $cleanRel
+                $targetPath = $filePath
+                if (-not [string]::IsNullOrWhiteSpace($version) -and $version -match "^bak\d+$") {
+                    $targetPath = "$filePath.$version"
+                }
+                $fullPath = [System.IO.Path]::GetFullPath($targetPath)
+                if (-not $fullPath.StartsWith($fullWikiDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $jsonRes = @{ error = "FORBIDDEN"; message = "アクセスが禁止されています。" } | ConvertTo-Json
+                    Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 403
+                    continue
+                }
                 if (-not (Test-Path $fullPath -PathType Leaf)) {
                     $jsonRes = @{ error = "NOT_FOUND"; message = "ファイルが見つかりません。" } | ConvertTo-Json
                     Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 404
                     continue
                 }
-                $content = Get-Content -Path $fullPath -Raw -Encoding UTF8
+                $content = [System.IO.File]::ReadAllText($fullPath, [System.Text.Encoding]::UTF8)
                 $jsonRes = @{ markdown = $content } | ConvertTo-Json
                 Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
                 continue
@@ -2269,7 +2360,14 @@ try {
                 # インデックスの更新を強制
                 Build-WikiIndex -TargetWikiDir $wikiDir -ForceRefresh | Out-Null
 
-                $jsonRes = @{ success = $true } | ConvertTo-Json
+                # YAML Front Matter 構文検証 (ソフトLint)
+                $yamlSyntax = Test-YamlFrontMatterSyntax -MdText $reqObj.markdown
+                $resData = @{ success = $true }
+                if (-not $yamlSyntax.isValid -and $yamlSyntax.warnings.Count -gt 0) {
+                    $resData["warning"] = "⚠️ YAML Front Matter に記述エラーが見つかりました:`n・" + ($yamlSyntax.warnings -join "`n・")
+                }
+
+                $jsonRes = $resData | ConvertTo-Json
                 Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
                 continue
             }
@@ -2668,7 +2766,12 @@ try {
     <div id="wikiEditorModal" class="wiki-editor-modal">
         <div class="wiki-editor-container">
             <div class="wiki-editor-header">
-                <span>📝 Markdown エディター</span>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span>📝 Markdown エディター</span>
+                    <select id="wikiEditorHistorySelect" onchange="loadWikiHistoryVersion(this)" style="background: #24292e; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 2px 6px; font-size: 12px; cursor: pointer;">
+                        <option value="">最新版 (編集用)</option>
+                    </select>
+                </div>
                 <span style="font-size: 12px; color: #ccc;" id="wikiEditorPath"></span>
             </div>
             <div class="wiki-editor-body">
@@ -2689,13 +2792,56 @@ try {
             document.getElementById("wikiEditorTextarea").value = "読み込み中...";
             document.getElementById("wikiEditorModal").style.display = "flex";
 
+            const selectEl = document.getElementById("wikiEditorHistorySelect");
+            selectEl.innerHTML = '<option value="">最新版 (編集用)</option>';
+
             fetch("/api/raw?relPath=" + encodeURIComponent(relPath))
                 .then(res => res.json())
                 .then(data => {
                     if (data.markdown !== undefined) {
-                        document.getElementById("wikiEditorTextarea").value = data.markdown;
+                        const mdVal = (typeof data.markdown === "object" && data.markdown !== null) ? (data.markdown.value || "") : data.markdown;
+                        document.getElementById("wikiEditorTextarea").value = mdVal;
                     } else {
                         document.getElementById("wikiEditorTextarea").value = "エラー: 読み込みに失敗しました。";
+                    }
+                })
+                .catch(err => {
+                    document.getElementById("wikiEditorTextarea").value = "エラー: " + err;
+                });
+
+            fetch("/api/backups?relPath=" + encodeURIComponent(relPath))
+                .then(res => res.json())
+                .then(data => {
+                    if (data.backups && data.backups.length > 0) {
+                        data.backups.forEach(b => {
+                            const opt = document.createElement("option");
+                            opt.value = b.version;
+                            opt.textContent = `${b.label} (${b.lastModified})`;
+                            selectEl.appendChild(opt);
+                        });
+                    }
+                })
+                .catch(err => console.error("Backup list fetch error:", err));
+        }
+
+        function loadWikiHistoryVersion(selectEl) {
+            const relPath = document.getElementById("wikiEditorPath").textContent;
+            const version = selectEl.value;
+            document.getElementById("wikiEditorTextarea").value = "履歴読込中...";
+
+            let url = "/api/raw?relPath=" + encodeURIComponent(relPath);
+            if (version) {
+                url += "&version=" + encodeURIComponent(version);
+            }
+
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.markdown !== undefined) {
+                        const mdVal = (typeof data.markdown === "object" && data.markdown !== null) ? (data.markdown.value || "") : data.markdown;
+                        document.getElementById("wikiEditorTextarea").value = mdVal;
+                    } else {
+                        document.getElementById("wikiEditorTextarea").value = "エラー: 履歴の読み込みに失敗しました。";
                     }
                 })
                 .catch(err => {
@@ -2719,7 +2865,11 @@ try {
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
-                    alert("保存しました。");
+                    if (data.warning) {
+                        alert("保存しました。\n\n" + data.warning);
+                    } else {
+                        alert("保存しました。");
+                    }
                     location.reload();
                 } else {
                     alert("保存エラー: " + (data.message || "原因不明"));

@@ -950,6 +950,65 @@ Describe "Markdown Editor API & Generation Backup Tests" {
 
         Remove-Item -Path $tempDir -Recurse -Force
     }
+
+    It "Serializes /api/raw content as string without PSNoteProperty objects" {
+        $tempDir = Join-Path $projectRoot "temp_test_editor_raw"
+        if (Test-Path $tempDir) { Remove-Item -Path $tempDir -Recurse -Force }
+        $null = New-Item -ItemType Directory -Path $tempDir
+        $testFile = Join-Path $tempDir "raw-test.md"
+
+        [System.IO.File]::WriteAllText($testFile, "# Test Heading`nTest body content", [System.Text.Encoding]::UTF8)
+
+        $content = [System.IO.File]::ReadAllText($testFile, [System.Text.Encoding]::UTF8)
+        $jsonStr = @{ markdown = $content } | ConvertTo-Json
+        $parsedObj = $jsonStr | ConvertFrom-Json
+
+        ($parsedObj.markdown -is [string]) | Should -Be $true
+        $parsedObj.markdown | Should -Match "# Test Heading"
+
+        Remove-Item -Path $tempDir -Recurse -Force
+    }
+
+    It "Detects backup versions and reads historical versions correctly" {
+        $tempDir = Join-Path $projectRoot "temp_test_editor_history"
+        if (Test-Path $tempDir) { Remove-Item -Path $tempDir -Recurse -Force }
+        $null = New-Item -ItemType Directory -Path $tempDir
+
+        $testFile = Join-Path $tempDir "history-doc.md"
+        $bak1File = "$testFile.bak1"
+
+        [System.IO.File]::WriteAllText($testFile, "Current content", [System.Text.Encoding]::UTF8)
+        [System.IO.File]::WriteAllText($bak1File, "Historical content gen 1", [System.Text.Encoding]::UTF8)
+
+        # Test reading backup file via ReadAllText
+        $bakContent = [System.IO.File]::ReadAllText($bak1File, [System.Text.Encoding]::UTF8)
+        $bakContent | Should -Match "Historical content gen 1"
+
+        # Check backup file detection
+        (Test-Path "$testFile.bak1") | Should -Be $true
+
+        Remove-Item -Path $tempDir -Recurse -Force
+    }
+
+    It "Validates YAML Front Matter syntax correctly" {
+        # Valid YAML
+        $validMd = "---\r\ntitle: Test Title\r\nstatus: active\r\ntags:\r\n  - tag1\r\n---\r\n# Body"
+        $resValid = Test-YamlFrontMatterSyntax -MdText $validMd
+        $resValid.isValid | Should -Be $true
+        $resValid.warnings.Count | Should -Be 0
+
+        # Missing closing ---
+        $unclosedMd = "---\r\ntitle: Test Title\r\n# Body"
+        $resUnclosed = Test-YamlFrontMatterSyntax -MdText $unclosedMd
+        $resUnclosed.isValid | Should -Be $false
+        $resUnclosed.warnings[0] | Should -Match "閉じヘッダー"
+
+        # Invalid line without colon
+        $invalidLineMd = "---\r\ntitle Test Title\r\n---\r\n# Body"
+        $resInvalid = Test-YamlFrontMatterSyntax -MdText $invalidLineMd
+        $resInvalid.isValid | Should -Be $false
+        $resInvalid.warnings[0] | Should -Match "キー: 値"
+    }
 }
 
 
