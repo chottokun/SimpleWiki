@@ -40,7 +40,9 @@ if (-not (Test-Path $markdigDll)) {
 }
 
 Get-ChildItem -Path $libDir -Filter "*.dll" | ForEach-Object {
-    Unblock-File -Path $_.FullName -ErrorAction SilentlyContinue
+    if ($IsWindows -or $env:OS -eq "Windows_NT") {
+        Unblock-File -Path $_.FullName -ErrorAction SilentlyContinue
+    }
     Add-Type -Path $_.FullName
 }
 
@@ -322,7 +324,10 @@ function Get-SidebarHtml {
 
 # --- OKF トップバー ＆ フッターカード レンダリング関数 ---
 function Get-OkfTopBarHtml {
-    param ([Parameter(Mandatory = $true)]$Meta)
+    param (
+        [Parameter(Mandatory = $true)]$Meta,
+        [string]$RelPath = ""
+    )
 
     $domain      = [System.Net.WebUtility]::HtmlEncode($Meta.Domain)
     $statusBadge = switch ($Meta.Status) {
@@ -345,12 +350,19 @@ function Get-OkfTopBarHtml {
         '<div class="warning-banner">⚠️ <strong>警告: 非推奨ドキュメント</strong><br>このドキュメントは非推奨または旧版です。最新の情報を参照してください。</div>'
     } else { "" }
 
+    $editBtnHtml = ""
+    if (-not [string]::IsNullOrWhiteSpace($RelPath)) {
+        $safeRel = [System.Net.WebUtility]::HtmlEncode($RelPath.Replace("\", "/"))
+        $editBtnHtml = "<button class='edit-doc-btn' data-relpath='$safeRel' onclick='openWikiEditor(this)'>✏️ 編集</button>"
+    }
+
     return @"
 $warningBanner
 <div class="okf-top-bar">
     <div class="okf-top-left">
         <span class="okf-domain">📁 $domain</span>
         $statusBadge
+        $editBtnHtml
     </div>
     $tagsHtml
 </div>
@@ -401,8 +413,11 @@ function Get-OkfFooterCardHtml {
 
 # 互換用別名関数
 function Get-OkfCardHtml {
-    param ([Parameter(Mandatory = $true)]$Meta)
-    return (Get-OkfTopBarHtml -Meta $Meta) + (Get-OkfFooterCardHtml -Meta $Meta)
+    param (
+        [Parameter(Mandatory = $true)]$Meta,
+        [string]$RelPath = ""
+    )
+    return (Get-OkfTopBarHtml -Meta $Meta -RelPath $RelPath) + (Get-OkfFooterCardHtml -Meta $Meta)
 }
 
 # --- 機械可読 API JSON 生成関数 (AI エージェント / LLM 用) ---
@@ -2185,6 +2200,79 @@ try {
                 Write-SafeHttpResponse -Response $response -Bytes $bytes -ContentType "application/json; charset=utf-8"
                 continue
             }
+            if ($rawPath -eq "/api/raw" -and $request.HttpMethod -eq "GET") {
+                $relPath = $queryParams["relPath"]
+                if ([string]::IsNullOrWhiteSpace($relPath)) {
+                    $jsonRes = @{ error = "INVALID_REQUEST"; message = "relPath が指定されていません。" } | ConvertTo-Json
+                    Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 400
+                    continue
+                }
+                $cleanRel = $relPath.TrimStart("/").Replace("/", "\")
+                $filePath = Join-Path $wikiDir $cleanRel
+                $fullPath = [System.IO.Path]::GetFullPath($filePath)
+                if (-not $fullPath.StartsWith($fullWikiDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $jsonRes = @{ error = "FORBIDDEN"; message = "アクセスが禁止されています。" } | ConvertTo-Json
+                    Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 403
+                    continue
+                }
+                if (-not (Test-Path $fullPath -PathType Leaf)) {
+                    $jsonRes = @{ error = "NOT_FOUND"; message = "ファイルが見つかりません。" } | ConvertTo-Json
+                    Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 404
+                    continue
+                }
+                $content = Get-Content -Path $fullPath -Raw -Encoding UTF8
+                $jsonRes = @{ markdown = $content } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+                continue
+            }
+            if ($rawPath -eq "/api/save" -and $request.HttpMethod -eq "POST") {
+                $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
+                $bodyText = $reader.ReadToEnd()
+                $reqObj = try { $bodyText | ConvertFrom-Json } catch { $null }
+                if (-not $reqObj -or [string]::IsNullOrWhiteSpace($reqObj.relPath) -or $reqObj.markdown -eq $null) {
+                    $jsonRes = @{ error = "INVALID_REQUEST"; message = "リクエストデータが不正です。" } | ConvertTo-Json
+                    Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 400
+                    continue
+                }
+                $relPath = $reqObj.relPath
+                $cleanRel = $relPath.TrimStart("/").Replace("/", "\")
+                $filePath = Join-Path $wikiDir $cleanRel
+                $fullPath = [System.IO.Path]::GetFullPath($filePath)
+                if (-not $fullPath.StartsWith($fullWikiDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $jsonRes = @{ error = "FORBIDDEN"; message = "アクセスが禁止されています。" } | ConvertTo-Json
+                    Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 403
+                    continue
+                }
+                # バックアップ(世代管理)設定の取得
+                $config = Get-ConfigJson -TargetScriptDir $scriptDir
+                $maxBackups = 3
+                if ($config.editor -and $config.editor.maxBackups -ne $null) {
+                    $maxBackups = [int]$config.editor.maxBackups
+                }
+
+                # バックアップの世代管理 (回転処理)
+                if ($maxBackups -gt 0 -and (Test-Path $fullPath)) {
+                    for ($i = $maxBackups - 1; $i -ge 1; $i--) {
+                        $oldBak = "$fullPath.bak$i"
+                        $newBak = "$fullPath.bak$($i + 1)"
+                        if (Test-Path $oldBak) {
+                            Copy-Item -Path $oldBak -Destination $newBak -Force
+                        }
+                    }
+                    Copy-Item -Path $fullPath -Destination "$fullPath.bak1" -Force
+                }
+
+                # UTF-8 with BOM で保存
+                $utf8bom = New-Object System.Text.UTF8Encoding -ArgumentList @($true)
+                [System.IO.File]::WriteAllText($fullPath, $reqObj.markdown, $utf8bom)
+
+                # インデックスの更新を強制
+                Build-WikiIndex -TargetWikiDir $wikiDir -ForceRefresh | Out-Null
+
+                $jsonRes = @{ success = $true } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+                continue
+            }
             if ($rawPath -eq "/api/chunks.json") {
                 $jsonStr = Get-ApiChunksJson
                 $bytes   = [System.Text.Encoding]::UTF8.GetBytes($jsonStr)
@@ -2457,7 +2545,7 @@ try {
                     $pipeline = $builder.Build()
                     $renderedHtml = [Markdig.Markdown]::ToHtml($mdText, $pipeline)
 
-                    $okfTopBar   = Get-OkfTopBarHtml -Meta $meta
+                    $okfTopBar   = Get-OkfTopBarHtml -Meta $meta -RelPath $relPath
                     $okfFooter   = Get-OkfFooterCardHtml -Meta $meta
                     $bodyContent = $okfTopBar + $renderedHtml + $okfFooter
                     $pageTitle   = [System.Net.WebUtility]::HtmlEncode($meta.Title)
@@ -2506,6 +2594,21 @@ try {
     img { max-width: 100%; }
     
     /* OKF Custom Components */
+    .edit-doc-btn { background: #0366d6; color: #fff; border: none; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; margin-left: 10px; }
+    .edit-doc-btn:hover { background: #0255b3; }
+
+    /* Editor Modal Styles */
+    .wiki-editor-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; justify-content: center; align-items: center; }
+    .wiki-editor-container { background: #fff; border-radius: 8px; width: 90%; max-width: 1000px; height: 85%; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.2); }
+    .wiki-editor-header { background: #1b1f23; color: #fff; padding: 12px 18px; font-weight: bold; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
+    .wiki-editor-body { flex: 1; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+    .wiki-editor-textarea { flex: 1; resize: none; font-family: monospace; font-size: 14px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; outline: none; }
+    .wiki-editor-textarea:focus { border-color: #0366d6; }
+    .wiki-editor-footer { padding: 10px 18px; border-top: 1px solid #e1e4e8; display: flex; justify-content: flex-end; gap: 10px; background: #f6f8fa; }
+    .wiki-editor-save-btn { background: #28a745; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+    .wiki-editor-save-btn:hover { background: #218838; }
+    .wiki-editor-cancel-btn { background: #6c757d; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+    .wiki-editor-cancel-btn:hover { background: #5a6268; }
     .okf-top-bar { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #586069; margin-bottom: 16px; border-bottom: 1px dashed #e1e4e8; padding-bottom: 8px; }
     .okf-footer-card { background: #f8f9fa; border: 1px solid #e1e4e8; border-radius: 6px; padding: 16px; margin-top: 40px; }
     .okf-footer-header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: bold; color: #444; border-bottom: 1px solid #e1e4e8; padding-bottom: 8px; margin-bottom: 10px; }
@@ -2560,8 +2663,73 @@ try {
             </div>
         </main>
     </div>
+
+    <!-- Wiki Editor Modal -->
+    <div id="wikiEditorModal" class="wiki-editor-modal">
+        <div class="wiki-editor-container">
+            <div class="wiki-editor-header">
+                <span>📝 Markdown エディター</span>
+                <span style="font-size: 12px; color: #ccc;" id="wikiEditorPath"></span>
+            </div>
+            <div class="wiki-editor-body">
+                <textarea id="wikiEditorTextarea" class="wiki-editor-textarea" placeholder="Markdown を記述してください..."></textarea>
+            </div>
+            <div class="wiki-editor-footer">
+                <button class="wiki-editor-cancel-btn" onclick="closeWikiEditor()">キャンセル</button>
+                <button class="wiki-editor-save-btn" onclick="saveWikiMarkdown()">保存</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/lib/mermaid.min.js"></script>
     <script>
+        function openWikiEditor(btn) {
+            const relPath = btn.getAttribute("data-relpath");
+            document.getElementById("wikiEditorPath").textContent = relPath;
+            document.getElementById("wikiEditorTextarea").value = "読み込み中...";
+            document.getElementById("wikiEditorModal").style.display = "flex";
+
+            fetch("/api/raw?relPath=" + encodeURIComponent(relPath))
+                .then(res => res.json())
+                .then(data => {
+                    if (data.markdown !== undefined) {
+                        document.getElementById("wikiEditorTextarea").value = data.markdown;
+                    } else {
+                        document.getElementById("wikiEditorTextarea").value = "エラー: 読み込みに失敗しました。";
+                    }
+                })
+                .catch(err => {
+                    document.getElementById("wikiEditorTextarea").value = "エラー: " + err;
+                });
+        }
+
+        function closeWikiEditor() {
+            document.getElementById("wikiEditorModal").style.display = "none";
+        }
+
+        function saveWikiMarkdown() {
+            const relPath = document.getElementById("wikiEditorPath").textContent;
+            const markdown = document.getElementById("wikiEditorTextarea").value;
+
+            fetch("/api/save", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ relPath: relPath, markdown: markdown })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    alert("保存しました。");
+                    location.reload();
+                } else {
+                    alert("保存エラー: " + (data.message || "原因不明"));
+                }
+            })
+            .catch(err => {
+                alert("通信エラー: " + err);
+            });
+        }
+
         document.addEventListener("DOMContentLoaded", function() {
             document.querySelectorAll("pre code.language-mermaid").forEach(function(el) {
                 var pre = el.parentElement;

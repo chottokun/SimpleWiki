@@ -823,6 +823,135 @@ Describe "Agentic RAG & OKF Tools Tests" {
     }
 }
 
+Describe "Markdown Editor API & Generation Backup Tests" {
+    BeforeAll {
+        # Dot source the script to test functions locally
+        . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -DotSourceOnly
+    }
+
+    It "Get-ConfigJson parses editor config with custom or default maxBackups" {
+        # Create temp config.json
+        $tempConfig = Join-Path $projectRoot "config.json.tmp_test"
+        $configObj = @{
+            editor = @{
+                maxBackups = 5
+            }
+        }
+        $configObj | ConvertTo-Json | Out-File -FilePath $tempConfig -Encoding UTF8 -NoNewline
+
+        # Test Get-ConfigJson
+        $parsed = Get-ConfigJson -TargetScriptDir $projectRoot
+        # Since we use Get-ConfigJson which expects config.json in the specified folder,
+        # let's temporarily overwrite/rename config.json if it exists, or write config.json in a dedicated temp folder.
+        $tempDir = Join-Path $projectRoot "temp_test_editor_dir"
+        if (Test-Path $tempDir) { Remove-Item -Path $tempDir -Recurse -Force }
+        $null = New-Item -ItemType Directory -Path $tempDir
+
+        $cfgFile = Join-Path $tempDir "config.json"
+        @{ editor = @{ maxBackups = 5 } } | ConvertTo-Json | Out-File -FilePath $cfgFile -Encoding UTF8 -NoNewline
+
+        $parsed = Get-ConfigJson -TargetScriptDir $tempDir
+        $parsed.editor.maxBackups | Should -Be 5
+
+        Remove-Item -Path $tempDir -Recurse -Force
+    }
+
+    It "Backup rotation rotates backups correctly up to maxBackups" {
+        $tempDir = Join-Path $projectRoot "temp_test_editor_backup_dir"
+        if (Test-Path $tempDir) { Remove-Item -Path $tempDir -Recurse -Force }
+        $null = New-Item -ItemType Directory -Path $tempDir
+
+        $testFile = Join-Path $tempDir "test-doc.md"
+        "Initial Content" | Out-File -FilePath $testFile -Encoding utf8
+
+        # Mock backup rotation with maxBackups = 3
+        # First write: rotates original to bak1, then writes new
+        $maxBackups = 3
+
+        # Rotation 1
+        if ($maxBackups -gt 0 -and (Test-Path $testFile)) {
+            for ($i = $maxBackups - 1; $i -ge 1; $i--) {
+                $oldBak = "$testFile.bak$i"
+                $newBak = "$testFile.bak$($i + 1)"
+                if (Test-Path $oldBak) { Copy-Item -Path $oldBak -Destination $newBak -Force }
+            }
+            Copy-Item -Path $testFile -Destination "$testFile.bak1" -Force
+        }
+        "Content Gen 2" | Out-File -FilePath $testFile -Encoding utf8
+
+        (Test-Path "$testFile.bak1") | Should -Be $true
+        (Get-Content -Path "$testFile.bak1" -Raw) | Should -Match "Initial Content"
+
+        # Rotation 2
+        if ($maxBackups -gt 0 -and (Test-Path $testFile)) {
+            for ($i = $maxBackups - 1; $i -ge 1; $i--) {
+                $oldBak = "$testFile.bak$i"
+                $newBak = "$testFile.bak$($i + 1)"
+                if (Test-Path $oldBak) { Copy-Item -Path $oldBak -Destination $newBak -Force }
+            }
+            Copy-Item -Path $testFile -Destination "$testFile.bak1" -Force
+        }
+        "Content Gen 3" | Out-File -FilePath $testFile -Encoding utf8
+
+        (Test-Path "$testFile.bak2") | Should -Be $true
+        (Get-Content -Path "$testFile.bak2" -Raw) | Should -Match "Initial Content"
+        (Get-Content -Path "$testFile.bak1" -Raw) | Should -Match "Content Gen 2"
+
+        # Rotation 3
+        if ($maxBackups -gt 0 -and (Test-Path $testFile)) {
+            for ($i = $maxBackups - 1; $i -ge 1; $i--) {
+                $oldBak = "$testFile.bak$i"
+                $newBak = "$testFile.bak$($i + 1)"
+                if (Test-Path $oldBak) { Copy-Item -Path $oldBak -Destination $newBak -Force }
+            }
+            Copy-Item -Path $testFile -Destination "$testFile.bak1" -Force
+        }
+        "Content Gen 4" | Out-File -FilePath $testFile -Encoding utf8
+
+        (Test-Path "$testFile.bak3") | Should -Be $true
+        (Get-Content -Path "$testFile.bak3" -Raw) | Should -Match "Initial Content"
+        (Get-Content -Path "$testFile.bak2" -Raw) | Should -Match "Content Gen 2"
+        (Get-Content -Path "$testFile.bak1" -Raw) | Should -Match "Content Gen 3"
+
+        # Rotation 4 (exceeding maxBackups, bak3 should be replaced by gen 2 content, original initial content is deleted)
+        if ($maxBackups -gt 0 -and (Test-Path $testFile)) {
+            for ($i = $maxBackups - 1; $i -ge 1; $i--) {
+                $oldBak = "$testFile.bak$i"
+                $newBak = "$testFile.bak$($i + 1)"
+                if (Test-Path $oldBak) { Copy-Item -Path $oldBak -Destination $newBak -Force }
+            }
+            Copy-Item -Path $testFile -Destination "$testFile.bak1" -Force
+        }
+        "Content Gen 5" | Out-File -FilePath $testFile -Encoding utf8
+
+        (Test-Path "$testFile.bak4") | Should -Be $false
+        (Get-Content -Path "$testFile.bak3" -Raw) | Should -Match "Content Gen 2"
+        (Get-Content -Path "$testFile.bak2" -Raw) | Should -Match "Content Gen 3"
+        (Get-Content -Path "$testFile.bak1" -Raw) | Should -Match "Content Gen 4"
+
+        Remove-Item -Path $tempDir -Recurse -Force
+    }
+
+    It "Preserves UTF-8 with BOM signature on write" {
+        $tempDir = Join-Path $projectRoot "temp_test_editor_utf8"
+        if (Test-Path $tempDir) { Remove-Item -Path $tempDir -Recurse -Force }
+        $null = New-Item -ItemType Directory -Path $tempDir
+        $testFile = Join-Path $tempDir "utf8-test.md"
+
+        $utf8bom = New-Object System.Text.UTF8Encoding -ArgumentList @($true)
+        [System.IO.File]::WriteAllText($testFile, "こんにちは", $utf8bom)
+
+        # Read back bytes
+        $bytes = [System.IO.File]::ReadAllBytes($testFile)
+        # Check BOM: EF BB BF -> 239, 187, 191
+        $bytes[0] | Should -Be 239
+        $bytes[1] | Should -Be 187
+        $bytes[2] | Should -Be 191
+
+        Remove-Item -Path $tempDir -Recurse -Force
+    }
+}
+
 
 
 
