@@ -434,8 +434,8 @@ function Get-DirectoryListingHtml {
 
     $html = $css + "`n"
 
-    $subDirs = Get-ChildItem -Path $DirFullPath -Directory -ErrorAction SilentlyContinue | Sort-Object Name
-    $mdFiles = Get-ChildItem -Path $DirFullPath -Filter "*.md" -File -ErrorAction SilentlyContinue | Sort-Object Name
+    $subDirs = Get-ChildItem -LiteralPath $DirFullPath -Directory -ErrorAction SilentlyContinue | Sort-Object Name
+    $mdFiles = Get-ChildItem -LiteralPath $DirFullPath -Filter "*.md" -File -ErrorAction SilentlyContinue | Sort-Object Name
 
     if ($subDirs.Count -eq 0 -and $mdFiles.Count -eq 0) {
         $html += "<p>このフォルダにはコンテンツがありません。</p>`n"
@@ -2593,8 +2593,8 @@ try {
                 $currDoc = $null
                 if ($includeCurrentPage -and -not [string]::IsNullOrWhiteSpace($currentRelPath) -and $currentRelPath.EndsWith(".md", [System.StringComparison]::OrdinalIgnoreCase)) {
                     $fullCurrPath = Join-Path $wikiDir $currentRelPath
-                    if (Test-Path $fullCurrPath -PathType Leaf) {
-                        $fileObj = Get-Item $fullCurrPath
+                    if (Test-Path -LiteralPath $fullCurrPath -PathType Leaf) {
+                        $fileObj = Get-Item -LiteralPath $fullCurrPath
                         $currDoc = Get-DocumentMetadata -File $fileObj -RelPath $currentRelPath
                     }
                 }
@@ -2791,13 +2791,13 @@ try {
             }
 
             # ディレクトリの場合: index.md/README.md フォールバックまたはフォルダ一覧表示
-            if (-not $isDynamicView -and (Test-Path $fullPath -PathType Container)) {
+            if (-not $isDynamicView -and (Test-Path -LiteralPath $fullPath -PathType Container)) {
                 $dirIndexPath  = Join-Path $fullPath "index.md"
                 $dirReadmePath = Join-Path $fullPath "README.md"
-                if (Test-Path $dirIndexPath -PathType Leaf) {
+                if (Test-Path -LiteralPath $dirIndexPath -PathType Leaf) {
                     $fullPath = [System.IO.Path]::GetFullPath($dirIndexPath)
                     $relPath  = (($relPath.TrimEnd('\') + '\index.md').TrimStart('\'))
-                } elseif (Test-Path $dirReadmePath -PathType Leaf) {
+                } elseif (Test-Path -LiteralPath $dirReadmePath -PathType Leaf) {
                     $fullPath = [System.IO.Path]::GetFullPath($dirReadmePath)
                     $relPath  = (($relPath.TrimEnd('\') + '\README.md').TrimStart('\'))
                 } else {
@@ -2809,11 +2809,11 @@ try {
             }
 
             # 3. HTML レンダリング (Markdown または動的ビュー)
-            if ($isDynamicView -or ((Test-Path $fullPath -PathType Leaf) -and ($fullPath.EndsWith(".md")))) {
+            if ($isDynamicView -or ((Test-Path -LiteralPath $fullPath -PathType Leaf) -and ($fullPath.EndsWith(".md")))) {
                 if (-not $isDynamicView) {
-                    $mdText   = Get-Content -Path $fullPath -Raw -Encoding UTF8
+                    $mdText   = Get-Content -LiteralPath $fullPath -Raw -Encoding UTF8
                     if ($null -eq $mdText) { $mdText = "" }
-                    $fileObj  = Get-Item $fullPath
+                    $fileObj  = Get-Item -LiteralPath $fullPath
                     $meta     = Get-DocumentMetadata -File $fileObj -RelPath $relPath -MdText $mdText
 
                     $builder  = New-Object Markdig.MarkdownPipelineBuilder
@@ -3113,7 +3113,7 @@ try {
                 Write-SafeHttpResponse -Response $response -Bytes $bytes
 
             # 画像やその他静的ファイルの返却処理
-            } elseif (Test-Path $fullPath -PathType Leaf) {
+            } elseif (Test-Path -LiteralPath $fullPath -PathType Leaf) {
                 $ext = [System.IO.Path]::GetExtension($fullPath).ToLower()
                 $cType = "application/octet-stream"
                 if ($mimeTypes.ContainsKey($ext)) {
