@@ -361,15 +361,109 @@ function Render-ServerFolderTreeHtml {
     return $html
 }
 
+$script:SidebarMdFiles = @()
+$script:SidebarCachedHtml = $null
+
 function Get-SidebarHtml {
     param ($currentRelPath)
     
-    $mdFiles = Get-ChildItem -Path $wikiDir -Recurse -Filter "*.md" | 
-        Where-Object { $_.FullName -notmatch '[\\/]\.(git|lib|tests|dist)[\\/]' } |
-        Sort-Object FullName
+    if ($null -eq $script:SidebarCachedHtml -or [string]::IsNullOrEmpty($script:SidebarCachedHtml)) {
+        if ($null -eq $script:SidebarMdFiles -or $script:SidebarMdFiles.Count -eq 0) {
+            $script:SidebarMdFiles = Get-ChildItem -Path $wikiDir -Recurse -Filter "*.md" | 
+                Where-Object { $_.FullName -notmatch '[\\/]\.(git|lib|tests|dist)[\\/]' } |
+                Sort-Object FullName
+        }
 
-    $treeNode = Build-ServerFileTreeNode -allMdFiles $mdFiles -wikiDir $wikiDir
-    return Render-ServerFolderTreeHtml -node $treeNode -currentRelPath $currentRelPath -wikiDir $wikiDir
+        $treeNode = Build-ServerFileTreeNode -allMdFiles $script:SidebarMdFiles -wikiDir $wikiDir
+        $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath "" -wikiDir $wikiDir
+
+        $refreshButtonHtml = @'
+<div style="margin-top: 20px; padding: 10px; border-top: 1px solid #e1e4e8;">
+    <button onclick="refreshWikiSidebarCache(this)" style="width: 100%; padding: 6px 12px; font-size: 12px; background: #fff; border: 1px solid #d1d5da; border-radius: 6px; cursor: pointer; color: #586069; display: flex; align-items: center; justify-content: center; gap: 4px;">
+        🔄 キャッシュクリア
+    </button>
+</div>
+<script>
+function refreshWikiSidebarCache(btn) {
+    btn.disabled = true;
+    btn.innerText = "⏳ 処理中...";
+    fetch('/api/clear-cache')
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert("キャッシュクリアに失敗しました。");
+                btn.disabled = false;
+                btn.innerText = "🔄 キャッシュクリア";
+            }
+        })
+        .catch(err => {
+            alert("エラーが発生しました。");
+            btn.disabled = false;
+            btn.innerText = "🔄 キャッシュクリア";
+        });
+}
+</script>
+'@
+        $script:SidebarCachedHtml = $treeHtml + $refreshButtonHtml
+    }
+
+    return $script:SidebarCachedHtml
+}
+
+# --- ディレクトリ一覧 HTML 生成関数 ---
+function Get-DirectoryListingHtml {
+    param (
+        [string]$DirFullPath,
+        [string]$RawUrlPath
+    )
+
+    $cleanUrl = $RawUrlPath.TrimEnd("/")
+
+    $css = @'
+<style>
+    .dir-listing-list { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 6px; }
+    .dir-listing-list li { padding: 8px 12px; border: 1px solid #e1e4e8; border-radius: 6px; transition: background 0.15s, border-color 0.15s; }
+    .dir-listing-list li:hover { background: #f6f8fa; border-color: #0366d6; }
+    .dir-listing-list li a { text-decoration: none; color: #0366d6; font-size: 14px; display: block; word-break: break-all; }
+    .dir-listing-folder a { font-weight: 600; }
+    .dir-listing-notice { margin-top: 24px; padding: 12px 16px; background: #fffbdd; border: 1px solid #f9c513; border-radius: 6px; font-size: 13px; color: #735c0f; }
+</style>
+'@
+
+    $html = $css + "`n"
+
+    $subDirs = Get-ChildItem -Path $DirFullPath -Directory -ErrorAction SilentlyContinue | Sort-Object Name
+    $mdFiles = Get-ChildItem -Path $DirFullPath -Filter "*.md" -File -ErrorAction SilentlyContinue | Sort-Object Name
+
+    if ($subDirs.Count -eq 0 -and $mdFiles.Count -eq 0) {
+        $html += "<p>このフォルダにはコンテンツがありません。</p>`n"
+    } else {
+        $totalCount = $subDirs.Count + $mdFiles.Count
+        $html += "<p style='color:#586069; font-size:13px;'>$totalCount 件のアイテム</p>`n"
+        $html += "<ul class='dir-listing-list'>`n"
+
+        foreach ($dir in $subDirs) {
+            $encodedName = [System.Net.WebUtility]::HtmlEncode($dir.Name)
+            $urlName     = [Uri]::EscapeDataString($dir.Name)
+            $href        = "$cleanUrl/$urlName/"
+            $html += "  <li class='dir-listing-folder'><a href='$href'>📁 $encodedName</a></li>`n"
+        }
+
+        foreach ($file in $mdFiles) {
+            $encodedName = [System.Net.WebUtility]::HtmlEncode($file.BaseName)
+            $urlName     = [Uri]::EscapeDataString($file.Name)
+            $href        = "$cleanUrl/$urlName"
+            $html += "  <li class='dir-listing-file'><a href='$href'>📄 $encodedName</a></li>`n"
+        }
+
+        $html += "</ul>`n"
+    }
+
+    $html += "<div class='dir-listing-notice'>ℹ️ index.md / README.md がないため、フォルダ一覧を表示しています。</div>`n"
+
+    return $html
 }
 
 # --- OKF トップバー ＆ フッターカード レンダリング関数 ---
@@ -2316,6 +2410,14 @@ try {
                 Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
                 continue
             }
+            if ($rawPath -eq "/api/clear-cache") {
+                $script:SidebarMdFiles = @()
+                $script:SidebarCachedHtml = $null
+                Build-WikiIndex -TargetWikiDir $wikiDir -ForceRefresh | Out-Null
+                $jsonRes = @{ success = $true } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+                continue
+            }
             if ($rawPath -eq "/api/save" -and $request.HttpMethod -eq "POST") {
                 $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
                 $bodyText = $reader.ReadToEnd()
@@ -2359,6 +2461,10 @@ try {
 
                 # インデックスの更新を強制
                 Build-WikiIndex -TargetWikiDir $wikiDir -ForceRefresh | Out-Null
+
+                # サイドバーキャッシュもクリア
+                $script:SidebarMdFiles = @()
+                $script:SidebarCachedHtml = $null
 
                 # YAML Front Matter 構文検証 (ソフトLint)
                 $yamlSyntax = Test-YamlFrontMatterSyntax -MdText $reqObj.markdown
@@ -2602,15 +2708,6 @@ try {
                 $bodyContent   = Get-SearchViewHtml -Query $qParam -StatusFilter $stValue -DomainFilter $domParam
             }
 
-            # Markdown ファイルの物理存在チェックと決定
-            if (-not $isDynamicView -and ($rawPath -eq "/" -or [string]::IsNullOrEmpty($rawPath))) {
-                if (Test-Path (Join-Path $wikiDir "index.md")) {
-                    $rawPath = "/index.md"
-                } elseif (Test-Path (Join-Path $wikiDir "README.md")) {
-                    $rawPath = "/README.md"
-                }
-            }
-
             $relPath  = $rawPath.TrimStart("/").Replace("/", "\")
             $filePath = Join-Path $wikiDir $relPath
 
@@ -2630,10 +2727,29 @@ try {
                 continue
             }
 
+            # ディレクトリの場合: index.md/README.md フォールバックまたはフォルダ一覧表示
+            if (-not $isDynamicView -and (Test-Path $fullPath -PathType Container)) {
+                $dirIndexPath  = Join-Path $fullPath "index.md"
+                $dirReadmePath = Join-Path $fullPath "README.md"
+                if (Test-Path $dirIndexPath -PathType Leaf) {
+                    $fullPath = [System.IO.Path]::GetFullPath($dirIndexPath)
+                    $relPath  = (($relPath.TrimEnd('\') + '\index.md').TrimStart('\'))
+                } elseif (Test-Path $dirReadmePath -PathType Leaf) {
+                    $fullPath = [System.IO.Path]::GetFullPath($dirReadmePath)
+                    $relPath  = (($relPath.TrimEnd('\') + '\README.md').TrimStart('\'))
+                } else {
+                    $isDynamicView = $true
+                    $dirName       = if ([string]::IsNullOrEmpty($relPath.TrimEnd('\'))) { "ルート" } else { [System.Net.WebUtility]::HtmlEncode($relPath.TrimEnd('\').Replace('\', ' / ')) }
+                    $pageTitle     = "📁 $dirName - フォルダ一覧"
+                    $bodyContent   = Get-DirectoryListingHtml -DirFullPath $fullPath -RawUrlPath $rawPath
+                }
+            }
+
             # 3. HTML レンダリング (Markdown または動的ビュー)
             if ($isDynamicView -or ((Test-Path $fullPath -PathType Leaf) -and ($fullPath.EndsWith(".md")))) {
                 if (-not $isDynamicView) {
                     $mdText   = Get-Content -Path $fullPath -Raw -Encoding UTF8
+                    if ($null -eq $mdText) { $mdText = "" }
                     $fileObj  = Get-Item $fullPath
                     $meta     = Get-DocumentMetadata -File $fileObj -RelPath $relPath -MdText $mdText
 
@@ -2881,6 +2997,32 @@ try {
         }
 
         document.addEventListener("DOMContentLoaded", function() {
+            // -- Start of Sidebar Auto-Expand & Active Highlight --
+            try {
+                var currentPath = decodeURIComponent(location.pathname);
+                var sidebar = document.querySelector("nav.sidebar");
+                if (sidebar) {
+                    var activeLink = sidebar.querySelector('a[href="' + currentPath + '"]');
+                    if (!activeLink) {
+                        var pathNoSlash = currentPath.replace(/\/$/, "");
+                        activeLink = sidebar.querySelector('a[href="' + pathNoSlash + '"]') || sidebar.querySelector('a[href="' + currentPath + '/"]');
+                    }
+                    if (activeLink) {
+                        activeLink.classList.add("active");
+                        activeLink.scrollIntoView({ block: "nearest" });
+                        
+                        var parent = activeLink.parentElement;
+                        while (parent && parent !== sidebar) {
+                            if (parent.tagName === "DETAILS") {
+                                parent.open = true;
+                            }
+                            parent = parent.parentElement;
+                        }
+                    }
+                }
+            } catch(e) { console.error("Sidebar activation error:", e); }
+            // -- End of Sidebar Auto-Expand & Active Highlight --
+
             document.querySelectorAll("pre code.language-mermaid").forEach(function(el) {
                 var pre = el.parentElement;
                 var div = document.createElement("div");

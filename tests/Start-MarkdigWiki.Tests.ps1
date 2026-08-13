@@ -588,9 +588,9 @@ tags: "PostgreSQL, Database, Recovery"
 "@
         $meta = Get-DocumentMetadata -MdText $sampleMd -RelPath "test.md"
         $meta.Tags.Count | Should Be 3
-        $meta.Tags | Should Contain "PostgreSQL"
-        $meta.Tags | Should Contain "Database"
-        $meta.Tags | Should Contain "Recovery"
+        ($meta.Tags -contains "PostgreSQL") | Should Be $true
+        ($meta.Tags -contains "Database") | Should Be $true
+        ($meta.Tags -contains "Recovery") | Should Be $true
     }
 
     It 'Get-QueryParams decodes percent-encoded UTF-8 Japanese query string without mojibake' {
@@ -692,10 +692,10 @@ Describe 'OKF LLM RAG Security & Encryption Tests' {
 
     It 'Get-JapaneseWordsWinRT tokenizes Japanese queries and filters Japanese stop words' {
         $words = Get-JapaneseWordsWinRT -Text 'セットアップの方法は？'
-        $words | Should Contain 'セットアップ'
-        $words | Should Contain '環境構築'
-        $words | Should Not Contain 'は'
-        $words | Should Not Contain 'の'
+        ($words -contains 'セットアップ') | Should Be $true
+        ($words -contains '環境構築') | Should Be $true
+        ($words -contains 'は') | Should Be $false
+        ($words -contains 'の') | Should Be $false
     }
 
     It 'Invoke-OpenAiChatCompletions builds message payload with history array' {
@@ -994,32 +994,141 @@ Describe "Markdown Editor API & Generation Backup Tests" {
         # Valid YAML
         $validMd = "---\r\ntitle: Test Title\r\nstatus: active\r\ntags:\r\n  - tag1\r\n---\r\n# Body"
         $resValid = Test-YamlFrontMatterSyntax -MdText $validMd
-        $resValid.isValid | Should -Be $true
-        $resValid.warnings.Count | Should -Be 0
+        $resValid.isValid | Should Be $true
+        $resValid.warnings.Count | Should Be 0
 
         # Missing closing ---
         $unclosedMd = "---\r\ntitle: Test Title\r\n# Body"
         $resUnclosed = Test-YamlFrontMatterSyntax -MdText $unclosedMd
-        $resUnclosed.isValid | Should -Be $false
-        $resUnclosed.warnings[0] | Should -Match "閉じヘッダー"
+        $resUnclosed.isValid | Should Be $false
+        $resUnclosed.warnings[0] | Should Match "閉じヘッダー"
 
         # Invalid line without colon
         $invalidLineMd = "---\r\ntitle Test Title\r\n---\r\n# Body"
         $resInvalid = Test-YamlFrontMatterSyntax -MdText $invalidLineMd
-        $resInvalid.isValid | Should -Be $false
-        $resInvalid.warnings[0] | Should -Match "キー: 値"
+        $resInvalid.isValid | Should Be $false
+        $resInvalid.warnings[0] | Should Match "キー: 値"
     }
 }
 
+Describe "Directory Listing & Fallback Tests (Get-DirectoryListingHtml)" {
+    BeforeAll {
+        $projectRoot = (Resolve-Path "$PSScriptRoot\..").Path
+        . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -DotSourceOnly
 
+        # テスト用ディレクトリ構造を作成
+        $testRoot = Join-Path $TestDrive "wiki-dir-listing"
+        New-Item -Path $testRoot -ItemType Directory -Force | Out-Null
 
+        # サブフォルダ (index.md あり)
+        $subWithIndex = Join-Path $testRoot "法律A"
+        New-Item -Path $subWithIndex -ItemType Directory -Force | Out-Null
+        Set-Content -Path (Join-Path $subWithIndex "index.md") -Value "# 法律A" -Encoding UTF8
 
+        # サブフォルダ (index.md なし)
+        $subNoIndex = Join-Path $testRoot "法律B"
+        New-Item -Path $subNoIndex -ItemType Directory -Force | Out-Null
+        Set-Content -Path (Join-Path $subNoIndex "art_001.md") -Value "# 条文1" -Encoding UTF8
 
+        # ルート直下の .md ファイル
+        Set-Content -Path (Join-Path $testRoot "glossary.md") -Value "# 用語集" -Encoding UTF8
 
+        # 空フォルダ
+        $emptyDir = Join-Path $testRoot "empty"
+        New-Item -Path $emptyDir -ItemType Directory -Force | Out-Null
+    }
 
+    It "ルートにフォルダと .md ファイルの一覧を生成する" {
+        $html = Get-DirectoryListingHtml -DirFullPath $testRoot -RawUrlPath "/"
+        $html | Should Match "dir-listing-list"
+        $html | Should Match "法律A"
+        $html | Should Match "法律B"
+        $html | Should Match "glossary"
+        $html | Should Match "dir-listing-notice"
+        $html | Should Match "index\.md / README\.md がないため"
+    }
 
+    It "フォルダは太字リンク、ファイルは通常リンクで表示される" {
+        $html = Get-DirectoryListingHtml -DirFullPath $testRoot -RawUrlPath "/"
+        $html | Should Match "dir-listing-folder"
+        $html | Should Match "dir-listing-file"
+    }
 
+    It "アイテム数が正しく表示される" {
+        $html = Get-DirectoryListingHtml -DirFullPath $testRoot -RawUrlPath "/"
+        # 3 subdirs (法律A, 法律B, empty) + 1 file (glossary.md) = 4
+        $html | Should Match "4 件のアイテム"
+    }
 
+    It "空フォルダではコンテンツなしメッセージを表示する" {
+        $emptyDir = Join-Path $testRoot "empty"
+        $html = Get-DirectoryListingHtml -DirFullPath $emptyDir -RawUrlPath "/empty/"
+        $html | Should Match "コンテンツがありません"
+        $html | Should Match "dir-listing-notice"
+    }
 
+    It "フォルダリンクの href に URL エンコードされた名前が含まれる" {
+        $html = Get-DirectoryListingHtml -DirFullPath $testRoot -RawUrlPath "/"
+        # 日本語フォルダ名は URL エンコードされる
+        $encodedName = [Uri]::EscapeDataString("法律A")
+        $html | Should Match $encodedName
+    }
 
+    It "ルートの index.md/README.md フォールバック: index.md が存在する場合に正しく解決される" {
+        # index.md があるディレクトリ
+        $dirWithIndex = Join-Path $testRoot "法律A"
+        $fullPath = [System.IO.Path]::GetFullPath($dirWithIndex)
+        $relPath = "法律A"
 
+        # ディレクトリ内の index.md を探す (スクリプトのロジックを再現)
+        $dirIndexPath = Join-Path $fullPath "index.md"
+        (Test-Path $dirIndexPath -PathType Leaf) | Should Be $true
+
+        $newFullPath = [System.IO.Path]::GetFullPath($dirIndexPath)
+        $newRelPath = (($relPath.TrimEnd('\') + '\index.md').TrimStart('\'))
+        $newRelPath | Should Be "法律A\index.md"
+        $newFullPath | Should Match "index\.md$"
+    }
+
+    It "ルートの index.md/README.md フォールバック: どちらもない場合は一覧表示される" {
+        $fullPath = [System.IO.Path]::GetFullPath($testRoot)
+        $dirIndexPath = Join-Path $fullPath "index.md"
+        $dirReadmePath = Join-Path $fullPath "README.md"
+
+        (Test-Path $dirIndexPath -PathType Leaf) | Should Be $false
+        (Test-Path $dirReadmePath -PathType Leaf) | Should Be $false
+
+        # フォルダ一覧が生成されることを確認
+        $html = Get-DirectoryListingHtml -DirFullPath $fullPath -RawUrlPath "/"
+        $html | Should Not BeNullOrEmpty
+        $html | Should Match "dir-listing-list"
+    }
+
+    It "ルートパスの relPath 変換で空文字列から index.md への変換が正しい" {
+        $relPath = ""
+        $newRelPath = (($relPath.TrimEnd('\') + '\index.md').TrimStart('\'))
+        $newRelPath | Should Be "index.md"
+    }
+
+    It "サブディレクトリパスの relPath 変換が正しい" {
+        $relPath = "docs\"
+        $newRelPath = (($relPath.TrimEnd('\') + '\index.md').TrimStart('\'))
+        $newRelPath | Should Be "docs\index.md"
+    }
+
+    It "空の Markdown ファイルを読み込んでも例外をスローせずレンダリングできる" {
+        $emptyMdPath = Join-Path $testRoot "empty-file.md"
+        New-Item -Path $emptyMdPath -ItemType File -Force | Out-Null
+        
+        {
+            $mdText = Get-Content -Path $emptyMdPath -Raw -Encoding UTF8
+            if ($null -eq $mdText) { $mdText = "" }
+            
+            $builder  = New-Object Markdig.MarkdownPipelineBuilder
+            $null     = [Markdig.MarkdownExtensions]::UseAdvancedExtensions($builder)
+            $pipeline = $builder.Build()
+            $rendered = [Markdig.Markdown]::ToHtml($mdText, $pipeline)
+            $rendered | Should Be ""
+        } | Should Not Throw
+    }
+}
