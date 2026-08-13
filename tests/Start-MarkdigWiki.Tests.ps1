@@ -1131,4 +1131,12 @@ Describe "Directory Listing & Fallback Tests (Get-DirectoryListingHtml)" {
             $rendered | Should Be ""
         } | Should Not Throw
     }
+
+    It "Get-ChatWidgetHtml に開いているページを含めるデフォルトONのチェックボックスが含まれる" {
+        $html = Get-ChatWidgetHtml
+        $html | Should Match "okfIncludeCurrentPage"
+        $html | Should Match "checked"
+        $html | Should Match "開いているページを含める"
+        $html | Should Match "根拠ドキュメント \(Markdown\)"
+    }
 }

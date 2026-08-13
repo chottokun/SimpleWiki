@@ -1693,7 +1693,8 @@ function Invoke-AgenticRagChat {
         [string]$WikiDir = "",
         [int]$MaxTurns = 5,
         [int]$MaxDocChars = 2000,
-        [int]$TimeoutSec = 30
+        [int]$TimeoutSec = 30,
+        [PSCustomObject]$CurrentDoc = $null
     )
 
     $targetDir = if (-not [string]::IsNullOrWhiteSpace($WikiDir)) { $WikiDir } else { $script:wikiDir }
@@ -1771,6 +1772,20 @@ function Invoke-AgenticRagChat {
         "4. 検索キーワード (query) はユーザーが入力した日本語単語（例: 'エラー', '想定されるエラー'）をそのまま使用し、勝手に英語へ翻訳しないでください。`n" +
         "5. search_okf の domain パラメータは原則として空文字列 '' を指定し、Wiki 全域から広範にドキュメントを検索してください。`n" +
         "6. 非推奨 (status: deprecated) の記述は避け、常に現行 (active) 情報のみを根拠にしてください。"
+
+    if ($CurrentDoc -and $CurrentDoc.RelPath) {
+        if (-not $visitedPaths.Contains($CurrentDoc.RelPath)) {
+            [void]$visitedPaths.Add($CurrentDoc.RelPath)
+        }
+        $currSnippet = $CurrentDoc.BodyText
+        if ($currSnippet -and $currSnippet.Length -gt 1500) {
+            $currSnippet = $currSnippet.Substring(0, 1500) + "..."
+        }
+        $sysPrompt += "`n`n【現在ユーザーが開いているページのコンテキスト】`n" +
+            "・タイトル: $($CurrentDoc.Title)`n" +
+            "・相対パス: $($CurrentDoc.RelPath)`n" +
+            "・本文:`n$currSnippet"
+    }
 
     $messages = [System.Collections.Generic.List[PSObject]]::new()
     [void]$messages.Add(@{ role = "system"; content = $sysPrompt })
@@ -2001,6 +2016,7 @@ function Get-ChatWidgetHtml {
             <span class="mode-label">モード:</span>
             <label><input type="radio" name="okfRagMode" value="fast" checked> ⚡ Fast</label>
             <label><input type="radio" name="okfRagMode" value="agentic"> 🧠 Agentic</label>
+            <label style="margin-left: auto; color: #24292e; font-weight: normal; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px;"><input type="checkbox" id="okfIncludeCurrentPage" checked> 📄 開いているページを含める</label>
         </div>
         <div id="okfChatMessages" class="chat-messages">
             <div class="chat-msg assistant">こんにちは！Wiki内のナレッジを元にお答えします。質問を入力してください。</div>
@@ -2189,7 +2205,18 @@ function Get-ChatWidgetHtml {
                 if (sources && sources.length > 0) {
                     var srcDiv = document.createElement("div");
                     srcDiv.className = "chat-sources";
-                    srcDiv.innerHTML = "📖 <strong>出典:</strong> " + sources.map(function(s) { return "<a href='" + s.relUri + "' target='_blank'>" + s.title + "</a> (" + s.lastUpdated + ")"; }).join(", ");
+                    var srcHtml = "📖 <strong>根拠ドキュメント (Markdown):</strong><ul style='margin: 4px 0 0 16px; padding: 0;'>";
+                    sources.forEach(function(s) {
+                        var dateInfo = s.lastUpdated ? " (" + escapeHtml(s.lastUpdated) + ")" : "";
+                        srcHtml += "<li>📄 <a href='" + escapeHtml(s.relUri) + "' target='_blank'>" + escapeHtml(s.title || s.relPath) + "</a>" + dateInfo + "</li>";
+                    });
+                    srcHtml += "</ul>";
+                    srcDiv.innerHTML = srcHtml;
+                    div.appendChild(srcDiv);
+                } else {
+                    var srcDiv = document.createElement("div");
+                    srcDiv.className = "chat-sources";
+                    srcDiv.innerHTML = "📖 <strong>根拠ドキュメント:</strong> なし (特定のドキュメント参照なし)";
                     div.appendChild(srcDiv);
                 }
                 if (role === "assistant" && text !== "🤔 思考中...") {
@@ -2236,6 +2263,8 @@ function Get-ChatWidgetHtml {
 
                 var modeRadio = document.querySelector('input[name="okfRagMode"]:checked');
                 var mode = modeRadio ? modeRadio.value : "fast";
+                var includeCurrentPage = document.getElementById("okfIncludeCurrentPage") ? document.getElementById("okfIncludeCurrentPage").checked : true;
+                var currentPath = decodeURIComponent(location.pathname).replace(/^\//, "");
 
                 appendMsg("user", q);
                 input.value = "";
@@ -2245,7 +2274,7 @@ function Get-ChatWidgetHtml {
                 fetch("/api/chat", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ mode: mode, message: q, history: chatHistory })
+                    body: JSON.stringify({ mode: mode, message: q, history: chatHistory, includeCurrentPage: includeCurrentPage, currentRelPath: currentPath })
                 }).then(function(res) { return res.json(); }).then(function(data) {
                     msgs.removeChild(msgs.lastChild);
                     if (data.error) {
@@ -2551,6 +2580,25 @@ try {
                     $timeoutSec = [int]$config.rag.timeoutSec
                 }
 
+                $includeCurrentPage = $true
+                if ($reqObj -and $reqObj.PSObject.Properties['includeCurrentPage'] -and $reqObj.includeCurrentPage -eq $false) {
+                    $includeCurrentPage = $false
+                }
+                $currentRelPath = ""
+                if ($reqObj -and $reqObj.currentRelPath) {
+                    $currentRelPath = $reqObj.currentRelPath.ToString().TrimStart('/', '\')
+                }
+
+                # 現在開いているページのドキュメントメタデータ取得 (オプション)
+                $currDoc = $null
+                if ($includeCurrentPage -and -not [string]::IsNullOrWhiteSpace($currentRelPath) -and $currentRelPath.EndsWith(".md", [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $fullCurrPath = Join-Path $wikiDir $currentRelPath
+                    if (Test-Path $fullCurrPath -PathType Leaf) {
+                        $fileObj = Get-Item $fullCurrPath
+                        $currDoc = Get-DocumentMetadata -File $fileObj -RelPath $currentRelPath
+                    }
+                }
+
                 if ($reqMode -eq "agentic") {
                     # --- Agentic RAG Mode (ReAct 自律調査) ---
                     $maxTurns = 5
@@ -2563,7 +2611,7 @@ try {
                     }
 
                     try {
-                        $agentRes = Invoke-AgenticRagChat -ApiUrl $config.rag.apiUrl -ApiKey $config.rag.apiKey -Model $config.rag.model -UserMessage $userMsg -History $processedHistory -WikiDir $wikiDir -MaxTurns $maxTurns -MaxDocChars $maxDocChars -TimeoutSec $timeoutSec
+                        $agentRes = Invoke-AgenticRagChat -ApiUrl $config.rag.apiUrl -ApiKey $config.rag.apiKey -Model $config.rag.model -UserMessage $userMsg -History $processedHistory -WikiDir $wikiDir -MaxTurns $maxTurns -MaxDocChars $maxDocChars -TimeoutSec $timeoutSec -CurrentDoc $currDoc
                         $jsonRes = @{
                             mode        = "agentic"
                             answer      = $agentRes.answer
@@ -2617,12 +2665,27 @@ try {
                 }
 
                 $topScored = @($docScores | Sort-Object Score -Descending | Select-Object -First $maxDocs)
-                $contextDocs = @()
+                $contextDocs = [System.Collections.Generic.List[PSObject]]::new()
+
+                # 開いているページを第一最優先コンテキストとして追加
+                if ($currDoc) {
+                    $contextDocs.Add($currDoc)
+                }
+
                 if ($topScored.Count -gt 0) {
-                    $contextDocs = @($topScored | ForEach-Object { $_.Doc })
+                    foreach ($ts in $topScored) {
+                        if (-not $currDoc -or $ts.Doc.RelPath -ne $currDoc.RelPath) {
+                            $contextDocs.Add($ts.Doc)
+                        }
+                    }
                 } else {
                     $takeCount = [Math]::Min($maxDocs, $activeDocs.Count)
-                    $contextDocs = @($activeDocs | Sort-Object LastUpdated -Descending | Select-Object -First $takeCount)
+                    $fallbackDocs = @($activeDocs | Sort-Object LastUpdated -Descending | Select-Object -First $takeCount)
+                    foreach ($fd in $fallbackDocs) {
+                        if (-not $currDoc -or $fd.RelPath -ne $currDoc.RelPath) {
+                            $contextDocs.Add($fd)
+                        }
+                    }
                 }
 
                 # 2. システムプロンプト構築 (OKF メタデータ + 本文スニペット)
