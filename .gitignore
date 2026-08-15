@@ -135,3 +135,6 @@ tmp/*
 
 # Ignore CTRF report files
 crtf/*
+
+# Logs directory (Chat logs, etc.)
+logs/

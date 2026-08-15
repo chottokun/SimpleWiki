@@ -1251,3 +1251,150 @@ Describe "Multi-Language (i18n) & Localization Tests" {
         }
     }
 }
+
+Describe "Performance & Fast Sidebar / Search Optimization Tests" {
+    BeforeAll {
+        . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -NoServer
+        $sampleDir = Join-Path $projectRoot "markdown_sample"
+        $script:wikiDir = $sampleDir
+    }
+
+    It "Render-ServerFolderTreeHtml performs single-pass traversal and marks HasActive and open attributes" {
+        $files = @(
+            [PSCustomObject]@{ FullName = (Join-Path $sampleDir "docs\api\REST-API.md"); BaseName = "REST-API" },
+            [PSCustomObject]@{ FullName = (Join-Path $sampleDir "index.md"); BaseName = "index" }
+        )
+        $treeNode = Build-ServerFileTreeNode -allMdFiles $files -wikiDir $sampleDir
+        $activeRel = "docs\api\REST-API.md"
+
+        $result = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath $activeRel -wikiDir $sampleDir
+        $result.HasActive | Should Be $true
+        $result.Html | Should Match 'class="active"'
+        $result.Html | Should Match '<details open>'
+    }
+
+    It "Get-SidebarHtml caches default sidebar for dynamic views" {
+        $script:SidebarDefaultCachedHtml = @{}
+        $html1 = Get-SidebarHtml -currentRelPath "" -Lang "ja"
+        $script:SidebarDefaultCachedHtml.ContainsKey("ja") | Should Be $true
+
+        # Modifying cache value directly to verify cache hit
+        $script:SidebarDefaultCachedHtml["ja"] = "<!-- CACHED_SIDEBAR -->"
+        $htmlCached = Get-SidebarHtml -currentRelPath "" -Lang "ja"
+        $htmlCached | Should Be "<!-- CACHED_SIDEBAR -->"
+
+        # Invalidate cache
+        $script:SidebarDefaultCachedHtml = @{}
+    }
+
+    It "Get-DocSnippet extracts snippet around keyword within 400 characters" {
+        $sampleBody = @"
+# Header
+
+First introductory paragraph.
+Here is the key section where postgresql database recovery happens in step 3.
+More details about how to restore tables and schemas.
+Another line of documentation.
+"@
+        $snippet = Get-DocSnippet -BodyText $sampleBody -Keywords @("postgresql", "recovery")
+        $snippet | Should Match "postgresql database recovery"
+        $snippet.Length | Should BeLessThan 405
+    }
+
+    It "Search-OkfDocs applies IndexOf pre-filter and lazy snippet evaluation accurately" {
+        $results = Search-OkfDocs -Query "API" -WikiDir $sampleDir
+        $results.Count | Should BeGreaterThan 0
+        $results[0].Score | Should BeGreaterThan 0
+        $results[0].Snippet | Should Not BeNullOrEmpty
+    }
+}
+
+Describe "Chat Logging & Configurable Prompt Tests" {
+    BeforeAll {
+        . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -DotSourceOnly
+        $testLogDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_ChatLogTest"
+        if (Test-Path $testLogDir) { Remove-Item -Path $testLogDir -Recurse -Force }
+    }
+
+    AfterAll {
+        $testLogDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_ChatLogTest"
+        if (Test-Path $testLogDir) { Remove-Item -Path $testLogDir -Recurse -Force }
+    }
+
+    It "Write-ChatLog writes JSONL log entry correctly when logging enabled" {
+        $testLogDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_ChatLogTest"
+        $mockCfg = [PSCustomObject]@{
+            rag = [PSCustomObject]@{
+                model = "test-model"
+                logging = [PSCustomObject]@{
+                    enabled = $true
+                    logDir = $testLogDir
+                    retentionDays = 30
+                }
+            }
+        }
+
+        Write-ChatLog -Config $mockCfg -ScriptDir $projectRoot -Mode "fast" -UserMessage "テスト質問" -Answer "テスト回答" -Sources @(@{ title = "Doc1"; relPath = "doc1.md" }) -DurationMs 1234 -Success $true
+
+        $todayStr = (Get-Date).ToString("yyyy-MM-dd")
+        $logFile = Join-Path $testLogDir "chat_${todayStr}.jsonl"
+        (Test-Path $logFile) | Should Be $true
+
+        $lines = @(Get-Content -Path $logFile -Encoding UTF8 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        $lines.Count | Should BeGreaterThan 0
+        $entry = $lines[0] | ConvertFrom-Json
+        $entry.mode | Should Be "fast"
+        $entry.model | Should Be "test-model"
+        $entry.userMessage | Should Be "テスト質問"
+        $entry.answer | Should Be "テスト回答"
+        $entry.durationMs | Should Be 1234
+        $entry.success | Should Be $true
+    }
+
+    It "Write-ChatLog skips logging when logging disabled or not configured" {
+        $disabledLogDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_DisabledLogTest"
+        if (Test-Path $disabledLogDir) { Remove-Item -Path $disabledLogDir -Recurse -Force }
+
+        $mockDisabledCfg = [PSCustomObject]@{
+            rag = [PSCustomObject]@{
+                model = "test-model"
+                logging = [PSCustomObject]@{
+                    enabled = $false
+                    logDir = $disabledLogDir
+                }
+            }
+        }
+
+        Write-ChatLog -Config $mockDisabledCfg -ScriptDir $projectRoot -Mode "agentic" -UserMessage "質問" -Answer "回答"
+        (Test-Path $disabledLogDir) | Should Be $false
+    }
+
+    It "Clean-OldChatLogs removes log files older than retentionDays" {
+        $retentionTestDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_RetentionTest"
+        if (-not (Test-Path $retentionTestDir)) { [void](New-Item -ItemType Directory -Path $retentionTestDir -Force) }
+
+        # Create simulated old and new log files
+        $oldFile = Join-Path $retentionTestDir "chat_2026-01-01.jsonl"
+        $newFile = Join-Path $retentionTestDir "chat_2026-08-15.jsonl"
+        [System.IO.File]::WriteAllText($oldFile, "{}", [System.Text.Encoding]::UTF8)
+        [System.IO.File]::WriteAllText($newFile, "{}", [System.Text.Encoding]::UTF8)
+
+        # Set LastWriteTime for old file to 40 days ago
+        (Get-Item $oldFile).LastWriteTime = (Get-Date).AddDays(-40)
+
+        Clean-OldChatLogs -LogDir $retentionTestDir -RetentionDays 30
+
+        (Test-Path $oldFile) | Should Be $false
+        (Test-Path $newFile) | Should Be $true
+
+        Remove-Item -Path $retentionTestDir -Recurse -Force
+    }
+
+    It "Invoke-AgenticRagChat utilizes custom AgenticSystemPrompt parameter" {
+        # Verify function accepts and processes AgenticSystemPrompt parameter without error
+        $fn = Get-Command Invoke-AgenticRagChat
+        $fn.Parameters.ContainsKey("AgenticSystemPrompt") | Should Be $true
+    }
+}
+
+

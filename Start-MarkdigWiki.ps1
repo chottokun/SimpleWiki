@@ -534,29 +534,12 @@ function Build-ServerFileTreeNode {
     return $rootNode
 }
 
-function Test-ServerNodeHasActiveFile {
-    param ($node, $currentRelPath, $wikiDir)
-
-    foreach ($file in $node.Files) {
-        $relPath = $file.FullName.Substring($wikiDir.Length).TrimStart("\", "/")
-        if ($relPath -eq $currentRelPath) {
-            return $true
-        }
-    }
-
-    foreach ($folderName in $node.SubFolders.Keys) {
-        if (Test-ServerNodeHasActiveFile -node $node.SubFolders[$folderName] -currentRelPath $currentRelPath -wikiDir $wikiDir) {
-            return $true
-        }
-    }
-
-    return $false
-}
-
 function Render-ServerFolderTreeHtml {
     param ($node, $currentRelPath, $wikiDir)
 
-    $html = "<ul>`n"
+    $hasActive = $false
+    $sb = [System.Text.StringBuilder]::new()
+    [void]$sb.Append("<ul>`n")
 
     foreach ($file in $node.Files) {
         $relPath   = $file.FullName.Substring($wikiDir.Length).TrimStart("\", "/")
@@ -564,38 +547,50 @@ function Render-ServerFolderTreeHtml {
         $webPath   = "/" + [Uri]::EscapeUriString($cleanPath)
         $title     = [System.Net.WebUtility]::HtmlEncode($file.BaseName)
 
-        $activeClass = if ($relPath -eq $currentRelPath) { ' class="active"' } else { '' }
-        $html += "  <li class='nav-file'><a href='$webPath'$activeClass>$title</a></li>`n"
+        $isActive = ($currentRelPath -ne "" -and $relPath -eq $currentRelPath)
+        if ($isActive) { $hasActive = $true }
+        $activeClass = if ($isActive) { ' class="active"' } else { '' }
+        [void]$sb.Append("  <li class='nav-file'><a href='$webPath'$activeClass>$title</a></li>`n")
     }
 
     foreach ($folderName in $node.SubFolders.Keys) {
         $subNode     = $node.SubFolders[$folderName]
         $encodedName = [System.Net.WebUtility]::HtmlEncode($folderName)
-        $subHtml     = Render-ServerFolderTreeHtml -node $subNode -currentRelPath $currentRelPath -wikiDir $wikiDir
 
-        $isOpen   = Test-ServerNodeHasActiveFile -node $subNode -currentRelPath $currentRelPath -wikiDir $wikiDir
-        $openAttr = if ($isOpen) { " open" } else { "" }
+        $subResult   = Render-ServerFolderTreeHtml -node $subNode -currentRelPath $currentRelPath -wikiDir $wikiDir
+        $subHtml     = if ($subResult -is [psobject] -and $subResult.PSObject.Properties['Html']) { $subResult.Html } else { $subResult }
+        $subHasActive = if ($subResult -is [psobject] -and $subResult.PSObject.Properties['HasActive']) { $subResult.HasActive } else { $false }
+        if ($subHasActive) { $hasActive = $true }
+        $openAttr    = if ($subHasActive) { " open" } else { "" }
 
-        $html += "  <li class='nav-folder'>`n"
-        $html += "    <details$openAttr>`n"
-        $html += "      <summary class='folder-title'>📁 $encodedName</summary>`n"
-        $html += "      $subHtml`n"
-        $html += "    </details>`n"
-        $html += "  </li>`n"
+        [void]$sb.Append("  <li class='nav-folder'>`n")
+        [void]$sb.Append("    <details$openAttr>`n")
+        [void]$sb.Append("      <summary class='folder-title'>📁 $encodedName</summary>`n")
+        [void]$sb.Append("      $subHtml`n")
+        [void]$sb.Append("    </details>`n")
+        [void]$sb.Append("  </li>`n")
     }
 
-    $html += "</ul>"
-    return $html
+    [void]$sb.Append("</ul>")
+    return [PSCustomObject]@{
+        Html      = $sb.ToString()
+        HasActive = $hasActive
+    }
 }
 
 $script:SidebarMdFiles = @()
 $script:SidebarCachedHtml = $null
+$script:SidebarDefaultCachedHtml = @{}
 
 function Get-SidebarHtml {
     param (
         $currentRelPath,
         [string]$Lang = "ja"
     )
+
+    if ([string]::IsNullOrEmpty($currentRelPath) -and $script:SidebarDefaultCachedHtml.ContainsKey($Lang)) {
+        return $script:SidebarDefaultCachedHtml[$Lang]
+    }
 
     if ($null -eq $script:SidebarMdFiles -or $script:SidebarMdFiles.Count -eq 0) {
         $script:SidebarMdFiles = Get-ChildItem -Path $wikiDir -Recurse -Filter "*.md" |
@@ -604,7 +599,8 @@ function Get-SidebarHtml {
     }
 
     $treeNode = Build-ServerFileTreeNode -allMdFiles $script:SidebarMdFiles -wikiDir $wikiDir
-    $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath $currentRelPath -wikiDir $wikiDir
+    $treeResult = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath $currentRelPath -wikiDir $wikiDir
+    $treeHtml = if ($treeResult -is [psobject] -and $treeResult.PSObject.Properties['Html']) { $treeResult.Html } else { $treeResult }
 
     $clearCacheLabel = Get-LocalizedStr -Key "sidebar_clear_cache" -Lang $Lang
     $processingLabel = Get-LocalizedStr -Key "sidebar_processing" -Lang $Lang
@@ -640,7 +636,11 @@ function refreshWikiSidebarCache(btn) {
 }
 </script>
 "@
-    return $treeHtml + $refreshButtonHtml
+    $finalHtml = $treeHtml + $refreshButtonHtml
+    if ([string]::IsNullOrEmpty($currentRelPath)) {
+        $script:SidebarDefaultCachedHtml[$Lang] = $finalHtml
+    }
+    return $finalHtml
 }
 
 # --- ディレクトリ一覧 HTML 生成関数 ---
@@ -1240,6 +1240,49 @@ function Get-HighlightText {
     return $sb.ToString()
 }
 
+function Get-DocSnippet {
+    param (
+        [string]$BodyText = "",
+        [string[]]$Keywords = @()
+    )
+
+    if ([string]::IsNullOrWhiteSpace($BodyText)) { return "" }
+
+    $lines = $BodyText -split "\r?\n"
+    $matchIdx = -1
+
+    for ($lIdx = 0; $lIdx -lt $lines.Count; $lIdx++) {
+        $line = $lines[$lIdx]
+        if ($line -match '^\s*---') { continue }
+        if ($Keywords -and $Keywords.Count -gt 0) {
+            foreach ($kw in $Keywords) {
+                if ($line.IndexOf($kw, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                    $matchIdx = $lIdx
+                    break
+                }
+            }
+        } else {
+            if (-not [string]::IsNullOrWhiteSpace($line)) {
+                $matchIdx = $lIdx
+                break
+            }
+        }
+        if ($matchIdx -ge 0) { break }
+    }
+
+    if ($matchIdx -ge 0) {
+        $startLine = [Math]::Max(0, $matchIdx - 2)
+        $endLine = [Math]::Min($lines.Count - 1, $matchIdx + 4)
+        $snipLines = @($lines[$startLine..$endLine] | Where-Object { $_ -notmatch '^\s*---' })
+        $snippet = ($snipLines -join "`n").Trim()
+        if ($snippet.Length -gt 400) {
+            $snippet = $snippet.Substring(0, 400) + "..."
+        }
+        return $snippet
+    }
+    return ""
+}
+
 # --- OKF スコアリングドキュメント検索共通関数 ---
 function Search-OkfDocs {
     param (
@@ -1304,9 +1347,9 @@ function Search-OkfDocs {
         # --- A. フレーズ全体一致ボーナス (Exact Phrase Bonus) ---
         if ($cleanQuery.Length -ge 2) {
             $phraseRegex = [regex]::Escape($cleanQuery)
-            if ($item.Title -and $item.Title -match "(?i)$phraseRegex") { $score += 15 }
-            if ($item.Description -and $item.Description -match "(?i)$phraseRegex") { $score += 10 }
-            if ($item.BodyText -and $item.BodyText -match "(?i)$phraseRegex") { $score += 8 }
+            if ($item.Title -and $item.Title.IndexOf($cleanQuery, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and $item.Title -match "(?i)$phraseRegex") { $score += 15 }
+            if ($item.Description -and $item.Description.IndexOf($cleanQuery, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and $item.Description -match "(?i)$phraseRegex") { $score += 10 }
+            if ($item.BodyText -and $item.BodyText.IndexOf($cleanQuery, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and $item.BodyText -match "(?i)$phraseRegex") { $score += 8 }
         }
 
         # --- B. 形態素単語単位スコアリング ---
@@ -1315,35 +1358,45 @@ function Search-OkfDocs {
             $kwMatched = $false
 
             # Title (+10)
-            if ($item.Title -and $item.Title -match $kwRegex) {
-                $score += 10
-                $kwMatched = $true
-            }
-            # Tags (+8)
-            if ($item.Tags) {
-                $tagMatch = $item.Tags | Where-Object { $_ -match $kwRegex }
-                if ($tagMatch) {
-                    $score += 8
+            if ($item.Title -and $item.Title.IndexOf($kw, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                if ($item.Title -match $kwRegex) {
+                    $score += 10
                     $kwMatched = $true
                 }
             }
+            # Tags (+8) - ネイティブ foreach & IndexOf で高速化
+            if ($item.Tags) {
+                foreach ($tag in $item.Tags) {
+                    if ($tag.IndexOf($kw, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                        $score += 8
+                        $kwMatched = $true
+                        break
+                    }
+                }
+            }
             # Description (+5)
-            if ($item.Description -and $item.Description -match $kwRegex) {
-                $score += 5
-                $kwMatched = $true
+            if ($item.Description -and $item.Description.IndexOf($kw, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                if ($item.Description -match $kwRegex) {
+                    $score += 5
+                    $kwMatched = $true
+                }
             }
             # Domain (+4)
-            if ($item.Domain -and $item.Domain -match $kwRegex) {
-                $score += 4
-                $kwMatched = $true
+            if ($item.Domain -and $item.Domain.IndexOf($kw, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                if ($item.Domain -match $kwRegex) {
+                    $score += 4
+                    $kwMatched = $true
+                }
             }
             # Author (+3)
-            if ($item.Author -and $item.Author -match $kwRegex) {
-                $score += 3
-                $kwMatched = $true
+            if ($item.Author -and $item.Author.IndexOf($kw, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                if ($item.Author -match $kwRegex) {
+                    $score += 3
+                    $kwMatched = $true
+                }
             }
-            # BodyText (+1 per hit, max 10)
-            if ($item.BodyText) {
+            # BodyText (+1 per hit, max 10) - IndexOf でプリフィルタ
+            if ($item.BodyText -and $item.BodyText.IndexOf($kw, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
                 $bodyMatches = ([regex]::Matches($item.BodyText, "(?i)$kwRegex")).Count
                 if ($bodyMatches -gt 0) {
                     $score += [Math]::Min($bodyMatches, 10)
@@ -1361,86 +1414,62 @@ function Search-OkfDocs {
             continue
         }
 
-        # 非推奨 (deprecated) 70% スコア減点
-        if ($st -eq "deprecated") {
-            $score = [Math]::Floor($score * 0.3)
-        }
-
-        # --- C. メインドキュメント優遇 ＆ 目次・付録・沿革ファイル減点 ---
-        $relLower = if ($item.RelPath) { $item.RelPath.ToLower().Replace('/', '\') } else { "" }
-        $titleLower = if ($item.Title) { $item.Title.ToLower() } else { "" }
-
-        # 1. 各トピック直下のメインインデックス文書 (サブフォルダ内の articles\index.md 等は除く)
-        $isTopIndex = ($relLower -notmatch '[\\_](articles|suppl|appendix|items)[\\_\.]') -and ($relLower.EndsWith("\index.md") -or $relLower -eq "index.md" -or $relLower.EndsWith("\readme.md") -or $relLower -eq "readme.md")
-        if ($isTopIndex) {
-            $score += 15 # トップページボーナス
-        }
-
-        # 2. 条文一覧・目次・リンク集ファイルの抑制 (単なるリンクの羅列で本文を含まないため減点)
-        $isTableOfContents = ($titleLower -match '(条文一覧|目次|一覧)' -or $relLower -match '[\\_](toc|articles\\index)[\\_\.]')
-        if ($isTableOfContents) {
-            $score = [Math]::Max(1, [Math]::Floor($score * 0.4)) # 目次・一覧ファイルは60%減点
-        }
-
-        # 3. 附則・沿革・別表・パッチファイルの大幅減点
-        if ($relLower -match '[\\_](suppl|appendix|amendments?|history|changelog|patch|別表|附則|沿革)[\\_\.]') {
-            $score = [Math]::Max(1, [Math]::Floor($score * 0.2)) # 附則・沿革・別表は80%減点
-        }
-
         # 4. タイトル完全一致ボーナス
         if ($item.Title -and $item.Title.Trim() -eq $cleanQuery) {
             $score += 25
         }
 
+        # --- C. メインドキュメント優遇 ＆ 目次・付録・沿革ファイル減点 (スコア獲得時またはファセット絞り込み時のみ計算) ---
         if ($score -gt 0 -or ($keywords.Count -eq 0 -and (-not [string]::IsNullOrWhiteSpace($DomainFilter) -or $stFilterLower -ne "all"))) {
-            # スニペット抽出 (キーワードマッチ行の前後の文脈・表を含む最大400文字)
-            $snippet = ""
-            if ($item.BodyText) {
-                $lines = $item.BodyText -split "\r?\n"
-                $matchIdx = -1
-                for ($lIdx = 0; $lIdx -lt $lines.Count; $lIdx++) {
-                    $line = $lines[$lIdx]
-                    if ($line -match '^\s*---') { continue }
-                    if ($keywords.Count -gt 0) {
-                        foreach ($kw in $keywords) {
-                            if ($line -match [regex]::Escape($kw)) {
-                                $matchIdx = $lIdx
-                                break
-                            }
-                        }
-                    } else {
-                        if (-not [string]::IsNullOrWhiteSpace($line)) {
-                            $matchIdx = $lIdx
-                            break
-                        }
-                    }
-                    if ($matchIdx -ge 0) { break }
-                }
+            # 非推奨 (deprecated) 70% スコア減点
+            if ($st -eq "deprecated") {
+                $score = [Math]::Floor($score * 0.3)
+            }
 
-                if ($matchIdx -ge 0) {
-                    $startLine = [Math]::Max(0, $matchIdx - 2)
-                    $endLine = [Math]::Min($lines.Count - 1, $matchIdx + 4)
-                    $snipLines = @($lines[$startLine..$endLine] | Where-Object { $_ -notmatch '^\s*---' })
-                    $snippet = ($snipLines -join "`n").Trim()
-                    if ($snippet.Length -gt 400) {
-                        $snippet = $snippet.Substring(0, 400) + "..."
-                    }
-                }
+            $relLower = if ($item.RelPath) { $item.RelPath.ToLower().Replace('/', '\') } else { "" }
+            $titleLower = if ($item.Title) { $item.Title.ToLower() } else { "" }
+
+            # 1. 各トピック直下のメインインデックス文書 (サブフォルダ内の articles\index.md 等は除く)
+            $isTopIndex = ($relLower -notmatch '[\\_](articles|suppl|appendix|items)[\\_\.]') -and ($relLower.EndsWith("\index.md") -or $relLower -eq "index.md" -or $relLower.EndsWith("\readme.md") -or $relLower -eq "readme.md")
+            if ($isTopIndex) {
+                $score += 15 # トップページボーナス
+            }
+
+            # 2. 条文一覧・目次・リンク集ファイルの抑制 (単なるリンクの羅列で本文を含まないため減点)
+            $isTableOfContents = ($titleLower -match '(条文一覧|目次|一覧)' -or $relLower -match '[\\_](toc|articles\\index)[\\_\.]')
+            if ($isTableOfContents) {
+                $score = [Math]::Max(1, [Math]::Floor($score * 0.4)) # 目次・一覧ファイルは60%減点
+            }
+
+            # 3. 附則・沿革・別表・パッチファイルの大幅減点
+            if ($relLower -match '[\\_](suppl|appendix|amendments?|history|changelog|patch|別表|附則|沿革)[\\_\.]') {
+                $score = [Math]::Max(1, [Math]::Floor($score * 0.2)) # 附則・沿革・別表は80%減点
             }
 
             $results.Add([PSCustomObject]@{
-                Meta        = $item
-                Score       = $score
-                Snippet     = $snippet
+                Meta    = $item
+                Score   = $score
+                Snippet = $null
             })
         }
     }
 
     $sorted = @($results | Sort-Object Score -Descending)
-    if ($MaxResults -gt 0 -and $sorted.Count -gt $MaxResults) {
-        return ,@($sorted[0..($MaxResults - 1)])
+    $targetItems = if ($MaxResults -gt 0 -and $sorted.Count -gt $MaxResults) {
+        @($sorted[0..($MaxResults - 1)])
+    } else {
+        $sorted
     }
-    return ,$sorted
+
+    # スニペットの遅延抽出（上位返却件数のみ対象に実行）
+    foreach ($res in $targetItems) {
+        if ($null -eq $res.Snippet -and $res.Meta.BodyText) {
+            $res.Snippet = Get-DocSnippet -BodyText $res.Meta.BodyText -Keywords $keywords
+        }
+        if ($null -eq $res.Snippet) { $res.Snippet = "" }
+    }
+
+    return ,$targetItems
 }
 
 # --- Agentic Tools (PowerShell 内部実行ファンクション) ---
@@ -1939,6 +1968,84 @@ function Get-ConfigJson {
     }
 }
 
+function Clean-OldChatLogs {
+    param (
+        [string]$LogDir,
+        [int]$RetentionDays = 30
+    )
+    if ($RetentionDays -le 0 -or -not (Test-Path $LogDir -PathType Container)) { return }
+    try {
+        $threshold = (Get-Date).AddDays(-$RetentionDays)
+        $oldLogs = Get-ChildItem -Path $LogDir -Filter "chat_*.jsonl" | Where-Object { $_.LastWriteTime -lt $threshold }
+        foreach ($oldLog in $oldLogs) {
+            Remove-Item -Path $oldLog.FullName -Force -ErrorAction SilentlyContinue
+        }
+    } catch {}
+}
+
+function Write-ChatLog {
+    param (
+        [PSCustomObject]$Config,
+        [string]$ScriptDir,
+        [string]$Mode,
+        [string]$UserMessage,
+        [string]$Answer,
+        [array]$Sources = @(),
+        [array]$ThinkingLog = @(),
+        [int]$DurationMs = 0,
+        [bool]$Success = $true,
+        [string]$ErrorMessage = "",
+        [string]$CurrentDocPath = ""
+    )
+
+    if (-not $Config -or -not $Config.rag -or -not $Config.rag.logging -or -not $Config.rag.logging.enabled) {
+        return
+    }
+
+    try {
+        $logSubDir = if ($Config.rag.logging.logDir) { $Config.rag.logging.logDir } else { "logs/chat" }
+        $targetLogDir = if ([System.IO.Path]::IsPathRooted($logSubDir)) {
+            $logSubDir
+        } else {
+            Join-Path $ScriptDir $logSubDir
+        }
+
+        if (-not (Test-Path $targetLogDir)) {
+            [void](New-Item -ItemType Directory -Path $targetLogDir -Force)
+        }
+
+        # ログローテーション (保持日数クリーンアップ)
+        $retention = 30
+        if ($Config.rag.logging.retentionDays -ne $null) {
+            $retention = [int]$Config.rag.logging.retentionDays
+        }
+        Clean-OldChatLogs -LogDir $targetLogDir -RetentionDays $retention
+
+        # 日次ログファイル名
+        $todayStr = (Get-Date).ToString("yyyy-MM-dd")
+        $logFileName = "chat_${todayStr}.jsonl"
+        $logFilePath = Join-Path $targetLogDir $logFileName
+
+        $logEntry = @{
+            timestamp      = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffzzz")
+            mode           = $Mode
+            model          = if ($Config.rag.model) { $Config.rag.model } else { "" }
+            userMessage    = $UserMessage
+            currentDocPath = $CurrentDocPath
+            answer         = $Answer
+            sources        = $Sources
+            thinkingLog    = $ThinkingLog
+            durationMs     = $DurationMs
+            success        = $Success
+            errorMessage   = $ErrorMessage
+        }
+
+        $jsonStr = $logEntry | ConvertTo-Json -Depth 5 -Compress
+        $singleLine = ($jsonStr -replace "[\r\n]+", " ").Trim() + [System.Environment]::NewLine
+        [System.IO.File]::AppendAllText($logFilePath, $singleLine, [System.Text.Encoding]::UTF8)
+    } catch {}
+}
+
 function Invoke-OpenAiChatCompletions {
     param (
         [string]$ApiUrl,
@@ -2035,7 +2142,8 @@ function Invoke-AgenticRagChat {
         [int]$MaxTurns = 5,
         [int]$MaxDocChars = 2000,
         [int]$TimeoutSec = 30,
-        [PSCustomObject]$CurrentDoc = $null
+        [PSCustomObject]$CurrentDoc = $null,
+        [string]$AgenticSystemPrompt = ""
     )
 
     $targetDir = if (-not [string]::IsNullOrWhiteSpace($WikiDir)) { $WikiDir } else { $script:wikiDir }
@@ -2105,13 +2213,17 @@ function Invoke-AgenticRagChat {
         }
     )
 
-    $sysPrompt = "あなたは社内Wikiのナレッジを自律調査して回答する Agentic RAG アシスタントです。`n" +
+    $sysPrompt = if (-not [string]::IsNullOrWhiteSpace($AgenticSystemPrompt)) {
+        $AgenticSystemPrompt
+    } else {
+        "あなたは社内Wikiのナレッジを自律調査して回答する Agentic RAG アシスタントです。`n" +
         "【会話の文脈（Context）維持と自律探索ルール】`n" +
         "1. 【最重要・会話履歴の継承】: 過去の会話履歴が存在する場合、ユーザーの質問に含まれる代名詞（それ、これ、同機能、同規則等）や省略された主語（例: 直前の話題が『鉛中毒』のとき『規則はどのように書かれていますか？』➔『鉛中毒予防規則の条文や構成』）を、必ず過去の会話の文脈で補完して検索・調査を行ってください。文脈を無視して単なる一般名詞（'規則' 単体など）で無関係な全体検索を行わないでください。`n" +
         "2. 質問に対する直接の単語一致が見つからない場合でも『該当なし』で諦めず、`search_okf` で得られた候補ドキュメントや `get_linked_docs` の関連リンクを `read_doc` で積極的に回遊・深掘りし、周辺知識や関連規則を探索してください。`n" +
         "3. 検索キーワード (query) は日本語を使用し、過去の文脈トピックと現在の質問を組み合わせた的確な複合キーワード（例: '鉛中毒予防規則 条文' や '鉛中毒予防規則 概要' など）を使用してください。勝手に英語翻訳しないでください。`n" +
         "4. search_okf の domain パラメータは原則として空文字列 '' を指定し、Wiki 全域から広範にドキュメントを検索してください。`n" +
         "5. 非推奨 (status: deprecated) の記述は避け、常に現行 (active) 情報のみを根拠にしてください。"
+    }
 
     if ($CurrentDoc -and $CurrentDoc.RelPath) {
         if (-not $visitedPaths.Contains($CurrentDoc.RelPath)) {
@@ -2929,6 +3041,7 @@ try {
             if ($rawPath -eq "/api/clear-cache") {
                 $script:SidebarMdFiles = @()
                 $script:SidebarCachedHtml = $null
+                $script:SidebarDefaultCachedHtml = @{}
                 Build-WikiIndex -TargetWikiDir $wikiDir -ForceRefresh | Out-Null
                 $jsonRes = @{ success = $true } | ConvertTo-Json
                 Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
@@ -2981,6 +3094,7 @@ try {
                 # サイドバーキャッシュもクリア
                 $script:SidebarMdFiles = @()
                 $script:SidebarCachedHtml = $null
+                $script:SidebarDefaultCachedHtml = @{}
 
                 # YAML Front Matter 構文検証 (ソフトLint)
                 $yamlSyntax = Test-YamlFrontMatterSyntax -MdText $reqObj.markdown
@@ -3086,6 +3200,9 @@ try {
                     }
                 }
 
+                # 計測用 Stopwatch
+                $chatSw = [System.Diagnostics.Stopwatch]::StartNew()
+
                 if ($reqMode -eq "agentic") {
                     # --- Agentic RAG Mode (ReAct 自律調査) ---
                     $maxTurns = 5
@@ -3097,8 +3214,14 @@ try {
                         $maxDocChars = [int]$config.rag.maxDocCharLength
                     }
 
+                    $agenticSysPrompt = if ($config.rag -and $config.rag.agenticSystemPrompt) { $config.rag.agenticSystemPrompt } else { "" }
+
                     try {
-                        $agentRes = Invoke-AgenticRagChat -ApiUrl $config.rag.apiUrl -ApiKey $config.rag.apiKey -Model $config.rag.model -UserMessage $userMsg -History $processedHistory -WikiDir $wikiDir -MaxTurns $maxTurns -MaxDocChars $maxDocChars -TimeoutSec $timeoutSec -CurrentDoc $currDoc
+                        $agentRes = Invoke-AgenticRagChat -ApiUrl $config.rag.apiUrl -ApiKey $config.rag.apiKey -Model $config.rag.model -UserMessage $userMsg -History $processedHistory -WikiDir $wikiDir -MaxTurns $maxTurns -MaxDocChars $maxDocChars -TimeoutSec $timeoutSec -CurrentDoc $currDoc -AgenticSystemPrompt $agenticSysPrompt
+                        $chatSw.Stop()
+
+                        Write-ChatLog -Config $config -ScriptDir $scriptDir -Mode "agentic" -UserMessage $userMsg -Answer $agentRes.answer -Sources $agentRes.sources -ThinkingLog $agentRes.thinkingLog -DurationMs $chatSw.ElapsedMilliseconds -Success $true -CurrentDocPath $currentRelPath
+
                         $jsonRes = @{
                             mode        = "agentic"
                             answer      = $agentRes.answer
@@ -3107,6 +3230,9 @@ try {
                         } | ConvertTo-Json -Depth 5
                         Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
                     } catch {
+                        $chatSw.Stop()
+                        Write-ChatLog -Config $config -ScriptDir $scriptDir -Mode "agentic" -UserMessage $userMsg -Answer "" -DurationMs $chatSw.ElapsedMilliseconds -Success $false -ErrorMessage $_.ToString() -CurrentDocPath $currentRelPath
+
                         $jsonRes = @{ error = "LLM_ERROR"; message = "Agentic RAG 実行中にエラーが発生しました: $_" } | ConvertTo-Json
                         Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 500
                     }
@@ -3188,6 +3314,10 @@ try {
                 # 3. LLM 呼び出し
                 try {
                     $answerText = Invoke-OpenAiChatCompletions -ApiUrl $config.rag.apiUrl -ApiKey $config.rag.apiKey -Model $config.rag.model -SystemPrompt $fullSysPrompt -UserMessage $userMsg -History $processedHistory -TimeoutSec $timeoutSec
+                    $chatSw.Stop()
+
+                    Write-ChatLog -Config $config -ScriptDir $scriptDir -Mode "fast" -UserMessage $userMsg -Answer $answerText -Sources $sourcesList -DurationMs $chatSw.ElapsedMilliseconds -Success $true -CurrentDocPath $currentRelPath
+
                     $jsonRes = @{
                         mode    = "fast"
                         answer  = $answerText
@@ -3195,9 +3325,13 @@ try {
                     } | ConvertTo-Json -Depth 4
                     Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
                 } catch {
+                    $chatSw.Stop()
+                    Write-ChatLog -Config $config -ScriptDir $scriptDir -Mode "fast" -UserMessage $userMsg -Answer "" -Sources $sourcesList -DurationMs $chatSw.ElapsedMilliseconds -Success $false -ErrorMessage $_.ToString() -CurrentDocPath $currentRelPath
+
                     $jsonRes = @{ error = "LLM_ERROR"; message = "LLM との通信に失敗しました: $_" } | ConvertTo-Json
                     Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 500
                 }
+                continue
                 continue
             }
 

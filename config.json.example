@@ -8,7 +8,13 @@
     "maxHistoryTurns": 3,
     "maxHistoryChars": 4000,
     "timeoutSec": 30,
-    "systemPrompt": "あなたは社内Wikiのナレッジを元に回答するアシスタントです。提供されたコンテキスト情報のみに基づいて、正確かつ丁寧に回答してください。情報がない場合は『Wiki内に該当する情報が見つかりませんでした』と答えてください。"
+    "systemPrompt": "あなたは社内Wikiのナレッジを元に回答するアシスタントです。提供されたコンテキスト情報のみに基づいて、正確かつ丁寧に回答してください。情報がない場合は『Wiki内に該当する情報が見つかりませんでした』と答えてください。",
+    "agenticSystemPrompt": "あなたは社内Wikiのナレッジを自律調査して回答する Agentic RAG アシスタントです。過去の会話文脈を尊重し、関連するドキュメントを多角的に探索して正確に回答してください。",
+    "logging": {
+      "enabled": true,
+      "logDir": "logs/chat",
+      "retentionDays": 30
+    }
   },
   "language": "ja",
   "api": {
