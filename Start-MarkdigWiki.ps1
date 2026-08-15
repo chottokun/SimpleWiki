@@ -1774,10 +1774,16 @@ function Get-SearchViewHtml {
         @($Query -split '\s+' | Where-Object { $_ -ne "" })
     } else { @() }
 
+    $searchSw = [System.Diagnostics.Stopwatch]::StartNew()
     $results = Search-OkfDocs -Query $Query -StatusFilter $StatusFilter -DomainFilter $DomainFilter
+    $searchSw.Stop()
 
     # スコア降順ソート
     $sortedResults = @($results | Sort-Object -Property Score, LastUpdated -Descending)
+
+    # 通常検索ログ記録 (バックグラウンド追記)
+    $cfg = Get-ConfigJson
+    Write-SearchLog -Config $cfg -ScriptDir $scriptDir -Query $Query -StatusFilter $StatusFilter -DomainFilter $DomainFilter -TotalHits $sortedResults.Count -TopResults $sortedResults -DurationMs $searchSw.ElapsedMilliseconds
 
     $encQuery   = [System.Net.WebUtility]::HtmlEncode($Query)
     $encDomain  = [System.Net.WebUtility]::HtmlEncode($DomainFilter)
@@ -2063,18 +2069,153 @@ function Get-ConfigJson {
     }
 }
 
-function Clean-OldChatLogs {
+$script:LastLogCleanupDate = ""
+
+function Clean-OldLogs {
     param (
         [string]$LogDir,
         [int]$RetentionDays = 30
     )
     if ($RetentionDays -le 0 -or -not (Test-Path $LogDir -PathType Container)) { return }
+    
+    # 1日に1回のみクリーンアップを実行（毎リクエストの無駄な走査を防止）
+    $today = (Get-Date).ToString("yyyy-MM-dd")
+    if ($script:LastLogCleanupDate -eq $today) { return }
+    $script:LastLogCleanupDate = $today
+
     try {
         $threshold = (Get-Date).AddDays(-$RetentionDays)
-        $oldLogs = Get-ChildItem -Path $LogDir -Filter "chat_*.jsonl" | Where-Object { $_.LastWriteTime -lt $threshold }
+        $oldLogs = Get-ChildItem -Path $LogDir -Filter "*.jsonl" -Recurse | Where-Object { $_.LastWriteTime -lt $threshold }
         foreach ($oldLog in $oldLogs) {
             Remove-Item -Path $oldLog.FullName -Force -ErrorAction SilentlyContinue
         }
+    } catch {}
+}
+
+# 互換性のため Clean-OldChatLogs も維持
+function Clean-OldChatLogs {
+    param (
+        [string]$LogDir,
+        [int]$RetentionDays = 30
+    )
+    Clean-OldLogs -LogDir $LogDir -RetentionDays $RetentionDays
+}
+
+function Get-LoggingLevel {
+    param (
+        [PSCustomObject]$Config,
+        [string]$Component = "global"  # "global", "chat", "search"
+    )
+
+    if (-not $Config) { return "off" }
+
+    # 1. コンポーネント別オーバーライドの確認
+    if ($Component -eq "chat" -and $Config.rag -and $Config.rag.logging) {
+        if ($Config.rag.logging.level) { return $Config.rag.logging.level.ToString().ToLower() }
+        if ($Config.rag.logging.enabled -eq $false) { return "off" }
+        if ($Config.rag.logging.enabled -eq $true) { return "simple" }
+    }
+    if ($Component -eq "search" -and $Config.search -and $Config.search.logging) {
+        if ($Config.search.logging.level) { return $Config.search.logging.level.ToString().ToLower() }
+        if ($Config.search.logging.enabled -eq $false) { return "off" }
+        if ($Config.search.logging.enabled -eq $true) { return "simple" }
+    }
+
+    # 2. グローバル設定の確認
+    if ($Config.logging) {
+        if ($Config.logging.level) { return $Config.logging.level.ToString().ToLower() }
+        if ($Config.logging.enabled -eq $false) { return "off" }
+        if ($Config.logging.enabled -eq $true) { return "simple" }
+    }
+
+    # 3. 既定値フォールバック
+    return "off"
+}
+
+function Write-SearchLog {
+    param (
+        [PSCustomObject]$Config,
+        [string]$ScriptDir,
+        [string]$Query,
+        [string]$StatusFilter,
+        [string]$DomainFilter,
+        [int]$TotalHits = 0,
+        [array]$TopResults = @(),
+        [int]$DurationMs = 0
+    )
+
+    $level = Get-LoggingLevel -Config $Config -Component "search"
+    if ($level -eq "off" -or [string]::IsNullOrWhiteSpace($Query)) { return }
+
+    try {
+        $rawDir = if ($Config.search -and $Config.search.logging -and $Config.search.logging.logDir) {
+            $Config.search.logging.logDir
+        } elseif ($Config.logging -and $Config.logging.logDir) {
+            $Config.logging.logDir
+        } else {
+            "logs"
+        }
+
+        $searchLogDir = if ($rawDir.Replace('\', '/').EndsWith("/search") -or $rawDir.Replace('\', '/').EndsWith("\search")) {
+            $rawDir
+        } else {
+            Join-Path $rawDir "search"
+        }
+
+        $targetLogDir = if ([System.IO.Path]::IsPathRooted($searchLogDir)) { $searchLogDir } else { Join-Path $ScriptDir $searchLogDir }
+
+        if (-not (Test-Path $targetLogDir)) {
+            [void](New-Item -ItemType Directory -Path $targetLogDir -Force)
+        }
+
+        $retention = 30
+        if ($Config.logging -and $Config.logging.retentionDays -ne $null) {
+            $retention = [int]$Config.logging.retentionDays
+        }
+        Clean-OldLogs -LogDir $targetLogDir -RetentionDays $retention
+
+        $todayStr = (Get-Date).ToString("yyyy-MM-dd")
+        $logFilePath = Join-Path $targetLogDir "search_${todayStr}.jsonl"
+
+        $logEntry = [ordered]@{
+            timestamp    = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffzzz")
+            level        = $level
+            query        = $Query
+            statusFilter = $StatusFilter
+            domainFilter = $DomainFilter
+            totalHits    = $TotalHits
+            durationMs   = $DurationMs
+        }
+
+        if ($level -eq "verbose") {
+            $detailedHits = [System.Collections.Generic.List[PSObject]]::new()
+            $maxRecord = [Math]::Min(20, $TopResults.Count)
+            for ($i = 0; $i -lt $maxRecord; $i++) {
+                $r = $TopResults[$i]
+                $detailedHits.Add([ordered]@{
+                    rank        = $i + 1
+                    relPath     = $r.Meta.RelPath
+                    title       = $r.Meta.Title
+                    score       = $r.Score
+                    domain      = $r.Meta.Domain
+                    snippet     = if ($r.Snippet -and $r.Snippet.Length -gt 200) { $r.Snippet.Substring(0, 200) + "..." } else { $r.Snippet }
+                })
+            }
+            $logEntry["topResults"] = $detailedHits
+        } else {
+            # simple モード
+            $simpleHits = [System.Collections.Generic.List[string]]::new()
+            $maxRecord = [Math]::Min(5, $TopResults.Count)
+            for ($i = 0; $i -lt $maxRecord; $i++) {
+                $r = $TopResults[$i]
+                $simpleHits.Add("$($r.Meta.RelPath) (Score: $($r.Score))")
+            }
+            $logEntry["topResults"] = $simpleHits
+        }
+
+        $jsonStr = $logEntry | ConvertTo-Json -Depth 5 -Compress
+        $singleLine = ($jsonStr -replace "[\r\n]+", " ").Trim() + [System.Environment]::NewLine
+        [System.IO.File]::AppendAllText($logFilePath, $singleLine, [System.Text.Encoding]::UTF8)
     } catch {}
 }
 
@@ -2086,6 +2227,7 @@ function Write-ChatLog {
         [string]$UserMessage,
         [string]$Answer,
         [array]$Sources = @(),
+        [array]$SearchHits = @(),
         [array]$ThinkingLog = @(),
         [int]$DurationMs = 0,
         [bool]$Success = $true,
@@ -2093,46 +2235,69 @@ function Write-ChatLog {
         [string]$CurrentDocPath = ""
     )
 
-    if (-not $Config -or -not $Config.rag -or -not $Config.rag.logging -or -not $Config.rag.logging.enabled) {
-        return
-    }
+    $level = Get-LoggingLevel -Config $Config -Component "chat"
+    if ($level -eq "off") { return }
 
     try {
-        $logSubDir = if ($Config.rag.logging.logDir) { $Config.rag.logging.logDir } else { "logs/chat" }
-        $targetLogDir = if ([System.IO.Path]::IsPathRooted($logSubDir)) {
-            $logSubDir
+        $rawDir = if ($Config.rag -and $Config.rag.logging -and $Config.rag.logging.logDir) {
+            $Config.rag.logging.logDir
+        } elseif ($Config.logging -and $Config.logging.logDir) {
+            $Config.logging.logDir
         } else {
-            Join-Path $ScriptDir $logSubDir
+            "logs"
         }
+
+        $chatLogDir = if ($rawDir.Replace('\', '/').EndsWith("/chat") -or $rawDir.Replace('\', '/').EndsWith("\chat")) {
+            $rawDir
+        } else {
+            Join-Path $rawDir "chat"
+        }
+
+        $targetLogDir = if ([System.IO.Path]::IsPathRooted($chatLogDir)) { $chatLogDir } else { Join-Path $ScriptDir $chatLogDir }
 
         if (-not (Test-Path $targetLogDir)) {
             [void](New-Item -ItemType Directory -Path $targetLogDir -Force)
         }
 
-        # ログローテーション (保持日数クリーンアップ)
         $retention = 30
-        if ($Config.rag.logging.retentionDays -ne $null) {
-            $retention = [int]$Config.rag.logging.retentionDays
+        if ($Config.logging -and $Config.logging.retentionDays -ne $null) {
+            $retention = [int]$Config.logging.retentionDays
         }
-        Clean-OldChatLogs -LogDir $targetLogDir -RetentionDays $retention
+        Clean-OldLogs -LogDir $targetLogDir -RetentionDays $retention
 
-        # 日次ログファイル名
         $todayStr = (Get-Date).ToString("yyyy-MM-dd")
-        $logFileName = "chat_${todayStr}.jsonl"
-        $logFilePath = Join-Path $targetLogDir $logFileName
+        $logFilePath = Join-Path $targetLogDir "chat_${todayStr}.jsonl"
 
-        $logEntry = @{
+        $logEntry = [ordered]@{
             timestamp      = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffzzz")
+            level          = $level
             mode           = $Mode
-            model          = if ($Config.rag.model) { $Config.rag.model } else { "" }
+            model          = if ($Config.rag -and $Config.rag.model) { $Config.rag.model } else { "" }
             userMessage    = $UserMessage
             currentDocPath = $CurrentDocPath
             answer         = $Answer
             sources        = $Sources
-            thinkingLog    = $ThinkingLog
             durationMs     = $DurationMs
             success        = $Success
             errorMessage   = $ErrorMessage
+        }
+
+        if ($level -eq "verbose") {
+            $logEntry["thinkingLog"] = $ThinkingLog
+            if ($SearchHits -and $SearchHits.Count -gt 0) {
+                $candidates = [System.Collections.Generic.List[PSObject]]::new()
+                $maxCand = [Math]::Min(15, $SearchHits.Count)
+                for ($cIdx = 0; $cIdx -lt $maxCand; $cIdx++) {
+                    $sh = $SearchHits[$cIdx]
+                    $candidates.Add([ordered]@{
+                        rank    = $cIdx + 1
+                        relPath = $sh.Meta.RelPath
+                        title   = $sh.Meta.Title
+                        score   = $sh.Score
+                    })
+                }
+                $logEntry["searchCandidates"] = $candidates
+            }
         }
 
         $jsonStr = $logEntry | ConvertTo-Json -Depth 5 -Compress
@@ -3411,7 +3576,7 @@ try {
                     $answerText = Invoke-OpenAiChatCompletions -ApiUrl $config.rag.apiUrl -ApiKey $config.rag.apiKey -Model $config.rag.model -SystemPrompt $fullSysPrompt -UserMessage $userMsg -History $processedHistory -TimeoutSec $timeoutSec
                     $chatSw.Stop()
 
-                    Write-ChatLog -Config $config -ScriptDir $scriptDir -Mode "fast" -UserMessage $userMsg -Answer $answerText -Sources $sourcesList -DurationMs $chatSw.ElapsedMilliseconds -Success $true -CurrentDocPath $currentRelPath
+                    Write-ChatLog -Config $config -ScriptDir $scriptDir -Mode "fast" -UserMessage $userMsg -Answer $answerText -Sources $sourcesList -SearchHits $searchHits -DurationMs $chatSw.ElapsedMilliseconds -Success $true -CurrentDocPath $currentRelPath
 
                     $jsonRes = @{
                         mode    = "fast"
@@ -3421,12 +3586,11 @@ try {
                     Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
                 } catch {
                     $chatSw.Stop()
-                    Write-ChatLog -Config $config -ScriptDir $scriptDir -Mode "fast" -UserMessage $userMsg -Answer "" -Sources $sourcesList -DurationMs $chatSw.ElapsedMilliseconds -Success $false -ErrorMessage $_.ToString() -CurrentDocPath $currentRelPath
+                    Write-ChatLog -Config $config -ScriptDir $scriptDir -Mode "fast" -UserMessage $userMsg -Answer "" -Sources $sourcesList -SearchHits $searchHits -DurationMs $chatSw.ElapsedMilliseconds -Success $false -ErrorMessage $_.ToString() -CurrentDocPath $currentRelPath
 
                     $jsonRes = @{ error = "LLM_ERROR"; message = "LLM との通信に失敗しました: $_" } | ConvertTo-Json
                     Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 500
                 }
-                continue
                 continue
             }
 

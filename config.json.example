@@ -17,6 +17,11 @@
     }
   },
   "language": "ja",
+  "logging": {
+    "level": "simple",
+    "logDir": "logs",
+    "retentionDays": 30
+  },
   "api": {
     "defaultLimit": 100,
     "maxLimit": 1000

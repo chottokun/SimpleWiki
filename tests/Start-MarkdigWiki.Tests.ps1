@@ -1309,7 +1309,7 @@ Another line of documentation.
     }
 }
 
-Describe "Chat Logging & Configurable Prompt Tests" {
+Describe "Logging Level & Search/Chat Log Tests" {
     BeforeAll {
         . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -DotSourceOnly
         $testLogDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_ChatLogTest"
@@ -1321,47 +1321,101 @@ Describe "Chat Logging & Configurable Prompt Tests" {
         if (Test-Path $testLogDir) { Remove-Item -Path $testLogDir -Recurse -Force }
     }
 
-    It "Write-ChatLog writes JSONL log entry correctly when logging enabled" {
-        $testLogDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_ChatLogTest"
+    It "Get-LoggingLevel resolves hierarchy correctly" {
+        $cfg1 = [PSCustomObject]@{ logging = [PSCustomObject]@{ level = "verbose" } }
+        (Get-LoggingLevel -Config $cfg1 -Component "chat") | Should Be "verbose"
+        (Get-LoggingLevel -Config $cfg1 -Component "search") | Should Be "verbose"
+
+        $cfg2 = [PSCustomObject]@{
+            logging = [PSCustomObject]@{ level = "simple" }
+            rag = [PSCustomObject]@{ logging = [PSCustomObject]@{ level = "verbose" } }
+        }
+        (Get-LoggingLevel -Config $cfg2 -Component "chat") | Should Be "verbose"
+        (Get-LoggingLevel -Config $cfg2 -Component "search") | Should Be "simple"
+
+        $cfg3 = [PSCustomObject]@{ logging = [PSCustomObject]@{ level = "off" } }
+        (Get-LoggingLevel -Config $cfg3 -Component "chat") | Should Be "off"
+    }
+
+    It "Write-ChatLog includes searchCandidates with scores in verbose mode" {
+        $testLogDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_ChatLogVerboseTest"
+        if (Test-Path $testLogDir) { Remove-Item -Path $testLogDir -Recurse -Force }
+
         $mockCfg = [PSCustomObject]@{
             rag = [PSCustomObject]@{
                 model = "test-model"
                 logging = [PSCustomObject]@{
-                    enabled = $true
+                    level = "verbose"
                     logDir = $testLogDir
                     retentionDays = 30
                 }
             }
         }
 
-        Write-ChatLog -Config $mockCfg -ScriptDir $projectRoot -Mode "fast" -UserMessage "テスト質問" -Answer "テスト回答" -Sources @(@{ title = "Doc1"; relPath = "doc1.md" }) -DurationMs 1234 -Success $true
+        $mockHits = @(
+            [PSCustomObject]@{ Meta = [PSCustomObject]@{ RelPath = "doc1.md"; Title = "Title1" }; Score = 45 },
+            [PSCustomObject]@{ Meta = [PSCustomObject]@{ RelPath = "doc2.md"; Title = "Title2" }; Score = 20 }
+        )
+
+        Write-ChatLog -Config $mockCfg -ScriptDir $projectRoot -Mode "fast" -UserMessage "テスト質問" -Answer "テスト回答" -Sources @(@{ title = "Doc1"; relPath = "doc1.md" }) -SearchHits $mockHits -DurationMs 1234 -Success $true
 
         $todayStr = (Get-Date).ToString("yyyy-MM-dd")
-        $logFile = Join-Path $testLogDir "chat_${todayStr}.jsonl"
+        $logFile = Join-Path (Join-Path $testLogDir "chat") "chat_${todayStr}.jsonl"
         (Test-Path $logFile) | Should Be $true
 
         $lines = @(Get-Content -Path $logFile -Encoding UTF8 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
         $lines.Count | Should BeGreaterThan 0
         $entry = $lines[0] | ConvertFrom-Json
-        $entry.mode | Should Be "fast"
-        $entry.model | Should Be "test-model"
-        $entry.userMessage | Should Be "テスト質問"
-        $entry.answer | Should Be "テスト回答"
-        $entry.durationMs | Should Be 1234
-        $entry.success | Should Be $true
+        $entry.level | Should Be "verbose"
+        $entry.searchCandidates.Count | Should Be 2
+        $entry.searchCandidates[0].score | Should Be 45
+        $entry.searchCandidates[0].relPath | Should Be "doc1.md"
+
+        Remove-Item -Path $testLogDir -Recurse -Force
     }
 
-    It "Write-ChatLog skips logging when logging disabled or not configured" {
+    It "Write-SearchLog writes search results log correctly" {
+        $testLogDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_SearchLogTest"
+        if (Test-Path $testLogDir) { Remove-Item -Path $testLogDir -Recurse -Force }
+
+        $mockCfg = [PSCustomObject]@{
+            search = [PSCustomObject]@{
+                logging = [PSCustomObject]@{
+                    level = "verbose"
+                    logDir = $testLogDir
+                    retentionDays = 30
+                }
+            }
+        }
+
+        $mockTop = @(
+            [PSCustomObject]@{ Meta = [PSCustomObject]@{ RelPath = "guide.md"; Title = "Guide"; Domain = "Docs" }; Score = 50; Snippet = "Guide snippet" }
+        )
+
+        Write-SearchLog -Config $mockCfg -ScriptDir $projectRoot -Query "Guide" -StatusFilter "active" -DomainFilter "" -TotalHits 1 -TopResults $mockTop -DurationMs 15
+
+        $todayStr = (Get-Date).ToString("yyyy-MM-dd")
+        $logFile = Join-Path (Join-Path $testLogDir "search") "search_${todayStr}.jsonl"
+        (Test-Path $logFile) | Should Be $true
+
+        $lines = @(Get-Content -Path $logFile -Encoding UTF8 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        $lines.Count | Should BeGreaterThan 0
+        $entry = $lines[0] | ConvertFrom-Json
+        $entry.query | Should Be "Guide"
+        $entry.totalHits | Should Be 1
+        $entry.topResults[0].score | Should Be 50
+
+        Remove-Item -Path $testLogDir -Recurse -Force
+    }
+
+    It "Write-ChatLog skips logging when level is off" {
         $disabledLogDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_DisabledLogTest"
         if (Test-Path $disabledLogDir) { Remove-Item -Path $disabledLogDir -Recurse -Force }
 
         $mockDisabledCfg = [PSCustomObject]@{
-            rag = [PSCustomObject]@{
-                model = "test-model"
-                logging = [PSCustomObject]@{
-                    enabled = $false
-                    logDir = $disabledLogDir
-                }
+            logging = [PSCustomObject]@{
+                level = "off"
+                logDir = $disabledLogDir
             }
         }
 
@@ -1369,9 +1423,12 @@ Describe "Chat Logging & Configurable Prompt Tests" {
         (Test-Path $disabledLogDir) | Should Be $false
     }
 
-    It "Clean-OldChatLogs removes log files older than retentionDays" {
+    It "Clean-OldLogs removes log files older than retentionDays" {
         $retentionTestDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_RetentionTest"
         if (-not (Test-Path $retentionTestDir)) { [void](New-Item -ItemType Directory -Path $retentionTestDir -Force) }
+
+        # Reset LastLogCleanupDate to force check
+        $script:LastLogCleanupDate = ""
 
         # Create simulated old and new log files
         $oldFile = Join-Path $retentionTestDir "chat_2026-01-01.jsonl"
@@ -1379,10 +1436,9 @@ Describe "Chat Logging & Configurable Prompt Tests" {
         [System.IO.File]::WriteAllText($oldFile, "{}", [System.Text.Encoding]::UTF8)
         [System.IO.File]::WriteAllText($newFile, "{}", [System.Text.Encoding]::UTF8)
 
-        # Set LastWriteTime for old file to 40 days ago
         (Get-Item $oldFile).LastWriteTime = (Get-Date).AddDays(-40)
 
-        Clean-OldChatLogs -LogDir $retentionTestDir -RetentionDays 30
+        Clean-OldLogs -LogDir $retentionTestDir -RetentionDays 30
 
         (Test-Path $oldFile) | Should Be $false
         (Test-Path $newFile) | Should Be $true
@@ -1391,7 +1447,6 @@ Describe "Chat Logging & Configurable Prompt Tests" {
     }
 
     It "Invoke-AgenticRagChat utilizes custom AgenticSystemPrompt parameter" {
-        # Verify function accepts and processes AgenticSystemPrompt parameter without error
         $fn = Get-Command Invoke-AgenticRagChat
         $fn.Parameters.ContainsKey("AgenticSystemPrompt") | Should Be $true
     }
