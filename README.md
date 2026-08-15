@@ -20,14 +20,24 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
   4. GUI ツール (`Export-GUI.bat`) による直感的なフォルダ選択とエキスポート。
 - **アーキテクチャ概要**:
   - **リアルタイム閲覧 & OKF ナレッジハブ**: `System.Net.HttpListener` によるローカル Web サーバー (`http://localhost:8080/`)
+  - **🚀 超高速 1 パス描画 ＆ 全文検索エンジン**:
+    - **1パス走査 & `StringBuilder` によるサイドバー描画**: 22,000 件規模の大規模 Wiki でも 62 ms (初回) / 0 ms (メモリキャッシュ時) で瞬時描画。
+    - **`IndexOf` プリフィルタ & ネイティブタグ走査 & 遅延スニペット生成**: 2万件超の全文検索スコアリングが約 0.36 秒で完了。
+    - **大規模データセット実測ベンチマーク**: 検索画面全体の総応答時間が 12.8 秒 ➔ **0.74 秒（約17倍高速化）** に大幅向上。
   - **🤖 2モード制 LLM RAG AI チャットアシスタント ＆ POST `/api/chat` API**:
     - **⚡ Fast RAG (高速1-Pass)** / **🧠 Agentic RAG (ReAct自律調査)** の2モード選択トグル機能。
     - **4つの Agentic Tools**: `search_okf` (重み付け検索), `lookup_glossary` (用語定義抽出), `read_doc` (本文取得・非推奨警告), `get_linked_docs` (相対リンク追跡) による自律探索。
     - **思考プロセス (`thinkingLog`) の可視化**: UI 上でのアコーディオン開閉による探索ステップ追跡。
-    - さくら AI API / Ollama / LM Studio / OpenAI 等の各種 REST LLM エンドポイントへ対応。
+    - **💬 チャットログ保存 ＆ 日次自動ローテーション (`rag.logging`)**:
+      - `logs/chat/chat_yyyy-MM-dd.jsonl` に 1 リクエスト 1 行の JSON Lines 形式で自動記録。
+      - `retentionDays`（既定 30日）を超える古いログの自動クリーンアップ。
+    - **📝 プロンプト設定の外部化 (`config.json`)**:
+      - Fast RAG（`systemPrompt`）および Agentic RAG（`agenticSystemPrompt`）を外部設定可能。
     - **WinRT 日本語形態素解析 (`Get-JapaneseWordsWinRT`)**: Windows 10/11 OS 内蔵の `Windows.Data.Text.WordsSegmenter` による完全依存 0 の分かち書き ＆ 助詞ストップワード自動除去。
     - **マルチターン対話履歴 (history) 管理 ＆ 安全文字数ガード**: `config.json` で可変調整（`maxHistoryTurns: 3`, `maxHistoryChars: 4000`, `maxAgentTurns: 5`, `maxDocCharLength: 2000`）。
     - **高度なチャット UI**: Markdown 表（`<table>`）、コードブロック（`<pre><code>`）、リストの完全描画、`📋 コピー` ボタン、`⛶ 拡大/縮小` トグル、`🧹 履歴クリア` ボタンを標準搭載。
+  - **🎯 検索スコアリングのカスタマイズ機能 (`search.scoring`)**:
+    - `config.json` により、各フィールド重み（タイトル、タグ、本文、完全一致ボーナス、減点率等）および優先・抑制ルール（`priorityRules`, `suppressionRules`）を外部設定可能。
   - **🔒 API Key 暗号化ユーティリティ (`Set-ApiKey.bat` / `Set-ApiKey.ps1`)**:
     - Windows DPAPI またはポータブル AES-256 暗号化（`ENC:...` / `DPAPI:...`）により、`config.json` 内の API キーを安全に保護。
   - **Google OKF (Open Knowledge Format) 思想の準拠**: YAML Front Matter からの文脈抽出・自動補完 (フォールバック)・OKF メタデータカード描画
@@ -55,6 +65,18 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
 
 ---
 
+## パフォーマンス実測ベンチマーク (22,104 件データセット)
+
+実機の大規模 Markdown データセット（22,104 件）に対する最適化前後の実測プロファイリング結果：
+
+| 処理フェーズ | 最適化前 (実測) | 最適化後 (実測) | 改善効果 |
+| :--- | :--- | :--- | :--- |
+| **① サイドバー HTML 描画 (`Get-SidebarHtml`)** | 約 10,180 ms (10.1秒) | **62 ms (非キャッシュ時) / 0 ms (キャッシュ時)** | 🚀 **約 160 倍〜瞬時描画** |
+| **② 全文検索スコアリング (`Search-OkfDocs`)** | 約 2,580 ms (2.6秒) | **約 360 ms 〜 400 ms (0.36秒)** | 🚀 **約 7 倍高速化** |
+| **③ 検索画面全体の総応答時間 (`/search?q=...`)** | **約 12,792 ms (12.8秒)** | **約 742 ms (0.74秒)** | 🚀 **約 17 倍の劇的高速化** |
+
+---
+
 ## フォルダ構成
 
 ```text
@@ -67,8 +89,9 @@ SimpleWiki/
 ├── Export-MarkdigWiki.bat  <-- 静的 HTML エキスポートバッチ (UTF-8 No-BOM)
 ├── Export-GUI.ps1          <-- 静的 HTML エキスポート GUI (UTF-8 with BOM)
 ├── Export-GUI.bat          <-- GUI 起動用バッチ (UTF-8 No-BOM)
-├── config.json.example     <-- LLM RAG 設定ファイルテンプレート
-├── config.json             <-- ローカル LLM RAG 設定（自動生成・暗号化保存）
+├── config.json.example     <-- LLM RAG / 検索スコアリング設定ファイルテンプレート
+├── config.json             <-- ローカル設定（自動生成・暗号化保存）
+├── i18n.json.example       <-- 多言語辞書拡張用テンプレート
 ├── templates/
 │   └── okf-template.md     <-- OKF 準拠ドキュメント新規作成テンプレート
 ├── lib/
@@ -85,7 +108,7 @@ SimpleWiki/
 │   └── images/
 │       └── architecture.svg <-- サンプル SVG 画像
 ├── tests/
-│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全50件)
+│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全98件)
 └── README.md                <-- プロジェクト記録
 ```
 
@@ -113,7 +136,7 @@ SimpleWiki/
 - **ドラッグ＆ドロップ**: 閲覧したい Markdown フォルダを `Start-MarkdigWiki.bat` にドラッグ＆ドロップします。
 - **PowerShell から実行**:
   ```powershell
-  .\Start-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -Port 8080 -Language en
+  .\Start-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -Port 8080 -Language ja
   ```
 
 #### 提供エンドポイント / 機能
@@ -122,9 +145,10 @@ SimpleWiki/
 - **`http://localhost:8080/tags`**: タグ目録 / タグクラウド
 - **`http://localhost:8080/maintenance`**: 風化ドキュメント (>365日)・下書き・非推奨の管理画面
 - **`http://localhost:8080/authors`**: 著者一覧ディレクトリ
-- **`http://localhost:8080/search?q=キーワード`**: 全文検索
+- **`http://localhost:8080/search?q=キーワード`**: 全文検索（カスタマイズスコアリング対応）
 - **`http://localhost:8080/api/index.json`**: AI エージェント / LLM 用機械可読 JSON インデックス
 - **`http://localhost:8080/api/chunks.json`**: RAG 用自動 H2 見出しセマンティック分割済み JSON チャンク API
+- **`http://localhost:8080/api/chat`**: 2モード制 AI チャット API (Fast / Agentic)
 
 ---
 
@@ -137,7 +161,7 @@ SimpleWiki/
 - **ドラッグ＆ドロップ**: 変換したい Markdown フォルダを `Export-MarkdigWiki.bat` にドラッグ＆ドロップします。
 - **PowerShell から実行**:
   ```powershell
-  .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "C:\inetpub\wwwroot\wiki" -Language en
+  .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "C:\inetpub\wwwroot\wiki" -Language ja
   ```
 
 ---
@@ -160,15 +184,18 @@ SimpleWiki/
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\tests\Start-MarkdigWiki.Tests.ps1"
 ```
-- **検証結果**: 全 40 件の Pester 自動テストが **100% PASS**。
+- **検証結果**: 全 98 件の Pester 自動テストが **100% PASS**。
   - **1. スクリプト構文・AST検証**: 全 `.ps1` ファイルの構文解析・トークン検証に合格
-  - **2. Pester 単体・統合・セキュリティテスト (全 40 件)**:
+  - **2. Pester 単体・統合・セキュリティ・パフォーマンス・ログ・スコアリングテスト (全 98 件)**:
     - Markdig アセンブリロード & GFM パイプライン構築
     - ディレクトリトラバーサル防止 (`403 Forbidden`)
     - XSS サニタイズ (404 パス、タイトル、検索フォーム、OKF 属性値)
     - OKF メタデータ解析・YAML パース例外処理・自動補完 (フォールバック)・カンマ区切りタグ対応
     - OKF 動的ビュー生成 (`/recent`, `/tags`, `/maintenance`, `/authors`, `/search`)
-    - OKF 文脈検索エンジン重み付けスコアリング & AND 条件検索
+    - OKF 文脈検索エンジン重み付けスコアリング & AND 条件検索 & カスタムスコアリング設定
+    - 大規模データセット向け 1 パスツリー走査 ＆ `IndexOf` プリフィルタ ＆ 遅延スニペット生成
+    - チャットログ日次自動ローテーション記録 (`logs/chat/*.jsonl`) ＆ 保持日数自動削除
+    - Fast RAG / Agentic RAG システムプロンプト外部設定
     - 全角スペース（`U+3000`）による検索単語分解対応
     - URL エンコードされた UTF-8 日本語クエリパラメータのデコード (`Get-QueryParams`)
     - クライアント接続切断時のソケット例外非破壊保護 (`Write-SafeHttpResponse`)
