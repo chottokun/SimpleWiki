@@ -184,9 +184,9 @@ SimpleWiki/
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\tests\Start-MarkdigWiki.Tests.ps1"
 ```
-- **検証結果**: 全 98 件の Pester 自動テストが **100% PASS**。
+- **検証結果**: 全 100 件の Pester 自動テストが **100% PASS**。
   - **1. スクリプト構文・AST検証**: 全 `.ps1` ファイルの構文解析・トークン検証に合格
-  - **2. Pester 単体・統合・セキュリティ・パフォーマンス・ログ・スコアリングテスト (全 98 件)**:
+  - **2. Pester 単体・統合・セキュリティ・パフォーマンス・ログ・スコアリングテスト (全 100 件)**:
     - Markdig アセンブリロード & GFM パイプライン構築
     - ディレクトリトラバーサル防止 (`403 Forbidden`)
     - XSS サニタイズ (404 パス、タイトル、検索フォーム、OKF 属性値)
@@ -194,7 +194,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\te
     - OKF 動的ビュー生成 (`/recent`, `/tags`, `/maintenance`, `/authors`, `/search`)
     - OKF 文脈検索エンジン重み付けスコアリング & AND 条件検索 & カスタムスコアリング設定
     - 大規模データセット向け 1 パスツリー走査 ＆ `IndexOf` プリフィルタ ＆ 遅延スニペット生成
-    - チャットログ日次自動ローテーション記録 (`logs/chat/*.jsonl`) ＆ 保持日数自動削除
+    - 3段階ログレベル（`verbose` / `simple` / `off`）によるチャットログ・検索ログ保存
+    - チャットログへの獲得スコア付き検索候補（`searchCandidates`）の記録
+    - 通常 Web 検索ログ記録 (`logs/search/search_yyyy-MM-dd.jsonl`)
+    - 日次 1 回自動ローテーション記録 ＆ 保持日数自動削除
     - Fast RAG / Agentic RAG システムプロンプト外部設定
     - 全角スペース（`U+3000`）による検索単語分解対応
     - URL エンコードされた UTF-8 日本語クエリパラメータのデコード (`Get-QueryParams`)
