@@ -6,12 +6,239 @@
 param (
     [int]$Port = 8080,
     [string]$RootFolder = "",
+    [Alias("Lang")]
+    [string]$Language = "",
     [switch]$DotSourceOnly
 )
 
 # スクリプト自身のディレクトリ ($PSScriptRoot) から lib フォルダを参照
 $scriptDir = [System.IO.Path]::GetFullPath($PSScriptRoot)
 $libDir    = Join-Path $scriptDir "lib"
+
+# --- 多言語化 (i18n) 設定 ---
+$script:I18n = @{
+    "ja" = @{
+        "brand_title"            = "📖 SimpleWiki"
+        "home"                   = "🏠 ホーム"
+        "recent_updates"         = "🕒 最近の更新"
+        "tags"                   = "🏷️ タグ一覧"
+        "maintenance"            = "🧹 メンテナンス"
+        "authors"                = "👥 著者一覧"
+        "api_json"               = "🤖 API (JSON)"
+        "search_placeholder"     = "Wikiを検索..."
+        "search_btn"             = "検索"
+        "doc_list_title"         = "📄 ドキュメント一覧"
+        "no_content"             = "このフォルダにはコンテンツがありません。"
+        "items_count"            = "{0} 件のアイテム"
+        "no_index_warning"       = "ℹ️ index.md / README.md がないため、フォルダ一覧を表示しています。"
+        "recent_updates_title"   = "🕒 最近の更新ドキュメント"
+        "recent_updates_desc"    = "Wiki内の全ドキュメントを更新日順に表示しています。"
+        "table_col_last_updated" = "最終更新日"
+        "table_col_title"        = "タイトル"
+        "table_col_domain"       = "ドメイン"
+        "table_col_author"       = "著者"
+        "table_col_status"       = "状態"
+        "tag_list_title"         = "🏷️ タグ一覧"
+        "tag_results_title"      = "🏷️ タグ: {0}"
+        "back_to_tags"           = "← 全タグ一覧へ戻る"
+        "maint_dashboard_title"  = "🧹 品質・メンテナンスダッシュボード"
+        "maint_dashboard_desc"   = "ドキュメントの風化を防ぎ、ナレッジの信頼性を維持するための管理画面です。"
+        "maint_stale_docs"       = "⚠️ 更新停滞ドキュメント (最終更新から365日以上経過)"
+        "maint_drafts"           = "📝 下書き一覧 (status: draft)"
+        "maint_deprecated"       = "🗑️ 非推奨・旧版一覧 (status: deprecated)"
+        "maint_no_docs"          = "該当ドキュメントはありません。"
+        "author_list_title"      = "👥 著者一覧"
+        "author_results_title"   = "👥 著者: {0}"
+        "back_to_authors"        = "← 全著者一覧へ戻る"
+        "search_results_title"   = "🔍 OKF ナレッジ検索結果 ({0} 件)"
+        "search_keyword_label"   = "キーワード (例: PostgreSQL 障害)"
+        "search_status_label"    = "ステータス:"
+        "search_status_active"   = "現行 (Active)"
+        "search_status_draft"    = "下書き (Draft)"
+        "search_status_dep"      = "非推奨 (Deprecated)"
+        "search_status_all"      = "すべて (All)"
+        "search_domain_label"    = "ドメイン:"
+        "search_domain_placeholder" = "例: infrastructure"
+        "search_domain_prefix"   = "📁 ドメイン: "
+        "search_score"           = "(関連度スコア: {0})"
+        "search_no_results"      = "該当するドキュメントが見つかりませんでした。"
+        "edit_doc_btn"           = "✏️ 編集"
+        "metadata_card_title"    = "ℹ️ ドキュメント メタデータ (OKF)"
+        "metadata_author"        = "👤 著者: "
+        "metadata_last_updated"  = "📅 最終更新: "
+        "warning_deprecated"     = "⚠️ <strong>警告: 非推奨ドキュメント</strong><br>このドキュメントは非推奨または旧版です。最新の情報を参照してください。"
+        "editor_title"           = "📝 Markdown エディター"
+        "editor_latest_version"  = "最新版 (編集用)"
+        "editor_gen_prefix"      = "世代 {0} (.bak{0})"
+        "editor_placeholder"     = "Markdown を記述してください..."
+        "editor_cancel_btn"      = "キャンセル"
+        "editor_save_btn"        = "保存"
+        "editor_loading"         = "読み込み中..."
+        "editor_history_loading" = "履歴読込中..."
+        "editor_load_error"      = "エラー: 読み込みに失敗しました。"
+        "editor_backup_load_err" = "エラー: 履歴の読み込みに失敗しました。"
+        "editor_saved"           = "保存しました。"
+        "editor_saved_warning"   = "保存しました。
+
+⚠️ YAML Front Matter に記述エラーが見つかりました:
+・"
+        "editor_warning_yaml"    = "⚠️ YAML Front Matter に記述エラーが見つかりました:"
+        "chat_widget_btn"        = "🤖 Wiki AI チャット"
+        "chat_header_title"      = "🤖 OKF Wiki AI アシスタント"
+        "chat_clear_history"     = "🧹 履歴クリア"
+        "chat_expand"            = "⛶ 拡大"
+        "chat_collapse"          = "🗗 縮小"
+        "chat_mode_label"        = "モード:"
+        "chat_include_current"   = "📄 開いているページを含める"
+        "chat_welcome_msg"       = "こんにちは！Wiki内のナレッジを元にお答えします。質問を入力してください。"
+        "chat_input_placeholder" = "Wikiに質問..."
+        "chat_send_btn"          = "送信"
+        "chat_reset_history"     = "会話履歴をリセットしました。質問を入力してください。"
+        "chat_thinking_fast"     = "⚡ 検索・生成中..."
+        "chat_thinking_agent"    = "🧠 自律深掘り調査中..."
+        "chat_comm_error"        = "⚠️ 通信エラーが発生しました。"
+        "chat_error_prefix"      = "⚠️ エラー: "
+        "chat_agent_thinking"    = "🧠 Agent 思考プロセス ({0} ステップ)"
+        "chat_source_docs"       = "📖 <strong>根拠ドキュメント (Markdown):</strong>"
+        "chat_source_empty"      = "📖 <strong>根拠ドキュメント:</strong> なし (特定のドキュメント参照なし)"
+        "chat_copy_btn"          = "📋 コピー"
+        "chat_copy_completed"    = "✓ コピー完了"
+        "sidebar_clear_cache"    = "🔄 キャッシュクリア"
+        "sidebar_processing"     = "⏳ 処理中..."
+        "sidebar_clear_failed"   = "キャッシュクリアに失敗しました。"
+        "sidebar_error"          = "エラーが発生しました。"
+        "default_system_prompt"  = "あなたは社内Wikiのナレッジを元に回答するアシスタントです。提供されたコンテキスト情報のみに基づいて、正確かつ丁寧に回答してください。情報がない場合は『Wiki内に該当する情報が見つかりませんでした』と答えてください。"
+    }
+    "en" = @{
+        "brand_title"            = "📖 SimpleWiki"
+        "home"                   = "🏠 Home"
+        "recent_updates"         = "🕒 Recent Updates"
+        "tags"                   = "🏷️ Tags"
+        "maintenance"            = "🧹 Maintenance"
+        "authors"                = "👥 Authors"
+        "api_json"               = "🤖 API (JSON)"
+        "search_placeholder"     = "Search Wiki..."
+        "search_btn"             = "Search"
+        "doc_list_title"         = "📄 Document List"
+        "no_content"             = "This folder contains no content."
+        "items_count"            = "{0} items"
+        "no_index_warning"       = "ℹ️ Showing directory listing because index.md / README.md is missing."
+        "recent_updates_title"   = "🕒 Recent Updates"
+        "recent_updates_desc"    = "Displaying all documents in the Wiki sorted by update date."
+        "table_col_last_updated" = "Last Updated"
+        "table_col_title"        = "Title"
+        "table_col_domain"       = "Domain"
+        "table_col_author"       = "Author"
+        "table_col_status"       = "Status"
+        "tag_list_title"         = "🏷️ Tags"
+        "tag_results_title"      = "🏷️ Tag: {0}"
+        "back_to_tags"           = "← Back to all tags"
+        "maint_dashboard_title"  = "🧹 Quality & Maintenance Dashboard"
+        "maint_dashboard_desc"   = "Management screen to keep documents fresh and maintain knowledge reliability."
+        "maint_stale_docs"       = "⚠️ Stale Documents (No updates for 365+ days)"
+        "maint_drafts"           = "📝 Draft List (status: draft)"
+        "maint_deprecated"       = "🗑️ Deprecated/Outdated List (status: deprecated)"
+        "maint_no_docs"          = "No matching documents found."
+        "author_list_title"      = "👥 Authors"
+        "author_results_title"   = "👥 Author: {0}"
+        "back_to_authors"        = "← Back to all authors"
+        "search_results_title"   = "🔍 OKF Knowledge Search Results ({0} items)"
+        "search_keyword_label"   = "Keywords (e.g., PostgreSQL issue)"
+        "search_status_label"    = "Status:"
+        "search_status_active"   = "Active"
+        "search_status_draft"    = "Draft"
+        "search_status_dep"      = "Deprecated"
+        "search_status_all"      = "All"
+        "search_domain_label"    = "Domain:"
+        "search_domain_placeholder" = "e.g., infrastructure"
+        "search_domain_prefix"   = "📁 Domain: "
+        "search_score"           = "(Relevance Score: {0})"
+        "search_no_results"      = "No matching documents were found."
+        "edit_doc_btn"           = "✏️ Edit"
+        "metadata_card_title"    = "ℹ️ Document Metadata (OKF)"
+        "metadata_author"        = "👤 Author: "
+        "metadata_last_updated"  = "📅 Last Updated: "
+        "warning_deprecated"     = "⚠️ <strong>Warning: Deprecated Document</strong><br>This document is deprecated or outdated. Please refer to the latest information."
+        "editor_title"           = "📝 Markdown Editor"
+        "editor_latest_version"  = "Latest (For Editing)"
+        "editor_gen_prefix"      = "Gen {0} (.bak{0})"
+        "editor_placeholder"     = "Write Markdown content here..."
+        "editor_cancel_btn"      = "Cancel"
+        "editor_save_btn"        = "Save"
+        "editor_loading"         = "Loading..."
+        "editor_history_loading" = "Loading history..."
+        "editor_load_error"      = "Error: Failed to load."
+        "editor_backup_load_err" = "Error: Failed to load backup history."
+        "editor_saved"           = "Saved successfully."
+        "editor_saved_warning"   = "Saved successfully.
+
+⚠️ YAML Front Matter format error found:
+・"
+        "editor_warning_yaml"    = "⚠️ YAML Front Matter format error found:"
+        "chat_widget_btn"        = "🤖 Wiki AI Chat"
+        "chat_header_title"      = "🤖 OKF Wiki AI Assistant"
+        "chat_clear_history"     = "🧹 Clear History"
+        "chat_expand"            = "⛶ Expand"
+        "chat_collapse"          = "🗗 Collapse"
+        "chat_mode_label"        = "Mode:"
+        "chat_include_current"   = "📄 Include current page"
+        "chat_welcome_msg"       = "Hello! I will answer based on the knowledge in the Wiki. Please enter your question."
+        "chat_input_placeholder" = "Ask Wiki..."
+        "chat_send_btn"          = "Send"
+        "chat_reset_history"     = "Conversation history has been reset. Please enter your question."
+        "chat_thinking_fast"     = "⚡ Searching & Generating..."
+        "chat_thinking_agent"    = "🧠 Investigating deeply..."
+        "chat_comm_error"        = "⚠️ Communication error occurred."
+        "chat_error_prefix"      = "⚠️ Error: "
+        "chat_agent_thinking"    = "🧠 Agent Thinking Process ({0} steps)"
+        "chat_source_docs"       = "📖 <strong>Source Documents (Markdown):</strong>"
+        "chat_source_empty"      = "📖 <strong>Source Documents:</strong> None (no specific document referenced)"
+        "chat_copy_btn"          = "📋 Copy"
+        "chat_copy_completed"    = "✓ Copied"
+        "sidebar_clear_cache"    = "🔄 Clear Cache"
+        "sidebar_processing"     = "⏳ Processing..."
+        "sidebar_clear_failed"   = "Failed to clear cache."
+        "sidebar_error"          = "An error occurred."
+        "default_system_prompt"  = "You are an assistant who answers based on the knowledge of the internal Wiki. Please reply accurately and politely based on the provided context. If the information is not found, reply that it was not found in the Wiki."
+    }
+}
+
+# --- Load and merge optional external localization file (i18n.json) ---
+$extI18nPath = Join-Path $scriptDir "i18n.json"
+if (Test-Path $extI18nPath) {
+    try {
+        $rawJson = Get-Content -Path $extI18nPath -Raw -Encoding UTF8
+        $extI18n = $rawJson | ConvertFrom-Json
+        if ($null -ne $extI18n) {
+            foreach ($langKey in $extI18n.psobject.Properties.Name) {
+                if (-not $script:I18n.ContainsKey($langKey)) {
+                    $script:I18n[$langKey] = @{}
+                }
+                $langObj = $extI18n.$langKey
+                foreach ($prop in $langObj.psobject.Properties) {
+                    $script:I18n[$langKey][$prop.Name] = $prop.Value
+                }
+            }
+        }
+    } catch {
+        Write-Warning "外部 i18n.json の読み込みに失敗しました: $_"
+    }
+}
+
+function Get-LocalizedStr {
+    param (
+        [string]$Key,
+        [string]$Lang = "ja"
+    )
+    if ($script:I18n.ContainsKey($Lang) -and $script:I18n[$Lang].ContainsKey($Key)) {
+        return $script:I18n[$Lang][$Key]
+    }
+    if ($script:I18n["ja"].ContainsKey($Key)) {
+        return $script:I18n["ja"][$Key]
+    }
+    return $Key
+}
+
 
 # ドキュメントルートの設定 (指定がない場合は markdown_sample フォルダ、存在しない場合は $PSScriptRoot)
 if ([string]::IsNullOrWhiteSpace($RootFolder)) {
@@ -416,7 +643,8 @@ function refreshWikiSidebarCache(btn) {
 function Get-DirectoryListingHtml {
     param (
         [string]$DirFullPath,
-        [string]$RawUrlPath
+        [string]$RawUrlPath,
+        [string]$Lang = "ja"
     )
 
     $cleanUrl = $RawUrlPath.TrimEnd("/")
@@ -438,10 +666,13 @@ function Get-DirectoryListingHtml {
     $mdFiles = Get-ChildItem -LiteralPath $DirFullPath -Filter "*.md" -File -ErrorAction SilentlyContinue | Sort-Object Name
 
     if ($subDirs.Count -eq 0 -and $mdFiles.Count -eq 0) {
-        $html += "<p>このフォルダにはコンテンツがありません。</p>`n"
+        $noContentTxt = Get-LocalizedStr -Key "no_content" -Lang $Lang
+        $html += "<p>$noContentTxt</p>`n"
     } else {
         $totalCount = $subDirs.Count + $mdFiles.Count
-        $html += "<p style='color:#586069; font-size:13px;'>$totalCount 件のアイテム</p>`n"
+        $itemsPattern = Get-LocalizedStr -Key "items_count" -Lang $Lang
+        $itemsTxt = [string]::Format($itemsPattern, $totalCount)
+        $html += "<p style='color:#586069; font-size:13px;'>$itemsTxt</p>`n"
         $html += "<ul class='dir-listing-list'>`n"
 
         foreach ($dir in $subDirs) {
@@ -461,7 +692,8 @@ function Get-DirectoryListingHtml {
         $html += "</ul>`n"
     }
 
-    $html += "<div class='dir-listing-notice'>ℹ️ index.md / README.md がないため、フォルダ一覧を表示しています。</div>`n"
+    $noIndexTxt = Get-LocalizedStr -Key "no_index_warning" -Lang $Lang
+    $html += "<div class='dir-listing-notice'>$noIndexTxt</div>`n"
 
     return $html
 }
@@ -470,7 +702,8 @@ function Get-DirectoryListingHtml {
 function Get-OkfTopBarHtml {
     param (
         [Parameter(Mandatory = $true)]$Meta,
-        [string]$RelPath = ""
+        [string]$RelPath = "",
+        [string]$Lang = "ja"
     )
 
     $domain      = [System.Net.WebUtility]::HtmlEncode($Meta.Domain)
@@ -490,14 +723,16 @@ function Get-OkfTopBarHtml {
         $tagsHtml = "<div class='okf-tags'>" + ($tagBadges -join " ") + "</div>"
     }
 
+    $warnTxt = Get-LocalizedStr -Key "warning_deprecated" -Lang $Lang
     $warningBanner = if ($Meta.Status -eq "deprecated") {
-        '<div class="warning-banner">⚠️ <strong>警告: 非推奨ドキュメント</strong><br>このドキュメントは非推奨または旧版です。最新の情報を参照してください。</div>'
+        "<div class=`"warning-banner`">$warnTxt</div>"
     } else { "" }
 
+    $editBtnTxt = Get-LocalizedStr -Key "edit_doc_btn" -Lang $Lang
     $editBtnHtml = ""
     if (-not [string]::IsNullOrWhiteSpace($RelPath)) {
         $safeRel = [System.Net.WebUtility]::HtmlEncode($RelPath.Replace("\", "/"))
-        $editBtnHtml = "<button class='edit-doc-btn' data-relpath='$safeRel' onclick='openWikiEditor(this)'>✏️ 編集</button>"
+        $editBtnHtml = "<button class='edit-doc-btn' data-relpath='$safeRel' onclick='openWikiEditor(this)'>$editBtnTxt</button>"
     }
 
     return @"
@@ -514,7 +749,10 @@ $warningBanner
 }
 
 function Get-OkfFooterCardHtml {
-    param ([Parameter(Mandatory = $true)]$Meta)
+    param (
+        [Parameter(Mandatory = $true)]$Meta,
+        [string]$Lang = "ja"
+    )
 
     $desc    = [System.Net.WebUtility]::HtmlEncode($Meta.Description)
     $author  = [System.Net.WebUtility]::HtmlEncode($Meta.Author)
@@ -530,9 +768,13 @@ function Get-OkfFooterCardHtml {
         $tagsHtml = "<div class='okf-tags'>" + ($tagBadges -join " ") + "</div>"
     }
 
+    $cardTitle = Get-LocalizedStr -Key "metadata_card_title" -Lang $Lang
+    $authorLabel = Get-LocalizedStr -Key "metadata_author" -Lang $Lang
+    $lastUpdLabel = Get-LocalizedStr -Key "metadata_last_updated" -Lang $Lang
+
     $authorHtml = if (-not [string]::IsNullOrWhiteSpace($author)) {
         $urlAuthor = [Uri]::EscapeDataString($Meta.Author)
-        "<span class='okf-author'>👤 著者: <a href='/authors?name=$urlAuthor'>$author</a></span>"
+        "<span class='okf-author'>${authorLabel}<a href='/authors?name=$urlAuthor'>$author</a></span>"
     } else { "" }
 
     $descHtml = if (-not [string]::IsNullOrWhiteSpace($desc)) {
@@ -542,13 +784,13 @@ function Get-OkfFooterCardHtml {
     return @"
 <footer class="okf-footer-card">
     <div class="okf-footer-header">
-        <span class="okf-footer-title">ℹ️ ドキュメント メタデータ (OKF)</span>
+        <span class="okf-footer-title">$cardTitle</span>
         <a href="/api/index.json" target="_blank" class="okf-api-link">🤖 API (JSON)</a>
     </div>
     $descHtml
     <div class="okf-footer-meta">
         $authorHtml
-        <span>📅 最終更新: $lastUpd</span>
+        <span>${lastUpdLabel}$lastUpd</span>
     </div>
     $tagsHtml
 </footer>
@@ -750,6 +992,7 @@ function Get-ApiChunksJson {
 
 # --- 最近の更新一覧ビュー生成関数 ---
 function Get-RecentViewHtml {
+    param ([string]$Lang = "ja")
     Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
     $sorted = $script:WikiIndex | Sort-Object LastUpdated -Descending
 
@@ -763,12 +1006,20 @@ function Get-RecentViewHtml {
         "<tr><td>$lastUpd</td><td><a href='$relUri'>$title</a></td><td>$domain</td><td>$author</td><td><span class='badge badge-$status'>$status</span></td></tr>"
     }
 
+    $titleTxt   = Get-LocalizedStr -Key "recent_updates_title" -Lang $Lang
+    $descTxt    = Get-LocalizedStr -Key "recent_updates_desc" -Lang $Lang
+    $colLastUpd = Get-LocalizedStr -Key "table_col_last_updated" -Lang $Lang
+    $colTitle   = Get-LocalizedStr -Key "table_col_title" -Lang $Lang
+    $colDomain  = Get-LocalizedStr -Key "table_col_domain" -Lang $Lang
+    $colAuthor  = Get-LocalizedStr -Key "table_col_author" -Lang $Lang
+    $colStatus  = Get-LocalizedStr -Key "table_col_status" -Lang $Lang
+
     return @"
-<h1>🕒 最近の更新ドキュメント</h1>
-<p>Wiki内の全ドキュメントを更新日順に表示しています。</p>
+<h1>$titleTxt</h1>
+<p>$descTxt</p>
 <table class="okf-table">
     <thead>
-        <tr><th>最終更新日</th><th>タイトル</th><th>ドメイン</th><th>著者</th><th>状態</th></tr>
+        <tr><th>$colLastUpd</th><th>$colTitle</th><th>$colDomain</th><th>$colAuthor</th><th>$colStatus</th></tr>
     </thead>
     <tbody>
         $($rowsHtml -join "`n")
@@ -779,7 +1030,10 @@ function Get-RecentViewHtml {
 
 # --- タグ目録 & 絞り込みビュー生成関数 ---
 function Get-TagsViewHtml {
-    param ([string]$SelectedTag = "")
+    param (
+        [string]$SelectedTag = "",
+        [string]$Lang = "ja"
+    )
 
     Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
 
@@ -800,8 +1054,10 @@ function Get-TagsViewHtml {
             "<a href='/tags?tag=$urlTag' class='tag-cloud-item'>🏷️ $encTag <span class='tag-count'>($count)</span></a>"
         }
 
+        $titleTxt = Get-LocalizedStr -Key "tag_list_title" -Lang $Lang
+
         return @"
-<h1>🏷️ タグ一覧</h1>
+<h1>$titleTxt</h1>
 <div class="tag-cloud">
     $($cloudHtml -join " ")
 </div>
@@ -817,9 +1073,13 @@ function Get-TagsViewHtml {
             "<div class='search-item'><h3><a href='$relUri'>$title</a></h3><p>$desc</p></div>"
         }
 
+        $titlePattern = Get-LocalizedStr -Key "tag_results_title" -Lang $Lang
+        $titleTxt = [string]::Format($titlePattern, $encTag)
+        $backTxt  = Get-LocalizedStr -Key "back_to_tags" -Lang $Lang
+
         return @"
-<h1>🏷️ タグ: $encTag</h1>
-<p><a href="/tags">← 全タグ一覧へ戻る</a></p>
+<h1>$titleTxt</h1>
+<p><a href="/tags">$backTxt</a></p>
 <div class="tag-results">
     $($cardsHtml -join "`n")
 </div>
@@ -829,6 +1089,8 @@ function Get-TagsViewHtml {
 
 # --- 品質・メンテナンスダッシュボード生成関数 ---
 function Get-MaintenanceViewHtml {
+    param ([string]$Lang = "ja")
+
     Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
     $now = Get-Date
 
@@ -836,9 +1098,11 @@ function Get-MaintenanceViewHtml {
     $draftDocs      = @($script:WikiIndex | Where-Object { $_.Status -eq "draft" })
     $deprecatedDocs = @($script:WikiIndex | Where-Object { $_.Status -eq "deprecated" })
 
+    $noDocsTxt = Get-LocalizedStr -Key "maint_no_docs" -Lang $Lang
+
     function Render-DocList ($docArray) {
         $arr = @($docArray)
-        if ($arr.Count -eq 0) { return "<p class='empty-msg'>該当ドキュメントはありません。</p>" }
+        if ($arr.Count -eq 0) { return "<p class='empty-msg'>$noDocsTxt</p>" }
         $items = foreach ($item in $arr) {
             $relUri  = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
             $title   = [System.Net.WebUtility]::HtmlEncode($item.Title)
@@ -848,22 +1112,28 @@ function Get-MaintenanceViewHtml {
         return "<ul>" + ($items -join "") + "</ul>"
     }
 
+    $titleTxt    = Get-LocalizedStr -Key "maint_dashboard_title" -Lang $Lang
+    $descTxt     = Get-LocalizedStr -Key "maint_dashboard_desc" -Lang $Lang
+    $staleTitle  = Get-LocalizedStr -Key "maint_stale_docs" -Lang $Lang
+    $draftsTitle = Get-LocalizedStr -Key "maint_drafts" -Lang $Lang
+    $depTitle    = Get-LocalizedStr -Key "maint_deprecated" -Lang $Lang
+
     return @"
-<h1>🧹 品質・メンテナンスダッシュボード</h1>
-<p>ドキュメントの風化を防ぎ、ナレッジの信頼性を維持するための管理画面です。</p>
+<h1>$titleTxt</h1>
+<p>$descTxt</p>
 
 <div class="maint-section warning-box">
-    <h2>⚠️ 更新停滞ドキュメント (最終更新から365日以上経過)</h2>
+    <h2>$staleTitle</h2>
     $(Render-DocList $staleDocs)
 </div>
 
 <div class="maint-section info-box">
-    <h2>📝 下書き一覧 (status: draft)</h2>
+    <h2>$draftsTitle</h2>
     $(Render-DocList $draftDocs)
 </div>
 
 <div class="maint-section danger-box">
-    <h2>🗑️ 非推奨・旧版一覧 (status: deprecated)</h2>
+    <h2>$depTitle</h2>
     $(Render-DocList $deprecatedDocs)
 </div>
 "@
@@ -871,22 +1141,30 @@ function Get-MaintenanceViewHtml {
 
 # --- 著者一覧ビュー生成関数 ---
 function Get-AuthorsViewHtml {
-    param ([string]$SelectedAuthor = "")
+    param (
+        [string]$SelectedAuthor = "",
+        [string]$Lang = "ja"
+    )
 
     Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
 
     if ([string]::IsNullOrWhiteSpace($SelectedAuthor)) {
         $authors = @($script:WikiIndex | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Author) } | Group-Object Author)
 
+        $itemsPattern = Get-LocalizedStr -Key "items_count" -Lang $Lang
+
         $listHtml = foreach ($g in ($authors | Sort-Object Name)) {
             $encAuthor = [System.Net.WebUtility]::HtmlEncode($g.Name)
             $urlAuthor = [Uri]::EscapeDataString($g.Name)
             $count     = $g.Count
-            "<li><a href='/authors?name=$urlAuthor'>👤 $encAuthor</a> <span class='muted'>($count 件)</span></li>"
+            $cntStr    = [string]::Format($itemsPattern, $count)
+            "<li><a href='/authors?name=$urlAuthor'>👤 $encAuthor</a> <span class='muted'>($cntStr)</span></li>"
         }
 
+        $titleTxt = Get-LocalizedStr -Key "author_list_title" -Lang $Lang
+
         return @"
-<h1>👥 著者一覧</h1>
+<h1>$titleTxt</h1>
 <ul>
     $($listHtml -join "`n")
 </ul>
@@ -901,9 +1179,13 @@ function Get-AuthorsViewHtml {
             "<li><a href='$relUri'>$title</a></li>"
         }
 
+        $titlePattern = Get-LocalizedStr -Key "author_results_title" -Lang $Lang
+        $titleTxt = [string]::Format($titlePattern, $encAuthor)
+        $backTxt  = Get-LocalizedStr -Key "back_to_authors" -Lang $Lang
+
         return @"
-<h1>👥 著者: $encAuthor</h1>
-<p><a href="/authors">← 全著者一覧へ戻る</a></p>
+<h1>$titleTxt</h1>
+<p><a href="/authors">$backTxt</a></p>
 <ul>
     $($itemsHtml -join "`n")
 </ul>
@@ -1175,7 +1457,7 @@ function Invoke-ToolSearchOkf {
             [void]$sb.AppendLine("    ・本文スニペット:`n$($r.Snippet)")
         }
     }
-    [void]$sb.AppendLine("`n※ 情報を網羅・検証するために、必要に応じて未確認の上記候補ドキュメントの RelPath に対して `read_doc(relPath)` を呼び出して参照してください。")
+    [void]$sb.AppendLine("`n※ 情報を網羅・検証するために、必要に応じて未確認の上記候補ドキュメントの RelPath に対して " + '`read_doc(relPath)'` + " を呼び出して参照してください。")
     return $sb.ToString()
 }
 
@@ -1327,7 +1609,8 @@ function Get-SearchViewHtml {
     param (
         [string]$Query = "",
         [string]$StatusFilter = "active",
-        [string]$DomainFilter = ""
+        [string]$DomainFilter = "",
+        [string]$Lang = "ja"
     )
 
     if ([string]::IsNullOrWhiteSpace($StatusFilter)) { $StatusFilter = "active" }
@@ -1349,6 +1632,11 @@ function Get-SearchViewHtml {
     $optDraft      = if ($stFilterLower -eq "draft")      { "selected" } else { "" }
     $optDeprecated = if ($stFilterLower -eq "deprecated") { "selected" } else { "" }
     $optAll        = if ($stFilterLower -eq "all")        { "selected" } else { "" }
+
+    $domainPrefix = Get-LocalizedStr -Key "search_domain_prefix" -Lang $Lang
+    $lastUpdLabel = Get-LocalizedStr -Key "metadata_last_updated" -Lang $Lang
+    $authorLabel  = Get-LocalizedStr -Key "metadata_author" -Lang $Lang
+    $scorePattern = Get-LocalizedStr -Key "search_score" -Lang $Lang
 
     $resultsHtmlList = foreach ($r in $sortedResults) {
         $item   = $r.Meta
@@ -1377,7 +1665,8 @@ function Get-SearchViewHtml {
             $tagsHtml = "<div class='okf-tags' style='margin-top:4px;'>" + ($badges -join " ") + "</div>"
         }
 
-        $scoreHtml = if ($r.Score -gt 0) { "<span style='font-size:12px; color:#6a737d; margin-left:10px;'>(関連度スコア: $($r.Score))</span>" } else { "" }
+        $scoreStr  = [string]::Format($scorePattern, $r.Score)
+        $scoreHtml = if ($r.Score -gt 0) { "<span style='font-size:12px; color:#6a737d; margin-left:10px;'>$scoreStr</span>" } else { "" }
 
         @"
 <div class="search-item" style="border-bottom: 1px solid #e1e4e8; padding: 14px 0;">
@@ -1385,7 +1674,7 @@ function Get-SearchViewHtml {
         <a href="$relUri">$titleHtml</a> $statusBadge $scoreHtml
     </h3>
     <div style="font-size: 12px; color: #586069; margin-bottom: 6px;">
-        📁 ドメイン: $domainEnc | 📅 最終更新: $lastUpd | 👤 著者: $authorEnc
+        ${domainPrefix}$domainEnc | ${lastUpdLabel}$lastUpd | ${authorLabel}$authorEnc
     </div>
     $tagsHtml
     <p style="margin: 8px 0 0 0; font-size: 13px; color: #444; background: #f8f9fa; padding: 6px 10px; border-left: 3px solid #0366d6; border-radius: 2px;">
@@ -1395,34 +1684,47 @@ function Get-SearchViewHtml {
 "@
     }
 
+    $noResultsTxt = Get-LocalizedStr -Key "search_no_results" -Lang $Lang
     $resultsContent = if ($sortedResults.Count -gt 0) {
         $resultsHtmlList -join "`n"
     } else {
-        "<p style='color: #666; margin-top: 20px;'>該当するドキュメントが見つかりませんでした。</p>"
+        "<p style='color: #666; margin-top: 20px;'>$noResultsTxt</p>"
     }
 
+    $titlePattern = Get-LocalizedStr -Key "search_results_title" -Lang $Lang
+    $titleTxt     = [string]::Format($titlePattern, $sortedResults.Count)
+    $kwLabel      = Get-LocalizedStr -Key "search_keyword_label" -Lang $Lang
+    $stLabel      = Get-LocalizedStr -Key "search_status_label" -Lang $Lang
+    $stActive     = Get-LocalizedStr -Key "search_status_active" -Lang $Lang
+    $stDraft      = Get-LocalizedStr -Key "search_status_draft" -Lang $Lang
+    $stDep        = Get-LocalizedStr -Key "search_status_dep" -Lang $Lang
+    $stAll        = Get-LocalizedStr -Key "search_status_all" -Lang $Lang
+    $domLabel     = Get-LocalizedStr -Key "search_domain_label" -Lang $Lang
+    $domHolder    = Get-LocalizedStr -Key "search_domain_placeholder" -Lang $Lang
+    $searchBtnTxt = Get-LocalizedStr -Key "search_btn" -Lang $Lang
+
     return @"
-<h1>🔍 OKF ナレッジ検索結果 ($($sortedResults.Count) 件)</h1>
+<h1>$titleTxt</h1>
 <div style="background: #f6f8fa; padding: 16px; border: 1px solid #e1e4e8; border-radius: 6px; margin-bottom: 20px;">
     <form action="/search" method="GET" accept-charset="UTF-8" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
         <div style="flex: 1; min-width: 200px;">
-            <input type="text" name="q" value="$encQuery" placeholder="キーワード (例: PostgreSQL 障害)" style="width: 100%; padding: 6px 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px;">
+            <input type="text" name="q" value="$encQuery" placeholder="$kwLabel" style="width: 100%; padding: 6px 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px;">
         </div>
         <div>
-            <label style="font-size: 12px; font-weight: bold; color: #586069;">ステータス:</label>
+            <label style="font-size: 12px; font-weight: bold; color: #586069;">$stLabel</label>
             <select name="status" style="padding: 6px 10px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px;">
-                <option value="active" $optActive>現行 (Active)</option>
-                <option value="draft" $optDraft>下書き (Draft)</option>
-                <option value="deprecated" $optDeprecated>非推奨 (Deprecated)</option>
-                <option value="all" $optAll>すべて (All)</option>
+                <option value="active" $optActive>$stActive</option>
+                <option value="draft" $optDraft>$stDraft</option>
+                <option value="deprecated" $optDeprecated>$stDep</option>
+                <option value="all" $optAll>$stAll</option>
             </select>
         </div>
         <div>
-            <label style="font-size: 12px; font-weight: bold; color: #586069;">ドメイン:</label>
-            <input type="text" name="domain" value="$encDomain" placeholder="例: infrastructure" style="padding: 6px 10px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; width: 140px;">
+            <label style="font-size: 12px; font-weight: bold; color: #586069;">$domLabel</label>
+            <input type="text" name="domain" value="$encDomain" placeholder="$domHolder" style="padding: 6px 10px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; width: 140px;">
         </div>
         <div>
-            <button type="submit" style="padding: 6px 16px; font-size: 14px; background: #0366d6; color: #fff; border: none; border-radius: 4px; cursor: pointer;">🔍 検索</button>
+            <button type="submit" style="padding: 6px 16px; font-size: 14px; background: #0366d6; color: #fff; border: none; border-radius: 4px; cursor: pointer;">🔍 $searchBtnTxt</button>
         </div>
     </form>
 </div>
@@ -1443,7 +1745,7 @@ function Get-OKFSearchResultsHtml {
 
 # --- UTF-8 URL クエリパラメータ解析関数 ---
 function Get-QueryParams {
-    param ([Parameter(Mandatory = $true)][System.Net.HttpListenerRequest]$Request)
+    param ([Parameter(Mandatory = $true)]$Request)
     $queryDict = @{}
     $rawQuery = $Request.Url.Query
     if (-not [string]::IsNullOrWhiteSpace($rawQuery)) {
@@ -2000,30 +2302,52 @@ function Invoke-AgenticRagChat {
 }
 
 function Get-ChatWidgetHtml {
-    $widget = @'
+    param ([string]$Lang = "ja")
+
+    $widgetBtn      = Get-LocalizedStr -Key "chat_widget_btn" -Lang $Lang
+    $headerTitle    = Get-LocalizedStr -Key "chat_header_title" -Lang $Lang
+    $expandBtnTxt   = Get-LocalizedStr -Key "chat_expand" -Lang $Lang
+    $collapseBtnTxt = Get-LocalizedStr -Key "chat_collapse" -Lang $Lang
+    $clearBtnTxt    = Get-LocalizedStr -Key "chat_clear_history" -Lang $Lang
+    $modeLabel      = Get-LocalizedStr -Key "chat_mode_label" -Lang $Lang
+    $includeCurr    = Get-LocalizedStr -Key "chat_include_current" -Lang $Lang
+    $welcomeMsg     = Get-LocalizedStr -Key "chat_welcome_msg" -Lang $Lang
+    $inputHolder    = Get-LocalizedStr -Key "chat_input_placeholder" -Lang $Lang
+    $sendBtnTxt     = Get-LocalizedStr -Key "chat_send_btn" -Lang $Lang
+    $resetHist      = Get-LocalizedStr -Key "chat_reset_history" -Lang $Lang
+    $thinkFast      = Get-LocalizedStr -Key "chat_thinking_fast" -Lang $Lang
+    $thinkAgent     = Get-LocalizedStr -Key "chat_thinking_agent" -Lang $Lang
+    $commError      = Get-LocalizedStr -Key "chat_comm_error" -Lang $Lang
+    $errPrefix      = Get-LocalizedStr -Key "chat_error_prefix" -Lang $Lang
+    $srcDocsTitle   = Get-LocalizedStr -Key "chat_source_docs" -Lang $Lang
+    $srcEmptyTitle  = Get-LocalizedStr -Key "chat_source_empty" -Lang $Lang
+    $copyBtnTxt     = Get-LocalizedStr -Key "chat_copy_btn" -Lang $Lang
+    $copyDoneTxt    = Get-LocalizedStr -Key "chat_copy_completed" -Lang $Lang
+
+    $widget = @"
     <!-- Floating Chat Widget -->
-    <button id="okfChatBtn" class="chat-widget-btn">🤖 Wiki AI チャット</button>
+    <button id="okfChatBtn" class="chat-widget-btn">$widgetBtn</button>
     <div id="okfChatBox" class="chat-box">
         <div class="chat-header">
-            <span>🤖 OKF Wiki AI アシスタント</span>
+            <span>$headerTitle</span>
             <div class="chat-header-actions">
-                <button id="okfChatExpandBtn" class="chat-header-expand" title="ウィンドウを拡大/縮小">⛶ 拡大</button>
-                <button id="okfChatClearBtn" class="chat-header-clear" title="会話履歴をクリア">🧹 履歴クリア</button>
+                <button id="okfChatExpandBtn" class="chat-header-expand">$expandBtnTxt</button>
+                <button id="okfChatClearBtn" class="chat-header-clear">$clearBtnTxt</button>
                 <button id="okfChatCloseBtn" class="chat-header-close">✕</button>
             </div>
         </div>
         <div class="chat-mode-selector">
-            <span class="mode-label">モード:</span>
+            <span class="mode-label">$modeLabel</span>
             <label><input type="radio" name="okfRagMode" value="fast" checked> ⚡ Fast</label>
             <label><input type="radio" name="okfRagMode" value="agentic"> 🧠 Agentic</label>
-            <label style="margin-left: auto; color: #24292e; font-weight: normal; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px;"><input type="checkbox" id="okfIncludeCurrentPage" checked> 📄 開いているページを含める</label>
+            <label style="margin-left: auto; color: #24292e; font-weight: normal; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px;"><input type="checkbox" id="okfIncludeCurrentPage" checked> $includeCurr</label>
         </div>
         <div id="okfChatMessages" class="chat-messages">
-            <div class="chat-msg assistant">こんにちは！Wiki内のナレッジを元にお答えします。質問を入力してください。</div>
+            <div class="chat-msg assistant">$welcomeMsg</div>
         </div>
         <div class="chat-input-area">
-            <input type="text" id="okfChatInput" placeholder="Wikiに質問..." />
-            <button id="okfChatSendBtn">送信</button>
+            <input type="text" id="okfChatInput" placeholder="$inputHolder" />
+            <button id="okfChatSendBtn">$sendBtnTxt</button>
         </div>
     </div>
     <style>
@@ -2090,9 +2414,9 @@ function Get-ChatWidgetHtml {
                 expandBtn.addEventListener("click", function() {
                     box.classList.toggle("expanded");
                     if (box.classList.contains("expanded")) {
-                        expandBtn.textContent = "🗗 縮小";
+                        expandBtn.textContent = "$collapseBtnTxt";
                     } else {
-                        expandBtn.textContent = "⛶ 拡大";
+                        expandBtn.textContent = "$expandBtnTxt";
                     }
                 });
             }
@@ -2100,7 +2424,7 @@ function Get-ChatWidgetHtml {
             if (clearBtn) {
                 clearBtn.addEventListener("click", function() {
                     chatHistory = [];
-                    msgs.innerHTML = '<div class="chat-msg assistant">会話履歴をリセットしました。質問を入力してください。</div>';
+                    msgs.innerHTML = '<div class="chat-msg assistant">$resetHist</div>';
                 });
             }
 
@@ -2205,7 +2529,7 @@ function Get-ChatWidgetHtml {
                 if (sources && sources.length > 0) {
                     var srcDiv = document.createElement("div");
                     srcDiv.className = "chat-sources";
-                    var srcHtml = "📖 <strong>根拠ドキュメント (Markdown):</strong><ul style='margin: 4px 0 0 16px; padding: 0;'>";
+                    var srcHtml = "$srcDocsTitle<ul style='margin: 4px 0 0 16px; padding: 0;'>";
                     sources.forEach(function(s) {
                         var dateInfo = s.lastUpdated ? " (" + escapeHtml(s.lastUpdated) + ")" : "";
                         srcHtml += "<li>📄 <a href='" + escapeHtml(s.relUri) + "' target='_blank'>" + escapeHtml(s.title || s.relPath) + "</a>" + dateInfo + "</li>";
@@ -2216,7 +2540,7 @@ function Get-ChatWidgetHtml {
                 } else {
                     var srcDiv = document.createElement("div");
                     srcDiv.className = "chat-sources";
-                    srcDiv.innerHTML = "📖 <strong>根拠ドキュメント:</strong> なし (特定のドキュメント参照なし)";
+                    srcDiv.innerHTML = "$srcEmptyTitle";
                     div.appendChild(srcDiv);
                 }
                 if (role === "assistant" && text !== "🤔 思考中...") {
@@ -2224,11 +2548,11 @@ function Get-ChatWidgetHtml {
                     actionDiv.className = "chat-msg-actions";
                     var copyBtn = document.createElement("button");
                     copyBtn.className = "chat-copy-btn";
-                    copyBtn.innerHTML = "📋 コピー";
+                    copyBtn.innerHTML = "$copyBtnTxt";
                     copyBtn.addEventListener("click", function() {
                         var performCopy = function() {
-                            copyBtn.innerHTML = "✓ コピー完了";
-                            setTimeout(function() { copyBtn.innerHTML = "📋 コピー"; }, 1500);
+                            copyBtn.innerHTML = "$copyDoneTxt";
+                            setTimeout(function() { copyBtn.innerHTML = "$copyBtnTxt"; }, 1500);
                         };
                         if (navigator.clipboard && navigator.clipboard.writeText) {
                             navigator.clipboard.writeText(text).then(performCopy).catch(function() {
@@ -2269,7 +2593,7 @@ function Get-ChatWidgetHtml {
                 appendMsg("user", q);
                 input.value = "";
                 sendBtn.disabled = true;
-                appendMsg("assistant", mode === "agentic" ? "🧠 自律深掘り調査中..." : "⚡ 検索・生成中...");
+                appendMsg("assistant", mode === "agentic" ? "$thinkAgent" : "$thinkFast");
 
                 fetch("/api/chat", {
                     method: "POST",
@@ -2278,7 +2602,7 @@ function Get-ChatWidgetHtml {
                 }).then(function(res) { return res.json(); }).then(function(data) {
                     msgs.removeChild(msgs.lastChild);
                     if (data.error) {
-                        appendMsg("assistant", "⚠️ エラー: " + data.message);
+                        appendMsg("assistant", "$errPrefix" + data.message);
                     } else {
                         appendMsg("assistant", data.answer, data.sources, data.thinkingLog);
                         chatHistory.push({ role: "user", content: q });
@@ -2286,7 +2610,7 @@ function Get-ChatWidgetHtml {
                     }
                 }).catch(function(err) {
                     msgs.removeChild(msgs.lastChild);
-                    appendMsg("assistant", "⚠️ 通信エラーが発生しました。");
+                    appendMsg("assistant", "$commError");
                 }).finally(function() {
                     sendBtn.disabled = false;
                 });
@@ -2297,6 +2621,7 @@ function Get-ChatWidgetHtml {
         });
     </script>
 '@
+"@
     return $widget
 }
 
@@ -2344,7 +2669,7 @@ Write-Host "  ※ 終了するにはこのウィンドウで [Ctrl + C] を押�
 Write-Host "==========================================================" -ForegroundColor Green
 
 # 既定のブラウザで開く
-Start-Process $prefix
+try { Start-Process $prefix -ErrorAction SilentlyContinue } catch {}
 
 $mimeTypes = @{
     ".png"  = "image/png"
@@ -2365,6 +2690,27 @@ try {
         try {
             $rawPath = [System.Net.WebUtility]::UrlDecode($request.Url.LocalPath)
             $queryParams = Get-QueryParams -Request $request
+
+            # --- サーバー側の言語判定 (優先順位: 1. Cookie > 2. CLI/config.json > 3. ja) ---
+            $reqLang = ""
+            if ($request.Headers["Cookie"]) {
+                $cookieHeader = $request.Headers["Cookie"]
+                if ($cookieHeader -match "(?:^|;\s*)lang=([^;]+)") {
+                    $reqLang = $Matches[1].Trim()
+                }
+            }
+            if ([string]::IsNullOrWhiteSpace($reqLang) -and -not [string]::IsNullOrWhiteSpace($Language)) {
+                $reqLang = $Language
+            }
+            if ([string]::IsNullOrWhiteSpace($reqLang)) {
+                $startupConfig = Get-ConfigJson -TargetScriptDir $scriptDir
+                if ($startupConfig -and $startupConfig.language) {
+                    $reqLang = $startupConfig.language
+                }
+            }
+            if ([string]::IsNullOrWhiteSpace($reqLang) -or -not $script:I18n.ContainsKey($reqLang)) {
+                $reqLang = "ja"
+            }
 
             # 1. API エンドポイント (/api/index.json, /api/chunks.json, /api/chat)
             if ($rawPath -eq "/api/index.json") {
@@ -2716,7 +3062,7 @@ try {
                     [void]$contextStrBuilder.AppendLine($snippet)
                 }
 
-                $baseSysPrompt = "あなたは社内Wikiのナレッジを元に回答するアシスタントです。"
+                $baseSysPrompt = Get-LocalizedStr -Key "default_system_prompt" -Lang $reqLang
                 if ($config.rag -and $config.rag.systemPrompt) {
                     $baseSysPrompt = $config.rag.systemPrompt
                 }
@@ -2745,30 +3091,31 @@ try {
 
             if ($rawPath -eq "/recent") {
                 $isDynamicView = $true
-                $pageTitle     = "最近の更新"
-                $bodyContent   = Get-RecentViewHtml
+                $pageTitle     = Get-LocalizedStr -Key "recent_updates_title" -Lang $reqLang
+                $bodyContent   = Get-RecentViewHtml -Lang $reqLang
             } elseif ($rawPath -eq "/tags") {
                 $isDynamicView = $true
                 $tagParam      = $queryParams["tag"]
-                $pageTitle     = if ($tagParam) { "タグ: $tagParam" } else { "タグ一覧" }
-                $bodyContent   = Get-TagsViewHtml -SelectedTag $tagParam
+                $pageTitle     = if ($tagParam) { (Get-LocalizedStr -Key "tag_results_title" -Lang $reqLang) -f $tagParam } else { Get-LocalizedStr -Key "tag_list_title" -Lang $reqLang }
+                $bodyContent   = Get-TagsViewHtml -SelectedTag $tagParam -Lang $reqLang
             } elseif ($rawPath -eq "/maintenance") {
                 $isDynamicView = $true
-                $pageTitle     = "品質・メンテナンス"
-                $bodyContent   = Get-MaintenanceViewHtml
+                $pageTitle     = Get-LocalizedStr -Key "maint_dashboard_title" -Lang $reqLang
+                $bodyContent   = Get-MaintenanceViewHtml -Lang $reqLang
             } elseif ($rawPath -eq "/authors") {
                 $isDynamicView = $true
                 $authorParam   = $queryParams["name"]
-                $pageTitle     = if ($authorParam) { "著者: $authorParam" } else { "著者一覧" }
-                $bodyContent   = Get-AuthorsViewHtml -SelectedAuthor $authorParam
+                $pageTitle     = if ($authorParam) { (Get-LocalizedStr -Key "author_results_title" -Lang $reqLang) -f $authorParam } else { Get-LocalizedStr -Key "author_list_title" -Lang $reqLang }
+                $bodyContent   = Get-AuthorsViewHtml -SelectedAuthor $authorParam -Lang $reqLang
             } elseif ($rawPath -eq "/search") {
                 $isDynamicView = $true
                 $qParam        = $queryParams["q"]
                 $stParam       = $queryParams["status"]
                 $domParam      = $queryParams["domain"]
                 $stValue       = if (-not [string]::IsNullOrWhiteSpace($stParam)) { $stParam } else { "active" }
-                $pageTitle     = if ($qParam) { "検索: $qParam" } else { "検索" }
-                $bodyContent   = Get-SearchViewHtml -Query $qParam -StatusFilter $stValue -DomainFilter $domParam
+                $searchBtnLabel = Get-LocalizedStr -Key "search_btn" -Lang $reqLang
+                $pageTitle     = if ($qParam) { "${qParam} - $searchBtnLabel" } else { $searchBtnLabel }
+                $bodyContent   = Get-SearchViewHtml -Query $qParam -StatusFilter $stValue -DomainFilter $domParam -Lang $reqLang
             }
 
             $relPath  = $rawPath.TrimStart("/").Replace("/", "\")
@@ -2804,7 +3151,7 @@ try {
                     $isDynamicView = $true
                     $dirName       = if ([string]::IsNullOrEmpty($relPath.TrimEnd('\'))) { "ルート" } else { [System.Net.WebUtility]::HtmlEncode($relPath.TrimEnd('\').Replace('\', ' / ')) }
                     $pageTitle     = "📁 $dirName - フォルダ一覧"
-                    $bodyContent   = Get-DirectoryListingHtml -DirFullPath $fullPath -RawUrlPath $rawPath
+                    $bodyContent   = Get-DirectoryListingHtml -DirFullPath $fullPath -RawUrlPath $rawPath -Lang $reqLang
                 }
             }
 
@@ -2822,17 +3169,17 @@ try {
                     $pipeline = $builder.Build()
                     $renderedHtml = [Markdig.Markdown]::ToHtml($mdText, $pipeline)
 
-                    $okfTopBar   = Get-OkfTopBarHtml -Meta $meta -RelPath $relPath
-                    $okfFooter   = Get-OkfFooterCardHtml -Meta $meta
+                    $okfTopBar   = Get-OkfTopBarHtml -Meta $meta -RelPath $relPath -Lang $reqLang
+                    $okfFooter   = Get-OkfFooterCardHtml -Meta $meta -Lang $reqLang
                     $bodyContent = $okfTopBar + $renderedHtml + $okfFooter
                     $pageTitle   = [System.Net.WebUtility]::HtmlEncode($meta.Title)
                 }
 
-                $sidebarHtml = Get-SidebarHtml -currentRelPath $relPath
+                $sidebarHtml = Get-SidebarHtml -currentRelPath $relPath -Lang $reqLang
 
                 $template = @'
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="{18}">
 <head>
 <meta charset="UTF-8">
 <title>{0} - SimpleWiki OKF</title>
@@ -2917,21 +3264,26 @@ try {
     <header class="top-header">
         <a href="/" class="brand">📖 SimpleWiki <span class="badge badge-active">OKF</span></a>
         <nav class="top-nav">
-            <a href="/">🏠 Home</a>
-            <a href="/recent">🕒 最近の更新</a>
-            <a href="/tags">🏷️ タグ一覧</a>
-            <a href="/maintenance">🧹 メンテナンス</a>
-            <a href="/authors">👥 著者一覧</a>
-            <a href="/api/index.json" target="_blank">🤖 API (JSON)</a>
+            <a href="/">{3}</a>
+            <a href="/recent">{4}</a>
+            <a href="/tags">{5}</a>
+            <a href="/maintenance">{6}</a>
+            <a href="/authors">{7}</a>
+            <a href="/api/index.json" target="_blank">{8}</a>
         </nav>
-        <form action="/search" method="GET" accept-charset="UTF-8" class="search-form">
-            <input type="text" name="q" placeholder="Wikiを検索..." required>
-            <button type="submit">検索</button>
-        </form>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <select id="wikiLangSelect" onchange="switchWikiLanguage(this.value)" style="padding: 4px 8px; font-size: 12px; border: 1px solid #444; border-radius: 4px; background: #2f363d; color: #fff; cursor: pointer;">
+                {9}
+            </select>
+            <form action="/search" method="GET" accept-charset="UTF-8" class="search-form">
+                <input type="text" name="q" placeholder="{10}" required>
+                <button type="submit">{11}</button>
+            </form>
+        </div>
     </header>
     <div class="layout-container">
         <nav class="sidebar">
-            <h2>📄 ドキュメント一覧</h2>
+            <h2>{12}</h2>
             {1}
         </nav>
         <main>
@@ -2946,19 +3298,19 @@ try {
         <div class="wiki-editor-container">
             <div class="wiki-editor-header">
                 <div style="display: flex; align-items: center; gap: 12px;">
-                    <span>📝 Markdown エディター</span>
+                    <span>{13}</span>
                     <select id="wikiEditorHistorySelect" onchange="loadWikiHistoryVersion(this)" style="background: #24292e; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 2px 6px; font-size: 12px; cursor: pointer;">
-                        <option value="">最新版 (編集用)</option>
+                        <option value="">{14}</option>
                     </select>
                 </div>
                 <span style="font-size: 12px; color: #ccc;" id="wikiEditorPath"></span>
             </div>
             <div class="wiki-editor-body">
-                <textarea id="wikiEditorTextarea" class="wiki-editor-textarea" placeholder="Markdown を記述してください..."></textarea>
+                <textarea id="wikiEditorTextarea" class="wiki-editor-textarea" placeholder="{15}"></textarea>
             </div>
             <div class="wiki-editor-footer">
-                <button class="wiki-editor-cancel-btn" onclick="closeWikiEditor()">キャンセル</button>
-                <button class="wiki-editor-save-btn" onclick="saveWikiMarkdown()">保存</button>
+                <button class="wiki-editor-cancel-btn" onclick="closeWikiEditor()">{16}</button>
+                <button class="wiki-editor-save-btn" onclick="saveWikiMarkdown()">{17}</button>
             </div>
         </div>
     </div>
@@ -3026,6 +3378,11 @@ try {
                 .catch(err => {
                     document.getElementById("wikiEditorTextarea").value = "エラー: " + err;
                 });
+        }
+
+        function switchWikiLanguage(lang) {
+            document.cookie = "lang=" + lang + "; path=/; max-age=31536000";
+            location.reload();
         }
 
         function closeWikiEditor() {
@@ -3101,13 +3458,37 @@ try {
 </body>
 </html>
 '@
-                $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent)
+                $chatWidgetHtml = Get-ChatWidgetHtml -Lang $reqLang
 
-                $config = Get-ConfigJson -TargetScriptDir $scriptDir
-                if ($config.rag -and $config.rag.enabled) {
-                    $chatWidgetHtml = Get-ChatWidgetHtml
-                    $fullHtml = $fullHtml.Replace("</body>", "$chatWidgetHtml`n</body>")
+                $navHome      = Get-LocalizedStr -Key "home" -Lang $reqLang
+                $navRecent    = Get-LocalizedStr -Key "recent_updates" -Lang $reqLang
+                $navTags      = Get-LocalizedStr -Key "tags" -Lang $reqLang
+                $navMaint     = Get-LocalizedStr -Key "maintenance" -Lang $reqLang
+                $navAuthors   = Get-LocalizedStr -Key "authors" -Lang $reqLang
+                $navApi       = Get-LocalizedStr -Key "api_json" -Lang $reqLang
+                $searchHolder = Get-LocalizedStr -Key "search_placeholder" -Lang $reqLang
+                $searchBtnTxt = Get-LocalizedStr -Key "search_btn" -Lang $reqLang
+                $docListTitle = Get-LocalizedStr -Key "doc_list_title" -Lang $reqLang
+                $edTitle      = Get-LocalizedStr -Key "editor_title" -Lang $reqLang
+                $edLatest     = Get-LocalizedStr -Key "editor_latest_version" -Lang $reqLang
+                $edHolder     = Get-LocalizedStr -Key "editor_placeholder" -Lang $reqLang
+                $edCancel     = Get-LocalizedStr -Key "editor_cancel_btn" -Lang $reqLang
+                $edSave       = Get-LocalizedStr -Key "editor_save_btn" -Lang $reqLang
+
+                $langOptionsHtml = foreach ($k in ($script:I18n.Keys | Sort-Object)) {
+                    $sel = if ($k -eq $reqLang) { "selected" } else { "" }
+                    $label = switch ($k) {
+                        "ja" { "日本語 (JP)" }
+                        "en" { "English (EN)" }
+                        default { $k.ToUpper() }
+                    }
+                    "<option value='$k' $sel>$label</option>"
                 }
+                $langOptionsStr = $langOptionsHtml -join ""
+
+                $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{13}", $edTitle).Replace("{14}", $edLatest).Replace("{15}", $edHolder).Replace("{16}", $edCancel).Replace("{17}", $edSave).Replace("{18}", $reqLang)
+
+                $fullHtml = $fullHtml.Replace("</body>", "$chatWidgetHtml`n</body>")
 
                 $bytes = [System.Text.Encoding]::UTF8.GetBytes($fullHtml)
                 Write-SafeHttpResponse -Response $response -Bytes $bytes

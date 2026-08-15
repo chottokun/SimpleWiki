@@ -5,11 +5,82 @@
 # ==============================================================================
 param (
     [string]$RootFolder = "",
-    [string]$OutputDir  = ""
+    [string]$OutputDir  = "",
+    [Alias("Lang")]
+    [string]$Language   = ""
 )
 
 $scriptDir = [System.IO.Path]::GetFullPath($PSScriptRoot)
 $libDir    = Join-Path $scriptDir "lib"
+
+# --- 多言語化 (i18n) 設定 ---
+$script:I18n = @{
+    "ja" = @{
+        "doc_list_title"         = "📄 ドキュメント一覧"
+        "edit_doc_btn"           = "✏️ 編集"
+        "metadata_card_title"    = "ℹ️ ドキュメント メタデータ (OKF)"
+        "metadata_author"        = "👤 著者: "
+        "metadata_last_updated"  = "📅 最終更新: "
+        "warning_deprecated"     = "⚠️ <strong>警告: 非推奨ドキュメント</strong><br>このドキュメントは非推奨または旧版です。最新の情報を参照してください。"
+    }
+    "en" = @{
+        "doc_list_title"         = "📄 Document List"
+        "edit_doc_btn"           = "✏️ Edit"
+        "metadata_card_title"    = "ℹ️ Document Metadata (OKF)"
+        "metadata_author"        = "👤 Author: "
+        "metadata_last_updated"  = "📅 Last Updated: "
+        "warning_deprecated"     = "⚠️ <strong>Warning: Deprecated Document</strong><br>This document is deprecated or outdated. Please refer to the latest information."
+    }
+}
+
+# --- Load and merge optional external localization file (i18n.json) ---
+$extI18nPath = Join-Path $scriptDir "i18n.json"
+if (Test-Path $extI18nPath) {
+    try {
+        $rawJson = Get-Content -Path $extI18nPath -Raw -Encoding UTF8
+        $extI18n = $rawJson | ConvertFrom-Json
+        if ($null -ne $extI18n) {
+            foreach ($langKey in $extI18n.psobject.Properties.Name) {
+                if (-not $script:I18n.ContainsKey($langKey)) {
+                    $script:I18n[$langKey] = @{}
+                }
+                $langObj = $extI18n.$langKey
+                foreach ($prop in $langObj.psobject.Properties) {
+                    $script:I18n[$langKey][$prop.Name] = $prop.Value
+                }
+            }
+        }
+    } catch {}
+}
+
+function Get-LocalizedStr {
+    param (
+        [string]$Key,
+        [string]$Lang = "ja"
+    )
+    if ($script:I18n.ContainsKey($Lang) -and $script:I18n[$Lang].ContainsKey($Key)) {
+        return $script:I18n[$Lang][$Key]
+    }
+    if ($script:I18n["ja"].ContainsKey($Key)) {
+        return $script:I18n["ja"][$Key]
+    }
+    return $Key
+}
+
+$exportLang = $Language
+if ([string]::IsNullOrWhiteSpace($exportLang)) {
+    $configPath = Join-Path $scriptDir "config.json"
+    if (Test-Path $configPath) {
+        try {
+            $cfg = (Get-Content $configPath -Raw -Encoding UTF8) | ConvertFrom-Json
+            if ($cfg -and $cfg.language) { $exportLang = $cfg.language }
+        } catch {}
+    }
+}
+if ([string]::IsNullOrWhiteSpace($exportLang) -or -not $script:I18n.ContainsKey($exportLang)) {
+    $exportLang = "ja"
+}
+
 
 # 入力ルートフォルダの設定 (指定がない場合は markdown_sample フォルダ、存在しない場合は $PSScriptRoot)
 if ([string]::IsNullOrWhiteSpace($RootFolder)) {
@@ -53,7 +124,9 @@ if (-not (Test-Path $markdigDll)) {
 }
 
 Get-ChildItem -Path $libDir -Filter "*.dll" | ForEach-Object {
-    Unblock-File -Path $_.FullName -ErrorAction SilentlyContinue
+    if ($IsWindows -or $env:OS -eq "Windows_NT") {
+        Unblock-File -Path $_.FullName -ErrorAction SilentlyContinue
+    }
     Add-Type -Path $_.FullName
 }
 
@@ -287,7 +360,11 @@ function Get-DocumentMetadata {
 
 # --- OKF トップバー ＆ フッターカード レンダリング関数 ---
 function Get-OkfTopBarHtml {
-    param ([Parameter(Mandatory = $true)]$Meta)
+    param (
+        [Parameter(Mandatory = $true)]$Meta,
+        [string]$RelPath = "",
+        [string]$Lang = "ja"
+    )
 
     $domain      = [System.Net.WebUtility]::HtmlEncode($Meta.Domain)
     $statusBadge = switch ($Meta.Status) {
@@ -322,7 +399,10 @@ $warningBanner
 }
 
 function Get-OkfFooterCardHtml {
-    param ([Parameter(Mandatory = $true)]$Meta)
+    param (
+        [Parameter(Mandatory = $true)]$Meta,
+        [string]$Lang = "ja"
+    )
 
     $desc    = [System.Net.WebUtility]::HtmlEncode($Meta.Description)
     $author  = [System.Net.WebUtility]::HtmlEncode($Meta.Author)
@@ -361,8 +441,11 @@ function Get-OkfFooterCardHtml {
 }
 
 function Get-OkfCardHtml {
-    param ([Parameter(Mandatory = $true)]$Meta)
-    return (Get-OkfTopBarHtml -Meta $Meta) + (Get-OkfFooterCardHtml -Meta $Meta)
+    param (
+        [Parameter(Mandatory = $true)]$Meta,
+        [string]$Lang = "ja"
+    )
+    return (Get-OkfTopBarHtml -Meta $Meta -Lang $Lang) + (Get-OkfFooterCardHtml -Meta $Meta -Lang $Lang)
 }
 
 function Get-ExportSidebarHtml {
@@ -387,7 +470,7 @@ $pipeline = $builder.Build()
 
 $template = @'
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="{4}">
 <head>
 <meta charset="UTF-8">
 <title>{0} - SimpleWiki OKF</title>
@@ -432,7 +515,7 @@ $template = @'
 </head>
 <body>
     <nav>
-        <h2>📄 ドキュメント一覧</h2>
+        <h2>{5}</h2>
         {1}
     </nav>
     <main>
@@ -473,8 +556,8 @@ foreach ($file in $allMdFiles) {
     $meta     = Get-DocumentMetadata -File $file -RelPath $relPath -MdText $mdText
     $bodyHtml = [Markdig.Markdown]::ToHtml($mdText, $pipeline)
 
-    $okfTopBar   = Get-OkfTopBarHtml -Meta $meta
-    $okfFooter   = Get-OkfFooterCardHtml -Meta $meta
+    $okfTopBar   = Get-OkfTopBarHtml -Meta $meta -Lang $exportLang
+    $okfFooter   = Get-OkfFooterCardHtml -Meta $meta -Lang $exportLang
     $bodyHtml    = $okfTopBar + $bodyHtml + $okfFooter
 
     # 本文中の .md ハイパーリンクを .html に自動変換
@@ -490,7 +573,8 @@ foreach ($file in $allMdFiles) {
     $mermaidUri  = New-Object System.Uri($mermaidDist)
     $relMermaid  = $destUri.MakeRelativeUri($mermaidUri).ToString()
 
-    $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyHtml).Replace("{3}", $relMermaid)
+    $docListTitle = Get-LocalizedStr -Key "doc_list_title" -Lang $exportLang
+    $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyHtml).Replace("{3}", $relMermaid).Replace("{4}", $exportLang).Replace("{5}", $docListTitle)
     $fullHtml = $fullHtml -replace "\r?\n", "`r`n"
 
     [System.IO.File]::WriteAllText($destFile, $fullHtml, [System.Text.Encoding]::UTF8)
