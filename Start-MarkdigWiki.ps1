@@ -608,8 +608,8 @@ function Get-SidebarHtml {
 
     $clearCacheLabel = Get-LocalizedStr -Key "sidebar_clear_cache" -Lang $Lang
     $processingLabel = Get-LocalizedStr -Key "sidebar_processing" -Lang $Lang
-    $failLabel       = Get-LocalizedStr -Key "sidebar_cache_fail" -Lang $Lang
-    $errLabel        = Get-LocalizedStr -Key "sidebar_error_occurred" -Lang $Lang
+    $failLabel       = Get-LocalizedStr -Key "sidebar_clear_failed" -Lang $Lang
+    $errLabel        = Get-LocalizedStr -Key "sidebar_error" -Lang $Lang
 
     $refreshButtonHtml = @"
 <div style="margin-top: 20px; padding: 10px; border-top: 1px solid #e1e4e8;">

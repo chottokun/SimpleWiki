@@ -1229,4 +1229,25 @@ Describe "Multi-Language (i18n) & Localization Tests" {
             if (Test-Path $testOutDir) { Remove-Item -Path $testOutDir -Recurse -Force }
         }
     }
+
+    It "Dynamically merges external i18n.json dictionary entries" {
+        $tempI18nFile = Join-Path $projectRoot "i18n.json"
+        $i18nContent = '{ "zh": { "home": "首页" }, "en": { "home": "Custom Home" } }'
+        [System.IO.File]::WriteAllText($tempI18nFile, $i18nContent, [System.Text.Encoding]::UTF8)
+
+        try {
+            # Reload script logic to parse i18n.json
+            . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -NoServer
+
+            $homeZh = Get-LocalizedStr -Key "home" -Lang "zh"
+            $homeZh | Should -Be "首页"
+
+            $homeEnOverride = Get-LocalizedStr -Key "home" -Lang "en"
+            $homeEnOverride | Should -Be "Custom Home"
+        } finally {
+            if (Test-Path $tempI18nFile) { Remove-Item -Path $tempI18nFile -Force }
+            # Restore default script state
+            . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -NoServer
+        }
+    }
 }
