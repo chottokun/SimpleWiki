@@ -20,5 +20,53 @@
   "api": {
     "defaultLimit": 100,
     "maxLimit": 1000
+  },
+  "search": {
+    "scoring": {
+      "exactPhraseBonus": 15,
+      "exactTitleBonus": 25,
+      "phraseDescBonus": 10,
+      "phraseBodyBonus": 8,
+      "titleWeight": 10,
+      "tagsWeight": 8,
+      "descriptionWeight": 5,
+      "domainWeight": 4,
+      "authorWeight": 3,
+      "bodyHitWeight": 1,
+      "bodyMaxHits": 10,
+      "topIndexBonus": 15,
+      "tocPenaltyRate": 0.4,
+      "suppressionPenaltyRate": 0.2,
+      "deprecatedPenaltyRate": 0.3
+    },
+    "priorityRules": {
+      "mainDocPatterns": [
+        "index.md",
+        "README.md",
+        "overview.md",
+        "guide.md",
+        "quickstart.md"
+      ]
+    },
+    "suppressionRules": {
+      "tocPatterns": [
+        "条文一覧",
+        "目次",
+        "一覧",
+        "toc",
+        "articles\\\\index"
+      ],
+      "noisePatterns": [
+        "suppl",
+        "appendix",
+        "amendments?",
+        "history",
+        "changelog",
+        "patch",
+        "別表",
+        "附則",
+        "沿革"
+      ]
+    }
   }
 }

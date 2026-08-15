@@ -1397,4 +1397,78 @@ Describe "Chat Logging & Configurable Prompt Tests" {
     }
 }
 
+Describe "Configurable Search Scoring & Rules Tests" {
+    BeforeAll {
+        . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -DotSourceOnly
+    }
+
+    It "Get-SearchConfig returns robust default values when config.json has no search section" {
+        $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_SearchCfgDefaultTest"
+        if (-not (Test-Path $tempDir)) { [void](New-Item -ItemType Directory -Path $tempDir -Force) }
+
+        $searchCfg = Get-SearchConfig -TargetScriptDir $tempDir
+        $searchCfg.scoring.exactPhraseBonus | Should Be 15
+        $searchCfg.scoring.exactTitleBonus | Should Be 25
+        $searchCfg.scoring.titleWeight | Should Be 10
+        $searchCfg.scoring.tagsWeight | Should Be 8
+        $searchCfg.priorityPatterns.Count | Should BeGreaterThan 0
+        $searchCfg.tocPatterns.Count | Should BeGreaterThan 0
+        $searchCfg.noisePatterns.Count | Should BeGreaterThan 0
+
+        Remove-Item -Path $tempDir -Recurse -Force
+    }
+
+    It "Search-OkfDocs applies custom scoring weights from config.json" {
+        $customCfgDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_CustomScoringTest"
+        if (-not (Test-Path $customCfgDir)) { [void](New-Item -ItemType Directory -Path $customCfgDir -Force) }
+
+        $customCfg = @{
+            search = @{
+                scoring = @{
+                    titleWeight = 999
+                    exactTitleBonus = 500
+                }
+            }
+        }
+        $cfgJson = $customCfg | ConvertTo-Json -Depth 5
+        [System.IO.File]::WriteAllText((Join-Path $customCfgDir "config.json"), $cfgJson, [System.Text.Encoding]::UTF8)
+
+        $searchCfg = Get-SearchConfig -TargetScriptDir $customCfgDir
+        $searchCfg.scoring.titleWeight | Should Be 999
+        $searchCfg.scoring.exactTitleBonus | Should Be 500
+        # Check that omitted properties fall back to default
+        $searchCfg.scoring.tagsWeight | Should Be 8
+
+        Remove-Item -Path $customCfgDir -Recurse -Force
+    }
+
+    It "Search-OkfDocs applies custom priority and suppression patterns from config.json" {
+        $customRulesDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_CustomRulesTest"
+        if (-not (Test-Path $customRulesDir)) { [void](New-Item -ItemType Directory -Path $customRulesDir -Force) }
+
+        $customRules = @{
+            search = @{
+                priorityRules = @{
+                    mainDocPatterns = @("portal.md", "custom_main.md")
+                }
+                suppressionRules = @{
+                    tocPatterns = @("カスタム目次", "custom_toc")
+                    noisePatterns = @("archive_old", "temp_log")
+                }
+            }
+        }
+        $rulesJson = $customRules | ConvertTo-Json -Depth 5
+        [System.IO.File]::WriteAllText((Join-Path $customRulesDir "config.json"), $rulesJson, [System.Text.Encoding]::UTF8)
+
+        $searchCfg = Get-SearchConfig -TargetScriptDir $customRulesDir
+        ($searchCfg.priorityPatterns -contains "portal.md") | Should Be $true
+        ($searchCfg.priorityPatterns -contains "custom_main.md") | Should Be $true
+        ($searchCfg.tocPatterns -contains "カスタム目次") | Should Be $true
+        ($searchCfg.noisePatterns -contains "archive_old") | Should Be $true
+
+        Remove-Item -Path $customRulesDir -Recurse -Force
+    }
+}
+
+
 

@@ -1283,6 +1283,81 @@ function Get-DocSnippet {
     return ""
 }
 
+function Get-SearchConfig {
+    param (
+        [string]$TargetScriptDir = ""
+    )
+
+    $baseDir = if (-not [string]::IsNullOrWhiteSpace($TargetScriptDir)) { $TargetScriptDir } else { $scriptDir }
+    $cfg = Get-ConfigJson -TargetScriptDir $baseDir
+
+    # デフォルトスコアリング定義
+    $defaultScoring = [ordered]@{
+        exactPhraseBonus       = 15
+        exactTitleBonus        = 25
+        phraseDescBonus        = 10
+        phraseBodyBonus        = 8
+        titleWeight            = 10
+        tagsWeight             = 8
+        descriptionWeight      = 5
+        domainWeight           = 4
+        authorWeight           = 3
+        bodyHitWeight          = 1
+        bodyMaxHits            = 10
+        topIndexBonus          = 15
+        tocPenaltyRate         = 0.4
+        suppressionPenaltyRate = 0.2
+        deprecatedPenaltyRate  = 0.3
+    }
+
+    $defaultPriorityPatterns = @("index.md", "README.md", "overview.md", "guide.md", "quickstart.md")
+    $defaultTocPatterns = @("条文一覧", "目次", "一覧", "toc", "articles\\index")
+    $defaultNoisePatterns = @("suppl", "appendix", "amendments?", "history", "changelog", "patch", "別表", "附則", "沿革")
+
+    $scoring = [ordered]@{}
+    foreach ($k in $defaultScoring.Keys) {
+        $scoring[$k] = $defaultScoring[$k]
+        if ($cfg -and $cfg.search -and $cfg.search.scoring -and $cfg.search.scoring.PSObject.Properties[$k] -and $cfg.search.scoring.$k -ne $null) {
+            $scoring[$k] = $cfg.search.scoring.$k
+        }
+    }
+
+    $priorityPatterns = $defaultPriorityPatterns
+    if ($cfg -and $cfg.search -and $cfg.search.priorityRules -and $cfg.search.priorityRules.mainDocPatterns) {
+        $priorityPatterns = @($cfg.search.priorityRules.mainDocPatterns)
+    }
+
+    $tocPatterns = $defaultTocPatterns
+    if ($cfg -and $cfg.search -and $cfg.search.suppressionRules -and $cfg.search.suppressionRules.tocPatterns) {
+        $tocPatterns = @($cfg.search.suppressionRules.tocPatterns)
+    }
+
+    $noisePatterns = $defaultNoisePatterns
+    if ($cfg -and $cfg.search -and $cfg.search.suppressionRules -and $cfg.search.suppressionRules.noisePatterns) {
+        $noisePatterns = @($cfg.search.suppressionRules.noisePatterns)
+    }
+
+    # 優先・抑制の正規表現を事前構築
+    $tocRegex = if ($tocPatterns.Count -gt 0) {
+        $escapedToc = @($tocPatterns | ForEach-Object { if ($_ -match '[\?\*\+]') { $_ } else { [regex]::Escape($_) } })
+        "[\\_](" + ($escapedToc -join "|") + ")[\\_\.]"
+    } else { "" }
+
+    $noiseRegex = if ($noisePatterns.Count -gt 0) {
+        $escapedNoise = @($noisePatterns | ForEach-Object { if ($_ -match '[\?\*\+]') { $_ } else { [regex]::Escape($_) } })
+        "[\\_](" + ($escapedNoise -join "|") + ")[\\_\.]"
+    } else { "" }
+
+    return [PSCustomObject]@{
+        scoring          = [PSCustomObject]$scoring
+        priorityPatterns = $priorityPatterns
+        tocPatterns      = $tocPatterns
+        noisePatterns    = $noisePatterns
+        tocRegex         = $tocRegex
+        noiseRegex       = $noiseRegex
+    }
+}
+
 # --- OKF スコアリングドキュメント検索共通関数 ---
 function Search-OkfDocs {
     param (
@@ -1299,6 +1374,9 @@ function Search-OkfDocs {
     if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
         Build-WikiIndex -TargetWikiDir $targetDir | Out-Null
     }
+
+    $searchCfg = Get-SearchConfig -TargetScriptDir $targetDir
+    $sc = $searchCfg.scoring
 
     if ([string]::IsNullOrWhiteSpace($StatusFilter)) { $StatusFilter = "active" }
     $stFilterLower = $StatusFilter.ToLower().Trim()
@@ -1347,9 +1425,9 @@ function Search-OkfDocs {
         # --- A. フレーズ全体一致ボーナス (Exact Phrase Bonus) ---
         if ($cleanQuery.Length -ge 2) {
             $phraseRegex = [regex]::Escape($cleanQuery)
-            if ($item.Title -and $item.Title.IndexOf($cleanQuery, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and $item.Title -match "(?i)$phraseRegex") { $score += 15 }
-            if ($item.Description -and $item.Description.IndexOf($cleanQuery, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and $item.Description -match "(?i)$phraseRegex") { $score += 10 }
-            if ($item.BodyText -and $item.BodyText.IndexOf($cleanQuery, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and $item.BodyText -match "(?i)$phraseRegex") { $score += 8 }
+            if ($item.Title -and $item.Title.IndexOf($cleanQuery, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and $item.Title -match "(?i)$phraseRegex") { $score += [int]$sc.exactPhraseBonus }
+            if ($item.Description -and $item.Description.IndexOf($cleanQuery, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and $item.Description -match "(?i)$phraseRegex") { $score += [int]$sc.phraseDescBonus }
+            if ($item.BodyText -and $item.BodyText.IndexOf($cleanQuery, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and $item.BodyText -match "(?i)$phraseRegex") { $score += [int]$sc.phraseBodyBonus }
         }
 
         # --- B. 形態素単語単位スコアリング ---
@@ -1357,49 +1435,49 @@ function Search-OkfDocs {
             $kwRegex = [regex]::Escape($kw)
             $kwMatched = $false
 
-            # Title (+10)
+            # Title
             if ($item.Title -and $item.Title.IndexOf($kw, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
                 if ($item.Title -match $kwRegex) {
-                    $score += 10
+                    $score += [int]$sc.titleWeight
                     $kwMatched = $true
                 }
             }
-            # Tags (+8) - ネイティブ foreach & IndexOf で高速化
+            # Tags - ネイティブ foreach & IndexOf で高速化
             if ($item.Tags) {
                 foreach ($tag in $item.Tags) {
                     if ($tag.IndexOf($kw, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
-                        $score += 8
+                        $score += [int]$sc.tagsWeight
                         $kwMatched = $true
                         break
                     }
                 }
             }
-            # Description (+5)
+            # Description
             if ($item.Description -and $item.Description.IndexOf($kw, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
                 if ($item.Description -match $kwRegex) {
-                    $score += 5
+                    $score += [int]$sc.descriptionWeight
                     $kwMatched = $true
                 }
             }
-            # Domain (+4)
+            # Domain
             if ($item.Domain -and $item.Domain.IndexOf($kw, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
                 if ($item.Domain -match $kwRegex) {
-                    $score += 4
+                    $score += [int]$sc.domainWeight
                     $kwMatched = $true
                 }
             }
-            # Author (+3)
+            # Author
             if ($item.Author -and $item.Author.IndexOf($kw, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
                 if ($item.Author -match $kwRegex) {
-                    $score += 3
+                    $score += [int]$sc.authorWeight
                     $kwMatched = $true
                 }
             }
-            # BodyText (+1 per hit, max 10) - IndexOf でプリフィルタ
+            # BodyText - IndexOf でプリフィルタ
             if ($item.BodyText -and $item.BodyText.IndexOf($kw, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
                 $bodyMatches = ([regex]::Matches($item.BodyText, "(?i)$kwRegex")).Count
                 if ($bodyMatches -gt 0) {
-                    $score += [Math]::Min($bodyMatches, 10)
+                    $score += [Math]::Min($bodyMatches, [int]$sc.bodyMaxHits) * [int]$sc.bodyHitWeight
                     $kwMatched = $true
                 }
             }
@@ -1416,34 +1494,51 @@ function Search-OkfDocs {
 
         # 4. タイトル完全一致ボーナス
         if ($item.Title -and $item.Title.Trim() -eq $cleanQuery) {
-            $score += 25
+            $score += [int]$sc.exactTitleBonus
         }
 
         # --- C. メインドキュメント優遇 ＆ 目次・付録・沿革ファイル減点 (スコア獲得時またはファセット絞り込み時のみ計算) ---
         if ($score -gt 0 -or ($keywords.Count -eq 0 -and (-not [string]::IsNullOrWhiteSpace($DomainFilter) -or $stFilterLower -ne "all"))) {
-            # 非推奨 (deprecated) 70% スコア減点
+            # 非推奨 (deprecated) スコア減点
             if ($st -eq "deprecated") {
-                $score = [Math]::Floor($score * 0.3)
+                $score = [Math]::Floor($score * [double]$sc.deprecatedPenaltyRate)
             }
 
             $relLower = if ($item.RelPath) { $item.RelPath.ToLower().Replace('/', '\') } else { "" }
             $titleLower = if ($item.Title) { $item.Title.ToLower() } else { "" }
 
-            # 1. 各トピック直下のメインインデックス文書 (サブフォルダ内の articles\index.md 等は除く)
-            $isTopIndex = ($relLower -notmatch '[\\_](articles|suppl|appendix|items)[\\_\.]') -and ($relLower.EndsWith("\index.md") -or $relLower -eq "index.md" -or $relLower.EndsWith("\readme.md") -or $relLower -eq "readme.md")
+            # 1. メインドキュメント優遇 (設定ファイルのマッチパターン)
+            $isTopIndex = $false
+            foreach ($pPat in $searchCfg.priorityPatterns) {
+                $pPatLower = $pPat.ToLower().Replace('/', '\')
+                if ($relLower.EndsWith("\" + $pPatLower) -or $relLower -eq $pPatLower) {
+                    $isTopIndex = $true
+                    break
+                }
+            }
             if ($isTopIndex) {
-                $score += 15 # トップページボーナス
+                $score += [int]$sc.topIndexBonus
             }
 
-            # 2. 条文一覧・目次・リンク集ファイルの抑制 (単なるリンクの羅列で本文を含まないため減点)
-            $isTableOfContents = ($titleLower -match '(条文一覧|目次|一覧)' -or $relLower -match '[\\_](toc|articles\\index)[\\_\.]')
+            # 2. 目次・一覧ファイルの抑制
+            $isTableOfContents = $false
+            if ($searchCfg.tocRegex -and $relLower -match $searchCfg.tocRegex) {
+                $isTableOfContents = $true
+            } else {
+                foreach ($tPat in $searchCfg.tocPatterns) {
+                    if ($titleLower.IndexOf($tPat.ToLower(), [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                        $isTableOfContents = $true
+                        break
+                    }
+                }
+            }
             if ($isTableOfContents) {
-                $score = [Math]::Max(1, [Math]::Floor($score * 0.4)) # 目次・一覧ファイルは60%減点
+                $score = [Math]::Max(1, [Math]::Floor($score * [double]$sc.tocPenaltyRate))
             }
 
-            # 3. 附則・沿革・別表・パッチファイルの大幅減点
-            if ($relLower -match '[\\_](suppl|appendix|amendments?|history|changelog|patch|別表|附則|沿革)[\\_\.]') {
-                $score = [Math]::Max(1, [Math]::Floor($score * 0.2)) # 附則・沿革・別表は80%減点
+            # 3. 附則・沿革・別表・パッチファイル等の大幅減点
+            if ($searchCfg.noiseRegex -and $relLower -match $searchCfg.noiseRegex) {
+                $score = [Math]::Max(1, [Math]::Floor($score * [double]$sc.suppressionPenaltyRate))
             }
 
             $results.Add([PSCustomObject]@{
