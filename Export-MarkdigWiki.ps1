@@ -362,7 +362,6 @@ function Get-DocumentMetadata {
 function Get-OkfTopBarHtml {
     param (
         [Parameter(Mandatory = $true)]$Meta,
-        [string]$RelPath = "",
         [string]$Lang = "ja"
     )
 

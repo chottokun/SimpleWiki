@@ -51,8 +51,7 @@ dist/
 # LLM Configuration (Secret API Keys)
 config.json
 
-# Development plans and scratch files
-plan/
+# Development scratch files
 scratch/
 
 # Ignore packages

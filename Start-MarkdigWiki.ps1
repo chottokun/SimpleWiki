@@ -604,7 +604,7 @@ function Get-SidebarHtml {
     }
 
     $treeNode = Build-ServerFileTreeNode -allMdFiles $script:SidebarMdFiles -wikiDir $wikiDir
-    $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath "" -wikiDir $wikiDir
+    $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath $currentRelPath -wikiDir $wikiDir
 
     $clearCacheLabel = Get-LocalizedStr -Key "sidebar_clear_cache" -Lang $Lang
     $processingLabel = Get-LocalizedStr -Key "sidebar_processing" -Lang $Lang
@@ -1366,6 +1366,32 @@ function Search-OkfDocs {
             $score = [Math]::Floor($score * 0.3)
         }
 
+        # --- C. メインドキュメント優遇 ＆ 目次・付録・沿革ファイル減点 ---
+        $relLower = if ($item.RelPath) { $item.RelPath.ToLower().Replace('/', '\') } else { "" }
+        $titleLower = if ($item.Title) { $item.Title.ToLower() } else { "" }
+
+        # 1. 各トピック直下のメインインデックス文書 (サブフォルダ内の articles\index.md 等は除く)
+        $isTopIndex = ($relLower -notmatch '[\\_](articles|suppl|appendix|items)[\\_\.]') -and ($relLower.EndsWith("\index.md") -or $relLower -eq "index.md" -or $relLower.EndsWith("\readme.md") -or $relLower -eq "readme.md")
+        if ($isTopIndex) {
+            $score += 15 # トップページボーナス
+        }
+
+        # 2. 条文一覧・目次・リンク集ファイルの抑制 (単なるリンクの羅列で本文を含まないため減点)
+        $isTableOfContents = ($titleLower -match '(条文一覧|目次|一覧)' -or $relLower -match '[\\_](toc|articles\\index)[\\_\.]')
+        if ($isTableOfContents) {
+            $score = [Math]::Max(1, [Math]::Floor($score * 0.4)) # 目次・一覧ファイルは60%減点
+        }
+
+        # 3. 附則・沿革・別表・パッチファイルの大幅減点
+        if ($relLower -match '[\\_](suppl|appendix|amendments?|history|changelog|patch|別表|附則|沿革)[\\_\.]') {
+            $score = [Math]::Max(1, [Math]::Floor($score * 0.2)) # 附則・沿革・別表は80%減点
+        }
+
+        # 4. タイトル完全一致ボーナス
+        if ($item.Title -and $item.Title.Trim() -eq $cleanQuery) {
+            $score += 25
+        }
+
         if ($score -gt 0 -or ($keywords.Count -eq 0 -and (-not [string]::IsNullOrWhiteSpace($DomainFilter) -or $stFilterLower -ne "all"))) {
             # スニペット抽出 (キーワードマッチ行の前後の文脈・表を含む最大400文字)
             $snippet = ""
@@ -1412,9 +1438,9 @@ function Search-OkfDocs {
 
     $sorted = @($results | Sort-Object Score -Descending)
     if ($MaxResults -gt 0 -and $sorted.Count -gt $MaxResults) {
-        return @($sorted[0..($MaxResults - 1)])
+        return ,@($sorted[0..($MaxResults - 1)])
     }
-    return $sorted
+    return ,$sorted
 }
 
 # --- Agentic Tools (PowerShell 内部実行ファンクション) ---
@@ -1605,7 +1631,7 @@ function Invoke-ToolGetLinkedDocs {
         })
     }
 
-    return $linkedItems
+    return ,@($linkedItems)
 }
 
 # --- 検索結果ビュー生成関数 (OKF 文脈検索エンジン) ---
@@ -1951,10 +1977,19 @@ function Invoke-OpenAiChatCompletions {
     $jsonBody = $payloadObj | ConvertTo-Json -Depth 5
     $reqBytes = [System.Text.Encoding]::UTF8.GetBytes($jsonBody)
 
+    # TLS 1.2 / 1.3 を明示的に許可
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12 -bor [System.Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls
+    try {
+        if ([System.Enum]::IsDefined([System.Net.SecurityProtocolType], "Tls13")) {
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls13
+        }
+    } catch {}
+
     $webReq = [System.Net.HttpWebRequest]::Create($endpointUrl)
     $webReq.Method = "POST"
     $webReq.ContentType = "application/json; charset=utf-8"
     $webReq.Timeout = $TimeoutSec * 1000
+    $webReq.KeepAlive = $false
     if (-not [string]::IsNullOrWhiteSpace($resolvedKey)) {
         $webReq.Headers["Authorization"] = "Bearer $resolvedKey"
     }
@@ -2071,13 +2106,12 @@ function Invoke-AgenticRagChat {
     )
 
     $sysPrompt = "あなたは社内Wikiのナレッジを自律調査して回答する Agentic RAG アシスタントです。`n" +
-        "【自律探索・キーワード限界突破ルール】`n" +
-        "1. 質問に対する直接の単語一致・該当記述が見つからない・薄い場合でも『該当なし』で諦めないでください。`n" +
-        "2. `search_okf` で得られた候補ドキュメント（上位 5 件）や `get_linked_docs` の関連リンクを積極的に `read_doc` で回遊・深掘りし、周辺知識や関連ガイドラインを探索してください。`n" +
-        "3. 直接の回答がない場合でも、『直接の記載はありませんが、関連する以下の仕様・手順が参考になります』として、収集した関連ナレッジや補足情報をユーザーに提示してください。`n" +
-        "4. 検索キーワード (query) はユーザーが入力した日本語単語（例: 'エラー', '想定されるエラー'）をそのまま使用し、勝手に英語へ翻訳しないでください。`n" +
-        "5. search_okf の domain パラメータは原則として空文字列 '' を指定し、Wiki 全域から広範にドキュメントを検索してください。`n" +
-        "6. 非推奨 (status: deprecated) の記述は避け、常に現行 (active) 情報のみを根拠にしてください。"
+        "【会話の文脈（Context）維持と自律探索ルール】`n" +
+        "1. 【最重要・会話履歴の継承】: 過去の会話履歴が存在する場合、ユーザーの質問に含まれる代名詞（それ、これ、同機能、同規則等）や省略された主語（例: 直前の話題が『鉛中毒』のとき『規則はどのように書かれていますか？』➔『鉛中毒予防規則の条文や構成』）を、必ず過去の会話の文脈で補完して検索・調査を行ってください。文脈を無視して単なる一般名詞（'規則' 単体など）で無関係な全体検索を行わないでください。`n" +
+        "2. 質問に対する直接の単語一致が見つからない場合でも『該当なし』で諦めず、`search_okf` で得られた候補ドキュメントや `get_linked_docs` の関連リンクを `read_doc` で積極的に回遊・深掘りし、周辺知識や関連規則を探索してください。`n" +
+        "3. 検索キーワード (query) は日本語を使用し、過去の文脈トピックと現在の質問を組み合わせた的確な複合キーワード（例: '鉛中毒予防規則 条文' や '鉛中毒予防規則 概要' など）を使用してください。勝手に英語翻訳しないでください。`n" +
+        "4. search_okf の domain パラメータは原則として空文字列 '' を指定し、Wiki 全域から広範にドキュメントを検索してください。`n" +
+        "5. 非推奨 (status: deprecated) の記述は避け、常に現行 (active) 情報のみを根拠にしてください。"
 
     if ($CurrentDoc -and $CurrentDoc.RelPath) {
         if (-not $visitedPaths.Contains($CurrentDoc.RelPath)) {
@@ -2112,6 +2146,14 @@ function Invoke-AgenticRagChat {
         $endpointUrl = $cleanApiUrl
     }
 
+    # TLS 1.2 / 1.3 を明示的に許可
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12 -bor [System.Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls
+    try {
+        if ([System.Enum]::IsDefined([System.Net.SecurityProtocolType], "Tls13")) {
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls13
+        }
+    } catch {}
+
     $currentTurn = 0
     $finalAnswer = ""
 
@@ -2132,6 +2174,7 @@ function Invoke-AgenticRagChat {
         $webReq.Method = "POST"
         $webReq.ContentType = "application/json; charset=utf-8"
         $webReq.Timeout = $TimeoutSec * 1000
+        $webReq.KeepAlive = $false
         if (-not [string]::IsNullOrWhiteSpace($resolvedKey)) {
             $webReq.Headers["Authorization"] = "Bearer $resolvedKey"
         }
@@ -2227,7 +2270,7 @@ function Invoke-AgenticRagChat {
                 })
             }
         } else {
-            $finalAnswer = $resMsg.content
+            if (-not [string]::IsNullOrWhiteSpace($resMsg.content)) { $finalAnswer = $resMsg.content }
             break
         }
     }
@@ -2290,10 +2333,16 @@ function Invoke-AgenticRagChat {
         }
 
         if ([string]::IsNullOrWhiteSpace($finalAnswer)) {
-            if ($visitedPaths.Count -gt 0) {
-                $finalAnswer = "Wiki 内を自律調査しましたが、質問に完全一致する直接記述は見つかりませんでした。\n\n### 調査した関連ドキュメント\n" + (($visitedPaths | ForEach-Object { "- [$_]($_)" }) -join "`n")
+            $fallbackHits = Search-OkfDocs -Query $UserMessage -StatusFilter "active" -WikiDir $targetDir -MaxResults 3
+            if ($fallbackHits -and $fallbackHits.Count -gt 0) {
+                foreach ($fh in $fallbackHits) {
+                    if ($fh.Meta -and $fh.Meta.RelPath -and -not $visitedPaths.Contains($fh.Meta.RelPath)) {
+                        [void]$visitedPaths.Add($fh.Meta.RelPath)
+                    }
+                }
+                $finalAnswer = "Wiki 内を検索・照合しましたが、ご質問「${UserMessage}」に完全一致する直接記述は見つかりませんでした。関連可能性のある以下のドキュメントを参照してください。"
             } else {
-                $finalAnswer = "Wiki 内を自律検索しましたが、質問に直接該当する明確な記載は見つかりませんでした。関連するガイド（`guides/環境構築.md` や `docs/詳細仕様.md` など）を参照してください。"
+                $finalAnswer = "Wiki 内を検索しましたが、ご質問「${UserMessage}」に直接該当する明確な記載は見つかりませんでした。"
             }
         }
     }
@@ -2328,30 +2377,30 @@ function Get-ChatWidgetHtml {
     $copyBtnTxt     = Get-LocalizedStr -Key "chat_copy_btn" -Lang $Lang
     $copyDoneTxt    = Get-LocalizedStr -Key "chat_copy_completed" -Lang $Lang
 
-    $widget = @"
+    $widget = @'
     <!-- Floating Chat Widget -->
-    <button id="okfChatBtn" class="chat-widget-btn">$widgetBtn</button>
+    <button id="okfChatBtn" class="chat-widget-btn">__WIDGET_BTN__</button>
     <div id="okfChatBox" class="chat-box">
         <div class="chat-header">
-            <span>$headerTitle</span>
+            <span>__HEADER_TITLE__</span>
             <div class="chat-header-actions">
-                <button id="okfChatExpandBtn" class="chat-header-expand">$expandBtnTxt</button>
-                <button id="okfChatClearBtn" class="chat-header-clear">$clearBtnTxt</button>
+                <button id="okfChatExpandBtn" class="chat-header-expand">__EXPAND_BTN_TXT__</button>
+                <button id="okfChatClearBtn" class="chat-header-clear">__CLEAR_BTN_TXT__</button>
                 <button id="okfChatCloseBtn" class="chat-header-close">✕</button>
             </div>
         </div>
         <div class="chat-mode-selector">
-            <span class="mode-label">$modeLabel</span>
+            <span class="mode-label">__MODE_LABEL__</span>
             <label><input type="radio" name="okfRagMode" value="fast" checked> ⚡ Fast</label>
             <label><input type="radio" name="okfRagMode" value="agentic"> 🧠 Agentic</label>
-            <label style="margin-left: auto; color: #24292e; font-weight: normal; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px;"><input type="checkbox" id="okfIncludeCurrentPage" checked> $includeCurr</label>
+            <label style="margin-left: auto; color: #24292e; font-weight: normal; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px;"><input type="checkbox" id="okfIncludeCurrentPage" checked> __INCLUDE_CURR__</label>
         </div>
         <div id="okfChatMessages" class="chat-messages">
-            <div class="chat-msg assistant">$welcomeMsg</div>
+            <div class="chat-msg assistant">__WELCOME_MSG__</div>
         </div>
         <div class="chat-input-area">
-            <input type="text" id="okfChatInput" placeholder="$inputHolder" />
-            <button id="okfChatSendBtn">$sendBtnTxt</button>
+            <input type="text" id="okfChatInput" placeholder="__INPUT_HOLDER__" />
+            <button id="okfChatSendBtn">__SEND_BTN_TXT__</button>
         </div>
     </div>
     <style>
@@ -2373,6 +2422,7 @@ function Get-ChatWidgetHtml {
         .chat-msg { max-width: 90%; padding: 8px 12px; border-radius: 12px; line-height: 1.5; word-break: break-word; }
         .chat-msg.user { align-self: flex-end; background: #0366d6; color: #fff; border-bottom-right-radius: 2px; white-space: pre-wrap; }
         .chat-msg.assistant { align-self: flex-start; background: #fff; color: #24292e; border: 1px solid #e1e4e8; border-bottom-left-radius: 2px; }
+        .chat-msg.pending { color: #586069; font-style: italic; background: #f6f8fa; border: 1px dashed #d1d5da; }
         .chat-thinking { margin-bottom: 8px; font-size: 12px; background: #fff8c5; border: 1px solid #ffeef0; border-radius: 6px; padding: 6px 10px; color: #735c0f; }
         .chat-thinking summary { font-weight: bold; cursor: pointer; user-select: none; }
         .chat-thinking ul { margin: 4px 0 0 16px; padding: 0; }
@@ -2411,24 +2461,111 @@ function Get-ChatWidgetHtml {
             var chatHistory = [];
 
             if (!btn || !box) return;
-            btn.addEventListener("click", function() { box.style.display = box.style.display === "flex" ? "none" : "flex"; });
-            closeBtn.addEventListener("click", function() { box.style.display = "none"; });
+
+            function saveState() {
+                try {
+                    sessionStorage.setItem("okf_chat_open", box.style.display === "flex" ? "1" : "0");
+                    sessionStorage.setItem("okf_chat_expanded", box.classList.contains("expanded") ? "1" : "0");
+                    sessionStorage.setItem("okf_chat_history", JSON.stringify(chatHistory));
+                    sessionStorage.setItem("okf_chat_html", msgs.innerHTML);
+                } catch(e) {}
+            }
+
+            function attachCopyHandlers() {
+                var btns = msgs.querySelectorAll(".chat-copy-btn");
+                btns.forEach(function(cBtn) {
+                    cBtn.onclick = function() {
+                        var parentMsg = cBtn.closest(".chat-msg");
+                        var textToCopy = "";
+                        if (parentMsg) {
+                            var clone = parentMsg.cloneNode(true);
+                            var actions = clone.querySelector(".chat-msg-actions");
+                            if (actions) actions.remove();
+                            var srcs = clone.querySelector(".chat-sources");
+                            if (srcs) srcs.remove();
+                            var thk = clone.querySelector(".chat-thinking");
+                            if (thk) thk.remove();
+                            textToCopy = clone.innerText.trim();
+                        }
+                        var performCopy = function() {
+                            cBtn.innerHTML = "__COPY_DONE_TXT__";
+                            setTimeout(function() { cBtn.innerHTML = "__COPY_BTN_TXT__"; }, 1500);
+                        };
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                            navigator.clipboard.writeText(textToCopy).then(performCopy).catch(function() {
+                                var ta = document.createElement("textarea");
+                                ta.value = textToCopy;
+                                document.body.appendChild(ta);
+                                ta.select();
+                                document.execCommand("copy");
+                                document.body.removeChild(ta);
+                                performCopy();
+                            });
+                        } else {
+                            var ta = document.createElement("textarea");
+                            ta.value = textToCopy;
+                            document.body.appendChild(ta);
+                            ta.select();
+                            document.execCommand("copy");
+                            document.body.removeChild(ta);
+                            performCopy();
+                        }
+                    };
+                });
+            }
+
+            function restoreState() {
+                try {
+                    var isOpen = sessionStorage.getItem("okf_chat_open");
+                    if (isOpen === "1") {
+                        box.style.display = "flex";
+                    }
+                    var isExp = sessionStorage.getItem("okf_chat_expanded");
+                    if (isExp === "1" && expandBtn) {
+                        box.classList.add("expanded");
+                        expandBtn.textContent = "__COLLAPSE_BTN_TXT__";
+                    }
+                    var savedHist = sessionStorage.getItem("okf_chat_history");
+                    if (savedHist) {
+                        chatHistory = JSON.parse(savedHist) || [];
+                    }
+                    var savedHtml = sessionStorage.getItem("okf_chat_html");
+                    if (savedHtml) {
+                        msgs.innerHTML = savedHtml;
+                        attachCopyHandlers();
+                        msgs.scrollTop = msgs.scrollHeight;
+                    }
+                } catch(e) {}
+            }
+
+            restoreState();
+
+            btn.addEventListener("click", function() {
+                box.style.display = box.style.display === "flex" ? "none" : "flex";
+                saveState();
+            });
+            closeBtn.addEventListener("click", function() {
+                box.style.display = "none";
+                saveState();
+            });
 
             if (expandBtn) {
                 expandBtn.addEventListener("click", function() {
                     box.classList.toggle("expanded");
                     if (box.classList.contains("expanded")) {
-                        expandBtn.textContent = "$collapseBtnTxt";
+                        expandBtn.textContent = "__COLLAPSE_BTN_TXT__";
                     } else {
-                        expandBtn.textContent = "$expandBtnTxt";
+                        expandBtn.textContent = "__EXPAND_BTN_TXT__";
                     }
+                    saveState();
                 });
             }
 
             if (clearBtn) {
                 clearBtn.addEventListener("click", function() {
                     chatHistory = [];
-                    msgs.innerHTML = '<div class="chat-msg assistant">$resetHist</div>';
+                    msgs.innerHTML = '<div class="chat-msg assistant">__RESET_HIST__</div>';
+                    saveState();
                 });
             }
 
@@ -2440,7 +2577,7 @@ function Get-ChatWidgetHtml {
                 var s = escapeHtml(str);
                 s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
                 s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
-                s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<a href='$2' target='_blank'>$1</a>");
+                s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<a href='$2'>$1</a>");
                 return s;
             }
 
@@ -2513,9 +2650,9 @@ function Get-ChatWidgetHtml {
                 return parts.join("");
             }
 
-            function appendMsg(role, text, sources, thinkingLog) {
+            function appendMsg(role, text, sources, thinkingLog, isPending) {
                 var div = document.createElement("div");
-                div.className = "chat-msg " + role;
+                div.className = "chat-msg " + role + (isPending ? " pending" : "");
                 if (role === "user") {
                     div.textContent = text;
                 } else {
@@ -2530,59 +2667,40 @@ function Get-ChatWidgetHtml {
                     innerHtml += renderMarkdown(text);
                     div.innerHTML = innerHtml;
                 }
-                if (sources && sources.length > 0) {
-                    var srcDiv = document.createElement("div");
-                    srcDiv.className = "chat-sources";
-                    var srcHtml = "$srcDocsTitle<ul style='margin: 4px 0 0 16px; padding: 0;'>";
-                    sources.forEach(function(s) {
-                        var dateInfo = s.lastUpdated ? " (" + escapeHtml(s.lastUpdated) + ")" : "";
-                        srcHtml += "<li>📄 <a href='" + escapeHtml(s.relUri) + "' target='_blank'>" + escapeHtml(s.title || s.relPath) + "</a>" + dateInfo + "</li>";
-                    });
-                    srcHtml += "</ul>";
-                    srcDiv.innerHTML = srcHtml;
-                    div.appendChild(srcDiv);
-                } else {
-                    var srcDiv = document.createElement("div");
-                    srcDiv.className = "chat-sources";
-                    srcDiv.innerHTML = "$srcEmptyTitle";
-                    div.appendChild(srcDiv);
-                }
-                if (role === "assistant" && text !== "🤔 思考中...") {
-                    var actionDiv = document.createElement("div");
-                    actionDiv.className = "chat-msg-actions";
-                    var copyBtn = document.createElement("button");
-                    copyBtn.className = "chat-copy-btn";
-                    copyBtn.innerHTML = "$copyBtnTxt";
-                    copyBtn.addEventListener("click", function() {
-                        var performCopy = function() {
-                            copyBtn.innerHTML = "$copyDoneTxt";
-                            setTimeout(function() { copyBtn.innerHTML = "$copyBtnTxt"; }, 1500);
-                        };
-                        if (navigator.clipboard && navigator.clipboard.writeText) {
-                            navigator.clipboard.writeText(text).then(performCopy).catch(function() {
-                                var ta = document.createElement("textarea");
-                                ta.value = text;
-                                document.body.appendChild(ta);
-                                ta.select();
-                                document.execCommand("copy");
-                                document.body.removeChild(ta);
-                                performCopy();
-                            });
-                        } else {
-                            var ta = document.createElement("textarea");
-                            ta.value = text;
-                            document.body.appendChild(ta);
-                            ta.select();
-                            document.execCommand("copy");
-                            document.body.removeChild(ta);
-                            performCopy();
-                        }
-                    });
-                    actionDiv.appendChild(copyBtn);
-                    div.appendChild(actionDiv);
+                if (!isPending) {
+                    if (sources && sources.length > 0) {
+                        var srcDiv = document.createElement("div");
+                        srcDiv.className = "chat-sources";
+                        var srcHtml = "__SRC_DOCS_TITLE__<ul style='margin: 4px 0 0 16px; padding: 0;'>";
+                        sources.forEach(function(s) {
+                            var dateInfo = s.lastUpdated ? " (" + escapeHtml(s.lastUpdated) + ")" : "";
+                            srcHtml += "<li>📄 <a href='" + escapeHtml(s.relUri) + "'>" + escapeHtml(s.title || s.relPath) + "</a>" + dateInfo + "</li>";
+                        });
+                        srcHtml += "</ul>";
+                        srcDiv.innerHTML = srcHtml;
+                        div.appendChild(srcDiv);
+                    } else if (role === "assistant") {
+                        var srcDiv = document.createElement("div");
+                        srcDiv.className = "chat-sources";
+                        srcDiv.innerHTML = "__SRC_EMPTY_TITLE__";
+                        div.appendChild(srcDiv);
+                    }
+                    if (role === "assistant") {
+                        var actionDiv = document.createElement("div");
+                        actionDiv.className = "chat-msg-actions";
+                        var copyBtn = document.createElement("button");
+                        copyBtn.className = "chat-copy-btn";
+                        copyBtn.innerHTML = "__COPY_BTN_TXT__";
+                        actionDiv.appendChild(copyBtn);
+                        div.appendChild(actionDiv);
+                    }
                 }
                 msgs.appendChild(div);
                 msgs.scrollTop = msgs.scrollHeight;
+                if (!isPending) {
+                    attachCopyHandlers();
+                    saveState();
+                }
             }
 
             function sendMsg() {
@@ -2597,7 +2715,7 @@ function Get-ChatWidgetHtml {
                 appendMsg("user", q);
                 input.value = "";
                 sendBtn.disabled = true;
-                appendMsg("assistant", mode === "agentic" ? "$thinkAgent" : "$thinkFast");
+                appendMsg("assistant", mode === "agentic" ? "__THINK_AGENT__" : "__THINK_FAST__", null, null, true);
 
                 fetch("/api/chat", {
                     method: "POST",
@@ -2606,15 +2724,16 @@ function Get-ChatWidgetHtml {
                 }).then(function(res) { return res.json(); }).then(function(data) {
                     msgs.removeChild(msgs.lastChild);
                     if (data.error) {
-                        appendMsg("assistant", "$errPrefix" + data.message);
+                        appendMsg("assistant", "__ERR_PREFIX__" + data.message);
                     } else {
                         appendMsg("assistant", data.answer, data.sources, data.thinkingLog);
                         chatHistory.push({ role: "user", content: q });
                         chatHistory.push({ role: "assistant", content: data.answer });
+                        saveState();
                     }
                 }).catch(function(err) {
                     msgs.removeChild(msgs.lastChild);
-                    appendMsg("assistant", "$commError");
+                    appendMsg("assistant", "__COMM_ERROR__");
                 }).finally(function() {
                     sendBtn.disabled = false;
                 });
@@ -2624,8 +2743,27 @@ function Get-ChatWidgetHtml {
             input.addEventListener("keypress", function(e) { if (e.key === "Enter") sendMsg(); });
         });
     </script>
-"@
-    return $widget
+'@
+
+    return $widget.Replace("__WIDGET_BTN__", $widgetBtn).
+                   Replace("__HEADER_TITLE__", $headerTitle).
+                   Replace("__EXPAND_BTN_TXT__", $expandBtnTxt).
+                   Replace("__COLLAPSE_BTN_TXT__", $collapseBtnTxt).
+                   Replace("__CLEAR_BTN_TXT__", $clearBtnTxt).
+                   Replace("__MODE_LABEL__", $modeLabel).
+                   Replace("__INCLUDE_CURR__", $includeCurr).
+                   Replace("__WELCOME_MSG__", $welcomeMsg).
+                   Replace("__INPUT_HOLDER__", $inputHolder).
+                   Replace("__SEND_BTN_TXT__", $sendBtnTxt).
+                   Replace("__RESET_HIST__", $resetHist).
+                   Replace("__THINK_FAST__", $thinkFast).
+                   Replace("__THINK_AGENT__", $thinkAgent).
+                   Replace("__COMM_ERROR__", $commError).
+                   Replace("__ERR_PREFIX__", $errPrefix).
+                   Replace("__SRC_DOCS_TITLE__", $srcDocsTitle).
+                   Replace("__SRC_EMPTY_TITLE__", $srcEmptyTitle).
+                   Replace("__COPY_BTN_TXT__", $copyBtnTxt).
+                   Replace("__COPY_DONE_TXT__", $copyDoneTxt)
 }
 
 # --- 安全な HTTP レスポンス送信関数 ---
@@ -2976,16 +3114,13 @@ try {
                 }
 
                 # --- Fast RAG Mode (1-Pass) ---
-                # 1. OKF 文脈検索 (WinRT 形態素解析エンジン)
-                Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
-                $activeDocs = @($script:WikiIndex | Where-Object { $_.Status -eq "active" })
-
+                # 1. OKF 文脈検索 (Search-OkfDocs エンジンを活用)
                 $maxDocs = 3
                 if ($config.rag -and $config.rag.maxContextDocs) {
                     $maxDocs = [int]$config.rag.maxContextDocs
                 }
 
-                # 会話履歴 + 現在の質問を統合して単語抽出
+                # 会話履歴 + 現在の質問を統合して検索クエリ構築
                 $searchQueryText = $userMsg
                 if ($processedHistory.Count -gt 0) {
                     $lastUserTurn = $processedHistory | Where-Object { $_.role -eq "user" } | Select-Object -Last 1
@@ -2993,27 +3128,14 @@ try {
                         $searchQueryText = $lastUserTurn.content + " " + $userMsg
                     }
                 }
-                $keywords = Get-JapaneseWordsWinRT -Text $searchQueryText
 
-                $docScores = [System.Collections.Generic.List[PSObject]]::new()
-                foreach ($doc in $activeDocs) {
-                    $score = 0
-                    foreach ($kw in $keywords) {
-                        $kwRegex = [regex]::Escape($kw)
-                        if ($doc.Title -and $doc.Title -match $kwRegex) { $score += 10 }
-                        if ($doc.Tags) {
-                            $tm = $doc.Tags | Where-Object { $_ -match $kwRegex }
-                            if ($tm) { $score += 8 }
-                        }
-                        if ($doc.Description -and $doc.Description -match $kwRegex) { $score += 5 }
-                        if ($doc.BodyText -and $doc.BodyText -match $kwRegex) { $score += 2 }
-                    }
-                    if ($score -gt 0) {
-                        $docScores.Add([PSCustomObject]@{ Doc = $doc; Score = $score })
-                    }
+                # 高度な OKF スコアリング検索を実行
+                $searchHits = Search-OkfDocs -Query $searchQueryText -StatusFilter "active" -WikiDir $wikiDir -MaxResults $maxDocs
+                if ($null -eq $searchHits -or $searchHits.Count -eq 0) {
+                    # 履歴結合クエリでヒットしない場合は現在の質問単体で再検索
+                    $searchHits = Search-OkfDocs -Query $userMsg -StatusFilter "active" -WikiDir $wikiDir -MaxResults $maxDocs
                 }
 
-                $topScored = @($docScores | Sort-Object Score -Descending | Select-Object -First $maxDocs)
                 $contextDocs = [System.Collections.Generic.List[PSObject]]::new()
 
                 # 開いているページを第一最優先コンテキストとして追加
@@ -3021,18 +3143,10 @@ try {
                     $contextDocs.Add($currDoc)
                 }
 
-                if ($topScored.Count -gt 0) {
-                    foreach ($ts in $topScored) {
-                        if (-not $currDoc -or $ts.Doc.RelPath -ne $currDoc.RelPath) {
-                            $contextDocs.Add($ts.Doc)
-                        }
-                    }
-                } else {
-                    $takeCount = [Math]::Min($maxDocs, $activeDocs.Count)
-                    $fallbackDocs = @($activeDocs | Sort-Object LastUpdated -Descending | Select-Object -First $takeCount)
-                    foreach ($fd in $fallbackDocs) {
-                        if (-not $currDoc -or $fd.RelPath -ne $currDoc.RelPath) {
-                            $contextDocs.Add($fd)
+                if ($searchHits -and $searchHits.Count -gt 0) {
+                    foreach ($hit in $searchHits) {
+                        if (-not $currDoc -or $hit.Meta.RelPath -ne $currDoc.RelPath) {
+                            $contextDocs.Add($hit.Meta)
                         }
                     }
                 }
@@ -3052,8 +3166,8 @@ try {
                     })
 
                     $snippet = $cDoc.BodyText
-                    if ($snippet -and $snippet.Length -gt 800) {
-                        $snippet = $snippet.Substring(0, 800) + "..."
+                    if ($snippet -and $snippet.Length -gt 1500) {
+                        $snippet = $snippet.Substring(0, 1500) + "..."
                     }
                     [void]$contextStrBuilder.AppendLine("---")
                     [void]$contextStrBuilder.AppendLine("■ ドキュメント: $($cDoc.Title)")
@@ -3491,7 +3605,11 @@ try {
 
                 $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{13}", $edTitle).Replace("{14}", $edLatest).Replace("{15}", $edHolder).Replace("{16}", $edCancel).Replace("{17}", $edSave).Replace("{18}", $reqLang)
 
-                $fullHtml = $fullHtml.Replace("</body>", "$chatWidgetHtml`n</body>")
+                $config = Get-ConfigJson -TargetScriptDir $scriptDir
+                if ($config.rag -and $config.rag.enabled) {
+                    $chatWidgetHtml = Get-ChatWidgetHtml -Lang $reqLang
+                    $fullHtml = $fullHtml.Replace("</body>", "$chatWidgetHtml`n</body>")
+                }
 
                 $bytes = [System.Text.Encoding]::UTF8.GetBytes($fullHtml)
                 Write-SafeHttpResponse -Response $response -Bytes $bytes

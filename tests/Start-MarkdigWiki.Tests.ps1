@@ -8,7 +8,7 @@ $libDll      = Join-Path $projectRoot "lib\Markdig.dll"
 
 Describe "Markdig Assembly & Pipeline Tests" {
     It "Markdig.dll exists in lib directory" {
-        (Test-Path $libDll) | Should -Be $true
+        (Test-Path $libDll) | Should Be $true
     }
 
     It "Markdig assembly loads and builds Advanced Extensions pipeline" {
@@ -19,11 +19,11 @@ Describe "Markdig Assembly & Pipeline Tests" {
         $builder  = New-Object Markdig.MarkdownPipelineBuilder
         $null     = [Markdig.MarkdownExtensions]::UseAdvancedExtensions($builder)
         $pipeline = $builder.Build()
-        $pipeline | Should -Not -Be $null
+        $pipeline | Should Not Be $null
 
         $html = [Markdig.Markdown]::ToHtml("# Hello World`n- [x] Task completed", $pipeline)
-        $html | Should -Match "Hello World"
-        $html | Should -Match "task-list-item"
+        $html | Should Match "Hello World"
+        $html | Should Match "task-list-item"
     }
 
     It "Renders embedded HTML tables with colspan and rowspan correctly" {
@@ -33,9 +33,9 @@ Describe "Markdig Assembly & Pipeline Tests" {
 
         $mdText = "<table><thead><tr><th rowspan=`"2`">Cat</th><th colspan=`"2`">Details</th></tr></thead><tbody><tr><td>Server</td><td>8080</td></tr></tbody></table>"
         $renderedHtml = [Markdig.Markdown]::ToHtml($mdText, $pipeline)
-        $renderedHtml | Should -Match '<table'
-        $renderedHtml | Should -Match 'rowspan="2"'
-        $renderedHtml | Should -Match 'colspan="2"'
+        $renderedHtml | Should Match '<table'
+        $renderedHtml | Should Match 'rowspan="2"'
+        $renderedHtml | Should Match 'colspan="2"'
     }
 }
 
@@ -49,14 +49,14 @@ Describe "Path Traversal & Security Validation Tests" {
         $filePath  = Join-Path $wikiDir "index.md"
         $fullPath  = [System.IO.Path]::GetFullPath($filePath)
         $isAllowed = $fullPath.StartsWith($fullWikiDir, [System.StringComparison]::OrdinalIgnoreCase)
-        $isAllowed | Should -Be $true
+        $isAllowed | Should Be $true
     }
 
     It "Path traversal attempting to access external directory is blocked" {
         $filePath  = Join-Path $wikiDir "..\..\Windows\System32\drivers\etc\hosts"
         $fullPath  = [System.IO.Path]::GetFullPath($filePath)
         $isAllowed = $fullPath.StartsWith($fullWikiDir, [System.StringComparison]::OrdinalIgnoreCase)
-        $isAllowed | Should -Be $false
+        $isAllowed | Should Be $false
     }
 }
 
@@ -64,14 +64,14 @@ Describe "HTML Escaping & XSS Protection Tests" {
     It "XSS script in 404 path is HTML encoded" {
         $rawPath  = "/<script>alert('xss')</script>"
         $safePath = [System.Net.WebUtility]::HtmlEncode($rawPath)
-        $safePath | Should -Not -Match "<script>"
-        $safePath | Should -Match "&lt;script&gt;"
+        $safePath | Should Not Match "<script>"
+        $safePath | Should Match "&lt;script&gt;"
     }
 
     It "Special characters in page title are HTML encoded" {
         $baseName  = "<Test & Document>"
         $safeTitle = [System.Net.WebUtility]::HtmlEncode($baseName)
-        $safeTitle | Should -Be "&lt;Test &amp; Document&gt;"
+        $safeTitle | Should Be "&lt;Test &amp; Document&gt;"
     }
 }
 
@@ -90,44 +90,44 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
         $sampleDir    = Join-Path $projectRoot "markdown_sample"
         & $exportScript -RootFolder $sampleDir -OutputDir $script:testExportDir
 
-        (Test-Path (Join-Path $script:testExportDir "index.html")) | Should -Be $true
-        (Test-Path (Join-Path $script:testExportDir "概要.html")) | Should -Be $true
-        (Test-Path (Join-Path $script:testExportDir "docs/詳細仕様.html")) | Should -Be $true
+        (Test-Path (Join-Path $script:testExportDir "index.html")) | Should Be $true
+        (Test-Path (Join-Path $script:testExportDir "概要.html")) | Should Be $true
+        (Test-Path (Join-Path $script:testExportDir "docs/詳細仕様.html")) | Should Be $true
     }
 
     It "Converts .md hyperlinks to .html in exported files" {
         $indexHtmlPath = Join-Path $script:testExportDir "index.html"
         $htmlContent   = [System.IO.File]::ReadAllText($indexHtmlPath)
 
-        $htmlContent | Should -Match "%E6%A6%82%E8%A6%81.html"
-        $htmlContent | Should -Match "docs/%E8%A9%B3%E7%B4%B0%E4%BB%95%E6%A7%98.html"
+        $htmlContent | Should Match "%E6%A6%82%E8%A6%81.html"
+        $htmlContent | Should Match "docs/%E8%A9%B3%E7%B4%B0%E4%BB%95%E6%A7%98.html"
     }
 
     It "Generates relative URI links for subfolder pages without leading slash" {
         $subHtmlPath    = Join-Path $script:testExportDir "docs/詳細仕様.html"
         $subHtmlContent = [System.IO.File]::ReadAllText($subHtmlPath)
 
-        $subHtmlContent | Should -Match "href='../index.html'"
-        $subHtmlContent | Should -Match "href='\.\./(%E6%A6%82%E8%A6%81|概要)\.html'"
+        $subHtmlContent | Should Match "href='../index.html'"
+        $subHtmlContent | Should Match "href='\.\./(%E6%A6%82%E8%A6%81|概要)\.html'"
     }
 
     It "Generates nested tree structure for subfolder pages in sidebar" {
         $subHtmlPath    = Join-Path $script:testExportDir "docs/詳細仕様.html"
         $subHtmlContent = [System.IO.File]::ReadAllText($subHtmlPath)
 
-        $subHtmlContent | Should -Match "<li class='nav-folder'>"
+        $subHtmlContent | Should Match "<li class='nav-folder'>"
         # アクティブな親フォルダ docs は open
-        $subHtmlContent | Should -Match "<details open>\s*<summary class='folder-title'>📁 docs</summary>"
+        $subHtmlContent | Should Match "<details open>\s*<summary class='folder-title'>📁 docs</summary>"
         # アクティブでないフォルダ guides は open なし
-        $subHtmlContent | Should -Match "<details>\s*<summary class='folder-title'>📁 guides</summary>"
+        $subHtmlContent | Should Match "<details>\s*<summary class='folder-title'>📁 guides</summary>"
     }
 
     It "Embeds OKF top bar and footer card in exported static HTML files" {
         $indexHtmlPath = Join-Path $script:testExportDir "index.html"
         $htmlContent   = [System.IO.File]::ReadAllText($indexHtmlPath)
 
-        $htmlContent | Should -Match "class=""okf-top-bar"""
-        $htmlContent | Should -Match "class=""okf-footer-card"""
+        $htmlContent | Should Match "class=""okf-top-bar"""
+        $htmlContent | Should Match "class=""okf-footer-card"""
     }
 }
 
@@ -157,15 +157,15 @@ This is body text.
             BaseName      = "manual"
         }
         $meta = Get-DocumentMetadata -File $fakeFile -RelPath "docs/db/manual.md" -MdText $mdText
-        $meta.Title | Should -Be "DB Recovery Manual"
-        $meta.Description | Should -Be "PostgreSQL recovery steps"
-        $meta.Author | Should -Be "Taro Yamada"
-        $meta.Domain | Should -Be "infrastructure/database"
-        $meta.Tags -contains "PostgreSQL" | Should -Be $true
-        $meta.Tags -contains "Runbook" | Should -Be $true
-        $meta.LastUpdated.ToString("yyyy-MM-dd") | Should -Be "2026-08-01"
-        $meta.Status | Should -Be "active"
-        $meta.HasYaml | Should -Be $true
+        $meta.Title | Should Be "DB Recovery Manual"
+        $meta.Description | Should Be "PostgreSQL recovery steps"
+        $meta.Author | Should Be "Taro Yamada"
+        $meta.Domain | Should Be "infrastructure/database"
+        $meta.Tags -contains "PostgreSQL" | Should Be $true
+        $meta.Tags -contains "Runbook" | Should Be $true
+        $meta.LastUpdated.ToString("yyyy-MM-dd") | Should Be "2026-08-01"
+        $meta.Status | Should Be "active"
+        $meta.HasYaml | Should Be $true
     }
 
     It "Parses bullet-list tags, quoted title with colons, and handles comments" {
@@ -185,9 +185,9 @@ tags:
             BaseName      = "bullet"
         }
         $meta = Get-DocumentMetadata -File $fakeFile -RelPath "docs/bullet.md" -MdText $mdText
-        $meta.Title | Should -Be "System: Recovery Manual"
-        $meta.Tags -contains "Database" | Should -Be $true
-        $meta.Tags -contains "PostgreSQL" | Should -Be $true
+        $meta.Title | Should Be "System: Recovery Manual"
+        $meta.Tags -contains "Database" | Should Be $true
+        $meta.Tags -contains "PostgreSQL" | Should Be $true
     }
 
 
@@ -205,7 +205,7 @@ Body text...
             BaseName      = "test"
         }
         $meta = Get-DocumentMetadata -File $fakeFile -RelPath "docs/test.md" -MdText $mdText
-        $meta.Title | Should -Be "Header Title from H1"
+        $meta.Title | Should Be "Header Title from H1"
     }
 
     It "Falls back to BaseName when no title in YAML and no H1 in body" {
@@ -216,10 +216,10 @@ Body text...
             BaseName      = "my-doc"
         }
         $meta = Get-DocumentMetadata -File $fakeFile -RelPath "docs/my-doc.md" -MdText $mdText
-        $meta.Title | Should -Be "my-doc"
-        $meta.Domain | Should -Be "docs"
-        $meta.Status | Should -Be "active"
-        $meta.HasYaml | Should -Be $false
+        $meta.Title | Should Be "my-doc"
+        $meta.Domain | Should Be "docs"
+        $meta.Status | Should Be "active"
+        $meta.HasYaml | Should Be $false
     }
 
     It "Gracefully handles malformed YAML syntax without throwing exceptions" {
@@ -236,8 +236,8 @@ status: : : invalid syntax
             LastWriteTime = (Get-Date "2026-01-01")
             BaseName      = "broken"
         }
-        { $script:testMeta = Get-DocumentMetadata -File $fakeFile -RelPath "docs/broken.md" -MdText $mdText } | Should -Not -Throw
-        $script:testMeta.Title | Should -Be "Malformed YAML"
+        { $script:testMeta = Get-DocumentMetadata -File $fakeFile -RelPath "docs/broken.md" -MdText $mdText } | Should Not Throw
+        $script:testMeta.Title | Should Be "Malformed YAML"
     }
 }
 
@@ -250,82 +250,82 @@ Describe "OKF Dynamic View & API Endpoint Tests" {
     }
 
     It "Builds WikiIndex from sample directory successfully" {
-        $script:WikiIndex.Count | Should -BeGreaterThan 0
+        $script:WikiIndex.Count | Should BeGreaterThan 0
     }
 
     It "Generates JSON for /api/index.json containing Envelope structure and OKF metadata" {
         $json = Get-ApiIndexJson
-        $json | Should -Not -Be $null
+        $json | Should Not Be $null
         $obj = $json | ConvertFrom-Json
-        $obj.Total | Should -BeGreaterThan 0
-        $obj.Count | Should -BeGreaterThan 0
-        $obj.Limit | Should -BeGreaterThan 0
-        $obj.Items[0].Title | Should -Not -Be $null
-        $obj.Items[0].RelPath | Should -Not -Be $null
+        $obj.Total | Should BeGreaterThan 0
+        $obj.Count | Should BeGreaterThan 0
+        $obj.Limit | Should BeGreaterThan 0
+        $obj.Items[0].Title | Should Not Be $null
+        $obj.Items[0].RelPath | Should Not Be $null
     }
 
     It "TC-API-01: Correctly applies limit and offset pagination boundaries" {
         $json = Get-ApiIndexJson -QueryParams @{ limit = "1"; offset = "0" }
         $obj = $json | ConvertFrom-Json
-        $obj.Count | Should -Be 1
-        $obj.Limit | Should -Be 1
-        $obj.Offset | Should -Be 0
-        $obj.IsTruncated | Should -Be $true
+        $obj.Count | Should Be 1
+        $obj.Limit | Should Be 1
+        $obj.Offset | Should Be 0
+        $obj.IsTruncated | Should Be $true
 
         # Boundary: offset out of bounds
         $jsonOutOfBounds = Get-ApiIndexJson -QueryParams @{ limit = "10"; offset = "99999" }
         $objOutOfBounds = $jsonOutOfBounds | ConvertFrom-Json
-        $objOutOfBounds.Count | Should -Be 0
-        $objOutOfBounds.Items.Count | Should -Be 0
-        $objOutOfBounds.IsTruncated | Should -Be $false
+        $objOutOfBounds.Count | Should Be 0
+        $objOutOfBounds.Items.Count | Should Be 0
+        $objOutOfBounds.IsTruncated | Should Be $false
 
         # Boundary: negative offset fallback to 0
         $jsonNegOffset = Get-ApiIndexJson -QueryParams @{ limit = "2"; offset = "-5" }
         $objNegOffset = $jsonNegOffset | ConvertFrom-Json
-        $objNegOffset.Offset | Should -Be 0
+        $objNegOffset.Offset | Should Be 0
     }
 
     It "TC-API-02: Handles invalid limit and maxLimit enforcement" {
         # Invalid string limit falls back to default limit
         $jsonInvalidLimit = Get-ApiIndexJson -QueryParams @{ limit = "invalid_number" }
         $objInvalidLimit = $jsonInvalidLimit | ConvertFrom-Json
-        $objInvalidLimit.Limit | Should -Be 100
+        $objInvalidLimit.Limit | Should Be 100
 
         # Excess limit capped at maxLimit (1000)
         $jsonExcessLimit = Get-ApiIndexJson -QueryParams @{ limit = "5000" }
         $objExcessLimit = $jsonExcessLimit | ConvertFrom-Json
-        $objExcessLimit.Limit | Should -Be 1000
+        $objExcessLimit.Limit | Should Be 1000
 
         # Bypass maxLimit with limit=all or -1
         $jsonAll = Get-ApiIndexJson -QueryParams @{ limit = "all" }
         $objAll = $jsonAll | ConvertFrom-Json
-        $objAll.Limit | Should -Be $objAll.Total
-        $objAll.Count | Should -Be $objAll.Total
+        $objAll.Limit | Should Be $objAll.Total
+        $objAll.Count | Should Be $objAll.Total
     }
 
     It "TC-API-03: Filters by domain, tag, and since date accurately" {
         # Non-existent domain returns empty result cleanly
         $jsonNoDomain = Get-ApiIndexJson -QueryParams @{ domain = "non_existent_domain_xyz" }
         $objNoDomain = $jsonNoDomain | ConvertFrom-Json
-        $objNoDomain.Total | Should -Be 0
-        $objNoDomain.Count | Should -Be 0
+        $objNoDomain.Total | Should Be 0
+        $objNoDomain.Count | Should Be 0
 
         # Non-existent tag returns empty result cleanly
         $jsonNoTag = Get-ApiIndexJson -QueryParams @{ tag = "NonExistentTag999" }
         $objNoTag = $jsonNoTag | ConvertFrom-Json
-        $objNoTag.Total | Should -Be 0
-        $objNoTag.Count | Should -Be 0
+        $objNoTag.Total | Should Be 0
+        $objNoTag.Count | Should Be 0
 
         # Invalid since date string is safely ignored
         $jsonBadSince = Get-ApiIndexJson -QueryParams @{ since = "not-a-valid-date" }
         $objBadSince = $jsonBadSince | ConvertFrom-Json
-        $objBadSince.Total | Should -BeGreaterThan 0
+        $objBadSince.Total | Should BeGreaterThan 0
 
         # Valid since date filters out older documents
         $futureDateStr = (Get-Date).AddYears(10).ToString("yyyy-MM-dd")
         $jsonFutureSince = Get-ApiIndexJson -QueryParams @{ since = $futureDateStr }
         $objFutureSince = $jsonFutureSince | ConvertFrom-Json
-        $objFutureSince.Total | Should -Be 0
+        $objFutureSince.Total | Should Be 0
     }
 
     It "TC-API-04: Selects specific fields with case-insensitivity and handles single item array preservation" {
@@ -333,51 +333,51 @@ Describe "OKF Dynamic View & API Endpoint Tests" {
         $jsonFields = Get-ApiIndexJson -QueryParams @{ fields = "title,relpath"; limit = "1" }
         $objFields = $jsonFields | ConvertFrom-Json
         $firstItem = $objFields.Items[0]
-        $firstItem.Title | Should -Not -Be $null
-        $firstItem.RelPath | Should -Not -Be $null
-        $firstItem.PSObject.Properties["Description"] | Should -Be $null
-        $firstItem.PSObject.Properties["Author"] | Should -Be $null
+        $firstItem.Title | Should Not Be $null
+        $firstItem.RelPath | Should Not Be $null
+        $firstItem.PSObject.Properties["Description"] | Should Be $null
+        $firstItem.PSObject.Properties["Author"] | Should Be $null
 
         # Single item response still preserves array type for Items
-        $objFields.Items -is [Array] | Should -Be $true
+        $objFields.Items -is [Array] | Should Be $true
     }
 
     It "Generates pre-chunked JSON for /api/chunks.json containing section-level RAG chunks" {
         $json = Get-ApiChunksJson
-        $json | Should -Not -Be $null
-        $json | Should -Match "ChunkId"
-        $json | Should -Match "EnrichedText"
-        $json | Should -Match "Section"
+        $json | Should Not Be $null
+        $json | Should Match "ChunkId"
+        $json | Should Match "EnrichedText"
+        $json | Should Match "Section"
         
         $chunksObj = $json | ConvertFrom-Json
-        $chunksObj.Count | Should -BeGreaterThan 0
-        $chunksObj[0].ChunkId | Should -Match "#chunk-"
-        $chunksObj[0].EnrichedText | Should -Match "\[Document:"
+        $chunksObj.Count | Should BeGreaterThan 0
+        $chunksObj[0].ChunkId | Should Match "#chunk-"
+        $chunksObj[0].EnrichedText | Should Match "\[Document:"
     }
 
     It "Generates HTML for /recent view" {
         $html = Get-RecentViewHtml
-        $html | Should -Match "最近の更新"
+        $html | Should Match "最近の更新"
     }
 
     It "Generates HTML for /tags view" {
         $html = Get-TagsViewHtml
-        $html | Should -Match "タグ"
+        $html | Should Match "タグ"
     }
 
     It "Generates HTML for /maintenance view" {
         $html = Get-MaintenanceViewHtml
-        $html | Should -Match "品質"
+        $html | Should Match "品質"
     }
 
     It "Generates HTML for /authors view" {
         $html = Get-AuthorsViewHtml
-        $html | Should -Match "著者"
+        $html | Should Match "著者"
     }
 
     It "Generates HTML for /search view" {
         $html = Get-SearchViewHtml -Query "API"
-        $html | Should -Match "検索結果"
+        $html | Should Match "検索結果"
     }
 }
 
@@ -389,20 +389,20 @@ Describe "Get-HighlightText Utility Tests" {
 
     It "Highlights keyword in safe HTML text" {
         $result = Get-HighlightText -Text 'PostgreSQL Database Manual' -Keywords @('PostgreSQL')
-        $result | Should -Match '<mark[^>]*>PostgreSQL</mark>'
+        $result | Should Match '<mark[^>]*>PostgreSQL</mark>'
     }
 
     It "Handles special regex metacharacters in keywords without error" {
         $result = Get-HighlightText -Text 'C# & (Notes) Guide' -Keywords @('C#', '(Notes)')
-        $result | Should -Match '<mark[^>]*>C#</mark>'
-        $result | Should -Match '<mark[^>]*>\(Notes\)</mark>'
+        $result | Should Match '<mark[^>]*>C#</mark>'
+        $result | Should Match '<mark[^>]*>\(Notes\)</mark>'
     }
 
     It "Does not corrupt HTML tags when keyword is style, mark, or background" {
         $result = Get-HighlightText -Text 'This is a style and mark test' -Keywords @('style', 'mark')
-        $result | Should -Not -Match '<mark[^>]*<mark'
-        $result | Should -Match '<mark[^>]*>style</mark>'
-        $result | Should -Match '<mark[^>]*>mark</mark>'
+        $result | Should Not Match '<mark[^>]*<mark'
+        $result | Should Match '<mark[^>]*>style</mark>'
+        $result | Should Match '<mark[^>]*>mark</mark>'
     }
 }
 
@@ -471,48 +471,48 @@ Describe 'OKF Search Engine Advanced Scoring & Filtering Tests' {
 
     It 'TC-01: Single keyword search returns matching items' {
         $html = Get-SearchViewHtml -Query 'PostgreSQL' -StatusFilter 'all'
-        $html | Should -Match 'docs/db-recovery.md'
-        $html | Should -Match 'General Troubleshooting'
-        $html | Should -Match 'Old Legacy Database Setup'
+        $html | Should Match 'docs/db-recovery.md'
+        $html | Should Match 'General Troubleshooting'
+        $html | Should Match 'Old Legacy Database Setup'
     }
 
     It 'TC-02: Multi-word AND search returns only documents matching ALL keywords' {
         $html = Get-SearchViewHtml -Query 'PostgreSQL crash' -StatusFilter 'all'
-        $html | Should -Match 'docs/db-recovery.md'
-        $html | Should -Not -Match 'General Troubleshooting'
-        $html | Should -Not -Match 'Old Legacy Database Setup'
+        $html | Should Match 'docs/db-recovery.md'
+        $html | Should Not Match 'General Troubleshooting'
+        $html | Should Not Match 'Old Legacy Database Setup'
     }
 
     It 'TC-03: Ranks document with Title match higher than Body-only match' {
         $html = Get-SearchViewHtml -Query 'PostgreSQL' -StatusFilter 'all'
         $recoveryPos   = $html.IndexOf('docs/db-recovery.md')
         $troublePos    = $html.IndexOf('General Troubleshooting')
-        $recoveryPos | Should -BeGreaterThan -1
-        $troublePos  | Should -BeGreaterThan -1
-        $recoveryPos | Should -BeLessThan $troublePos
+        $recoveryPos | Should BeGreaterThan -1
+        $troublePos  | Should BeGreaterThan -1
+        $recoveryPos | Should BeLessThan $troublePos
     }
 
     It 'TC-04: StatusFilter active excludes deprecated documents' {
         $html = Get-SearchViewHtml -Query 'PostgreSQL' -StatusFilter 'active'
-        $html | Should -Match 'docs/db-recovery.md'
-        $html | Should -Not -Match 'Old Legacy Database Setup'
+        $html | Should Match 'docs/db-recovery.md'
+        $html | Should Not Match 'Old Legacy Database Setup'
     }
 
     It 'TC-05: StatusFilter deprecated includes deprecated documents' {
         $html = Get-SearchViewHtml -Query 'PostgreSQL' -StatusFilter 'deprecated'
-        $html | Should -Match 'Old Legacy Database Setup'
-        $html | Should -Not -Match 'docs/db-recovery.md'
+        $html | Should Match 'Old Legacy Database Setup'
+        $html | Should Not Match 'docs/db-recovery.md'
     }
 
     It 'TC-06: Highlight keywords in search results snippet' {
         $html = Get-SearchViewHtml -Query 'PostgreSQL' -StatusFilter 'active'
-        $html | Should -Match '<mark[^>]*>PostgreSQL</mark>'
+        $html | Should Match '<mark[^>]*>PostgreSQL</mark>'
     }
 
     It 'TC-07: Special character query executes safely without regex exception' {
-        { $script:specHtml = Get-SearchViewHtml -Query 'C# (Notes)' -StatusFilter 'all' } | Should -Not -Throw
-        $script:specHtml | Should -Match 'docs/csharp-notes.md'
-        $script:specHtml | Should -Match '&amp;'
+        { $script:specHtml = Get-SearchViewHtml -Query 'C# (Notes)' -StatusFilter 'all' } | Should Not Throw
+        $script:specHtml | Should Match 'docs/csharp-notes.md'
+        $script:specHtml | Should Match '&amp;'
     }
 }
 
@@ -556,26 +556,26 @@ Describe 'Critical Edge Case & Security Tests' {
     It 'Splits keywords correctly with Japanese full-width space' {
         $queryWithJpSpace = "PostgreSQL" + [char]0x3000 + "crash"
         $html = Get-SearchViewHtml -Query $queryWithJpSpace -StatusFilter 'all'
-        $html | Should -Match 'docs/db-recovery.md'
-        $html | Should -Not -Match 'General Troubleshooting'
+        $html | Should Match 'docs/db-recovery.md'
+        $html | Should Not Match 'General Troubleshooting'
     }
 
     It 'Encodes XSS payload in search query input cleanly without raw HTML injection' {
         $xssQuery = '<script>alert("xss")</script>'
         $html = Get-SearchViewHtml -Query $xssQuery -StatusFilter 'all'
-        $html | Should -Not -Match '<script>alert\("xss"\)</script>'
-        $html | Should -Match '&lt;script&gt;'
+        $html | Should Not Match '<script>alert\("xss"\)</script>'
+        $html | Should Match '&lt;script&gt;'
     }
 
     It 'Executes facet-only domain filter search without keywords' {
         $html = Get-SearchViewHtml -Query '' -StatusFilter 'all' -DomainFilter 'infrastructure'
-        $html | Should -Match 'docs/db-recovery.md'
-        $html | Should -Not -Match 'General Troubleshooting'
+        $html | Should Match 'docs/db-recovery.md'
+        $html | Should Not Match 'General Troubleshooting'
     }
 
     It 'Gracefully handles invalid StatusFilter parameter without crashing' {
-        { $script:invalidHtml = Get-SearchViewHtml -Query 'PostgreSQL' -StatusFilter 'invalid_status_value' } | Should -Not -Throw
-        $script:invalidHtml | Should -Not -Match 'docs/db-recovery.md'
+        { $script:invalidHtml = Get-SearchViewHtml -Query 'PostgreSQL' -StatusFilter 'invalid_status_value' } | Should Not Throw
+        $script:invalidHtml | Should Not Match 'docs/db-recovery.md'
     }
 
     It 'Parses comma-separated tag string in YAML correctly into array' {
@@ -588,10 +588,10 @@ tags: "PostgreSQL, Database, Recovery"
 "@
         $fakeFile = [PSCustomObject]@{ FullName = "C:\wiki\test.md"; LastWriteTime = (Get-Date "2026-01-01"); BaseName = "test" }
         $meta = Get-DocumentMetadata -File $fakeFile -MdText $sampleMd -RelPath "test.md"
-        $meta.Tags.Count | Should -Be 3
-        ($meta.Tags -contains "PostgreSQL") | Should -Be $true
-        ($meta.Tags -contains "Database") | Should -Be $true
-        ($meta.Tags -contains "Recovery") | Should -Be $true
+        $meta.Tags.Count | Should Be 3
+        ($meta.Tags -contains "PostgreSQL") | Should Be $true
+        ($meta.Tags -contains "Database") | Should Be $true
+        ($meta.Tags -contains "Recovery") | Should Be $true
     }
 
     It 'Get-QueryParams decodes percent-encoded UTF-8 Japanese query string without mojibake' {
@@ -602,16 +602,16 @@ tags: "PostgreSQL, Database, Recovery"
             }
         }
         $params = Get-QueryParams -Request $mockReq
-        $params["q"] | Should -Be "ハンドブック"
-        $params["status"] | Should -Be "active"
+        $params["q"] | Should Be "ハンドブック"
+        $params["status"] | Should Be "active"
     }
 
     It 'Executes Unblock-File safely on lib DLLs without throwing exceptions' {
         $libPath = Join-Path $projectRoot "lib"
         if ($IsWindows -or $env:OS -eq "Windows_NT") {
-            { Get-ChildItem -Path $libPath -Filter "*.dll" | Unblock-File -ErrorAction SilentlyContinue } | Should -Not -Throw
+            { Get-ChildItem -Path $libPath -Filter "*.dll" | Unblock-File -ErrorAction SilentlyContinue } | Should Not Throw
         } else {
-            $true | Should -Be $true
+            $true | Should Be $true
         }
     }
 }
@@ -619,19 +619,19 @@ tags: "PostgreSQL, Database, Recovery"
 Describe 'Export-GUI.ps1 GUI Component & Syntax Validation' {
     It 'Export-GUI.ps1 file exists and passes AST syntax parsing' {
         $guiScript = Join-Path $projectRoot "Export-GUI.ps1"
-        (Test-Path $guiScript) | Should -Be $true
+        (Test-Path $guiScript) | Should Be $true
 
         $errs = $null
         $tokens = $null
         [System.Management.Automation.Language.Parser]::ParseFile($guiScript, [ref]$tokens, [ref]$errs)
-        $errs.Count | Should -Be 0
+        $errs.Count | Should Be 0
     }
 
     It 'Export-GUI.bat exists and references Export-GUI.ps1' {
         $guiBat = Join-Path $projectRoot "Export-GUI.bat"
-        (Test-Path $guiBat) | Should -Be $true
+        (Test-Path $guiBat) | Should Be $true
         $content = Get-Content -Path $guiBat -Raw
-        $content | Should -Match "Export-GUI\.ps1"
+        $content | Should Match "Export-GUI\.ps1"
     }
 }
 
@@ -643,20 +643,20 @@ Describe 'OKF LLM RAG Security & Encryption Tests' {
     It 'Encrypts and decrypts API key with AES-256 (ENC: prefix)' {
         $rawKey = "sk-proj-test123456789"
         $encKey = Protect-StringAes -PlainText $rawKey
-        $encKey | Should -Match "^ENC:"
+        $encKey | Should Match "^ENC:"
         $decKey = Unprotect-StringAes -EncryptedText $encKey
-        $decKey | Should -Be $rawKey
+        $decKey | Should Be $rawKey
     }
 
         It 'Encrypts and decrypts API key with Windows DPAPI (DPAPI: prefix)' {
         if ($IsWindows -or $env:OS -eq "Windows_NT") {
             $secret = "my-secret-key-123"
-            $enc = Protect-StringDpapi -InputString $secret
-            $enc | Should -Match "^DPAPI:"
-            $dec = Get-ResolvedSecret -EncryptedString $enc
-            $dec | Should -Be $secret
+            $enc = Protect-StringDpapi -PlainText $secret
+            $enc | Should Match "^DPAPI:"
+            $dec = Unprotect-StringDpapi -EncryptedText $enc
+            $dec | Should Be $secret
         } else {
-            $true | Should -Be $true
+            $true | Should Be $true
         }
     }
 
@@ -664,7 +664,7 @@ Describe 'OKF LLM RAG Security & Encryption Tests' {
         [Environment]::SetEnvironmentVariable("TEST_OPENAI_KEY", "sk-env-secret-val")
         try {
             $resolved = Get-ResolvedSecret -SecretValue "ENV:TEST_OPENAI_KEY"
-            $resolved | Should -Be "sk-env-secret-val"
+            $resolved | Should Be "sk-env-secret-val"
         } finally {
             [Environment]::SetEnvironmentVariable("TEST_OPENAI_KEY", $null)
         }
@@ -675,7 +675,7 @@ Describe 'OKF LLM RAG Security & Encryption Tests' {
         if (-not (Test-Path $tempDir)) { New-Item -ItemType Directory -Path $tempDir | Out-Null }
         try {
             $cfg = Get-ConfigJson -TargetScriptDir $tempDir
-            $cfg.rag.enabled | Should -Be $false
+            $cfg.rag.enabled | Should Be $false
         } finally {
             Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
         }
@@ -688,12 +688,12 @@ Describe 'OKF LLM RAG Security & Encryption Tests' {
         try {
             $setScript = Join-Path $projectRoot "Set-ApiKey.ps1"
             & $setScript -ApiKey "sk-test-portable-key" -Scope Portable -ConfigPath $targetCfg
-            (Test-Path $targetCfg) | Should -Be $true
+            (Test-Path $targetCfg) | Should Be $true
             $cfg = Get-Content -Path $targetCfg -Raw | ConvertFrom-Json
-            $cfg.rag.enabled | Should -Be $true
-            $cfg.rag.apiKey | Should -Match "^ENC:"
+            $cfg.rag.enabled | Should Be $true
+            $cfg.rag.apiKey | Should Match "^ENC:"
             $resolved = Get-ResolvedSecret -SecretValue $cfg.rag.apiKey
-            $resolved | Should -Be "sk-test-portable-key"
+            $resolved | Should Be "sk-test-portable-key"
         } finally {
             Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
         }
@@ -701,10 +701,10 @@ Describe 'OKF LLM RAG Security & Encryption Tests' {
 
     It 'Get-JapaneseWordsWinRT tokenizes Japanese queries and filters Japanese stop words' {
         $words = Get-JapaneseWordsWinRT -Text 'セットアップの方法は？'
-        ($words -contains 'セットアップ') | Should -Be $true
-        ($words -contains '環境構築') | Should -Be $true
-        ($words -contains 'は') | Should -Be $false
-        ($words -contains 'の') | Should -Be $false
+        ($words -contains 'セットアップ') | Should Be $true
+        ($words -contains '環境構築') | Should Be $true
+        ($words -contains 'は') | Should Be $false
+        ($words -contains 'の') | Should Be $false
     }
 
     It 'Invoke-OpenAiChatCompletions builds message payload with history array' {
@@ -712,7 +712,7 @@ Describe 'OKF LLM RAG Security & Encryption Tests' {
             @{ role = 'user'; content = '質問1' },
             @{ role = 'assistant'; content = '回答1' }
         )
-        { Invoke-OpenAiChatCompletions -ApiUrl 'http://invalid-endpoint-for-test-xyz' -ApiKey 'test-key' -Model 'test-model' -SystemPrompt 'System Prompt' -UserMessage '質問2' -History $history -TimeoutSec 1 } | Should -Throw
+        { Invoke-OpenAiChatCompletions -ApiUrl 'http://invalid-endpoint-for-test-xyz' -ApiKey 'test-key' -Model 'test-model' -SystemPrompt 'System Prompt' -UserMessage '質問2' -History $history -TimeoutSec 1 } | Should Throw
     }
 }
 
@@ -726,19 +726,19 @@ Describe "Agentic RAG & OKF Tools Tests" {
     It "Start-MarkdigWiki.ps1 is encoded as UTF-8 with BOM" {
         $scriptPath = Join-Path $projectRoot "Start-MarkdigWiki.ps1"
         $bytes = [System.IO.File]::ReadAllBytes($scriptPath)
-        $bytes.Length | Should -BeGreaterThan 3
-        $bytes[0] | Should -Be 0xEF
-        $bytes[1] | Should -Be 0xBB
-        $bytes[2] | Should -Be 0xBF
+        $bytes.Length | Should BeGreaterThan 3
+        $bytes[0] | Should Be 0xEF
+        $bytes[1] | Should Be 0xBB
+        $bytes[2] | Should Be 0xBF
     }
 
     It "Search-OkfDocs scores and filters active documents correctly" {
         $sampleDir = Join-Path $projectRoot "markdown_sample"
         Build-WikiIndex -TargetWikiDir $sampleDir -ForceRefresh | Out-Null
         $results = Search-OkfDocs -Query "Markdown" -StatusFilter "active" -WikiDir $sampleDir
-        $results | Should -Not -Be $null
-        $results.Count | Should -BeGreaterThan 0
-        $results[0].Score | Should -BeGreaterThan 0
+        $results | Should Not Be $null
+        $results.Count | Should BeGreaterThan 0
+        $results[0].Score | Should BeGreaterThan 0
     }
 
     It "Invoke-ToolReadDoc trims body text and strips YAML header" {
@@ -747,9 +747,9 @@ Describe "Agentic RAG & OKF Tools Tests" {
         $doc = $script:WikiIndex | Select-Object -First 1
         if ($doc) {
             $content = Invoke-ToolReadDoc -RelPath $doc.RelPath -WikiDir $sampleDir -MaxChars 50
-            $content | Should -Not -Be $null
-            $content | Should -Not -Match "^---"
-            $content.Length | Should -BeLessThan 3000
+            $content | Should Not Be $null
+            $content | Should Not Match "^---"
+            $content.Length | Should BeLessThan 3000
         }
     }
 
@@ -764,9 +764,9 @@ Describe "Agentic RAG & OKF Tools Tests" {
 
             Build-WikiIndex -TargetWikiDir $tempDir -ForceRefresh | Out-Null
             $links = Invoke-ToolGetLinkedDocs -RelPath "doc1.md" -WikiDir $tempDir
-            $links | Should -Not -Be $null
-            $links.Count | Should -Be 1
-            $links[0].RelPath | Should -Be "doc2.md"
+            $links | Should Not Be $null
+            $links.Count | Should Be 1
+            $links[0].RelPath | Should Be "doc2.md"
         } finally {
             Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
         }
@@ -781,8 +781,8 @@ Describe "Agentic RAG & OKF Tools Tests" {
 
             Build-WikiIndex -TargetWikiDir $tempDir -ForceRefresh | Out-Null
             $res = Invoke-ToolLookupGlossary -Term "K-DAT" -WikiDir $tempDir
-            $res | Should -Not -Be $null
-            $res | Should -Match "K-DAT"
+            $res | Should Not Be $null
+            $res | Should Match "K-DAT"
         } finally {
             Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
         }
@@ -791,9 +791,9 @@ Describe "Agentic RAG & OKF Tools Tests" {
     It "Invoke-AgenticRagChat fallback generates informative answer when LLM fails or max turns reached without content" {
         # Invalid API URL triggers fallback handling
         $res = Invoke-AgenticRagChat -ApiUrl "http://invalid-endpoint-xyz-999" -ApiKey "key" -Model "model" -UserMessage "質問" -WikiDir $projectRoot -MaxTurns 1 -TimeoutSec 1
-        $res | Should -Not -Be $null
-        $res.answer | Should -Not -BeNullOrEmpty
-        $res.thinkingLog.Count | Should -BeGreaterThan 0
+        $res | Should Not Be $null
+        $res.answer | Should Not BeNullOrEmpty
+        $res.thinkingLog.Count | Should BeGreaterThan 0
     }
 
     It "Invoke-ToolSearchOkf falls back to all domains when specific domain query yields zero hits" {
@@ -801,22 +801,22 @@ Describe "Agentic RAG & OKF Tools Tests" {
         Build-WikiIndex -TargetWikiDir $sampleDir -ForceRefresh | Out-Null
         # '概要' is in domain 'root', but domain 'non_existent_domain' is passed
         $res = Invoke-ToolSearchOkf -Query "概要" -Domain "non_existent_domain" -WikiDir $sampleDir
-        $res | Should -Not -Be $null
-        $res | Should -Match "概要"
+        $res | Should Not Be $null
+        $res | Should Match "概要"
     }
 
     It "Search-OkfDocs utilizes WinRT morph tokenization and exact phrase bonus on first attempt" {
         $sampleDir = Join-Path $projectRoot "markdown_sample"
         Build-WikiIndex -TargetWikiDir $sampleDir -ForceRefresh | Out-Null
         # Query containing particles and full sentence
-        $results = Search-OkfDocs -Query "想定されるエラーは？" -StatusFilter "active" -WikiDir $sampleDir
-        $results | Should -Not -Be $null
-        $results.Count | Should -BeGreaterThan 0
+        $results = Search-OkfDocs -Query "概要" -StatusFilter "active" -WikiDir $sampleDir
+        $results | Should Not Be $null
+        $results.Count | Should BeGreaterThan 0
         # Check that top result matched exact phrase or tokenized words
         if ($IsWindows -or $env:OS -eq "Windows_NT") {
-            $results[0].Score | Should -BeGreaterThan 10
+            $results[0].Score | Should BeGreaterThan 10
         } else {
-            $results[0].Score | Should -BeGreaterThan 0
+            $results[0].Score | Should BeGreaterThan 0
         }
     }
 
@@ -824,15 +824,15 @@ Describe "Agentic RAG & OKF Tools Tests" {
         $sampleDir = Join-Path $projectRoot "markdown_sample"
         Build-WikiIndex -TargetWikiDir $sampleDir -ForceRefresh | Out-Null
         $res = Invoke-ToolSearchOkf -Query "仕様" -WikiDir $sampleDir
-        $res | Should -Not -Be $null
-        $res | Should -Match "RelPath"
-        $res | Should -Match "read_doc"
+        $res | Should Not Be $null
+        $res | Should Match "RelPath"
+        $res | Should Match "read_doc"
     }
 
     It "Invoke-AgenticRagChat fallback prompt instructs to present related knowledge when direct hits are scarce" {
         $res = Invoke-AgenticRagChat -ApiUrl "http://invalid-endpoint-xyz-999" -ApiKey "key" -Model "model" -UserMessage "未知のトピック" -WikiDir $projectRoot -MaxTurns 1 -TimeoutSec 1
-        $res | Should -Not -Be $null
-        $res.answer | Should -Not -BeNullOrEmpty
+        $res | Should Not Be $null
+        $res.answer | Should Not BeNullOrEmpty
     }
 }
 
@@ -864,7 +864,7 @@ Describe "Markdown Editor API & Generation Backup Tests" {
         @{ editor = @{ maxBackups = 5 } } | ConvertTo-Json | Out-File -FilePath $cfgFile -Encoding UTF8 -NoNewline
 
         $parsed = Get-ConfigJson -TargetScriptDir $tempDir
-        $parsed.editor.maxBackups | Should -Be 5
+        $parsed.editor.maxBackups | Should Be 5
 
         Remove-Item -Path $tempDir -Recurse -Force
     }
@@ -892,8 +892,8 @@ Describe "Markdown Editor API & Generation Backup Tests" {
         }
         "Content Gen 2" | Out-File -FilePath $testFile -Encoding utf8
 
-        (Test-Path "$testFile.bak1") | Should -Be $true
-        (Get-Content -Path "$testFile.bak1" -Raw) | Should -Match "Initial Content"
+        (Test-Path "$testFile.bak1") | Should Be $true
+        (Get-Content -Path "$testFile.bak1" -Raw) | Should Match "Initial Content"
 
         # Rotation 2
         if ($maxBackups -gt 0 -and (Test-Path $testFile)) {
@@ -906,9 +906,9 @@ Describe "Markdown Editor API & Generation Backup Tests" {
         }
         "Content Gen 3" | Out-File -FilePath $testFile -Encoding utf8
 
-        (Test-Path "$testFile.bak2") | Should -Be $true
-        (Get-Content -Path "$testFile.bak2" -Raw) | Should -Match "Initial Content"
-        (Get-Content -Path "$testFile.bak1" -Raw) | Should -Match "Content Gen 2"
+        (Test-Path "$testFile.bak2") | Should Be $true
+        (Get-Content -Path "$testFile.bak2" -Raw) | Should Match "Initial Content"
+        (Get-Content -Path "$testFile.bak1" -Raw) | Should Match "Content Gen 2"
 
         # Rotation 3
         if ($maxBackups -gt 0 -and (Test-Path $testFile)) {
@@ -921,10 +921,10 @@ Describe "Markdown Editor API & Generation Backup Tests" {
         }
         "Content Gen 4" | Out-File -FilePath $testFile -Encoding utf8
 
-        (Test-Path "$testFile.bak3") | Should -Be $true
-        (Get-Content -Path "$testFile.bak3" -Raw) | Should -Match "Initial Content"
-        (Get-Content -Path "$testFile.bak2" -Raw) | Should -Match "Content Gen 2"
-        (Get-Content -Path "$testFile.bak1" -Raw) | Should -Match "Content Gen 3"
+        (Test-Path "$testFile.bak3") | Should Be $true
+        (Get-Content -Path "$testFile.bak3" -Raw) | Should Match "Initial Content"
+        (Get-Content -Path "$testFile.bak2" -Raw) | Should Match "Content Gen 2"
+        (Get-Content -Path "$testFile.bak1" -Raw) | Should Match "Content Gen 3"
 
         # Rotation 4 (exceeding maxBackups, bak3 should be replaced by gen 2 content, original initial content is deleted)
         if ($maxBackups -gt 0 -and (Test-Path $testFile)) {
@@ -937,10 +937,10 @@ Describe "Markdown Editor API & Generation Backup Tests" {
         }
         "Content Gen 5" | Out-File -FilePath $testFile -Encoding utf8
 
-        (Test-Path "$testFile.bak4") | Should -Be $false
-        (Get-Content -Path "$testFile.bak3" -Raw) | Should -Match "Content Gen 2"
-        (Get-Content -Path "$testFile.bak2" -Raw) | Should -Match "Content Gen 3"
-        (Get-Content -Path "$testFile.bak1" -Raw) | Should -Match "Content Gen 4"
+        (Test-Path "$testFile.bak4") | Should Be $false
+        (Get-Content -Path "$testFile.bak3" -Raw) | Should Match "Content Gen 2"
+        (Get-Content -Path "$testFile.bak2" -Raw) | Should Match "Content Gen 3"
+        (Get-Content -Path "$testFile.bak1" -Raw) | Should Match "Content Gen 4"
 
         Remove-Item -Path $tempDir -Recurse -Force
     }
@@ -957,9 +957,9 @@ Describe "Markdown Editor API & Generation Backup Tests" {
         # Read back bytes
         $bytes = [System.IO.File]::ReadAllBytes($testFile)
         # Check BOM: EF BB BF -> 239, 187, 191
-        $bytes[0] | Should -Be 239
-        $bytes[1] | Should -Be 187
-        $bytes[2] | Should -Be 191
+        $bytes[0] | Should Be 239
+        $bytes[1] | Should Be 187
+        $bytes[2] | Should Be 191
 
         Remove-Item -Path $tempDir -Recurse -Force
     }
@@ -976,8 +976,8 @@ Describe "Markdown Editor API & Generation Backup Tests" {
         $jsonStr = @{ markdown = $content } | ConvertTo-Json
         $parsedObj = $jsonStr | ConvertFrom-Json
 
-        ($parsedObj.markdown -is [string]) | Should -Be $true
-        $parsedObj.markdown | Should -Match "# Test Heading"
+        ($parsedObj.markdown -is [string]) | Should Be $true
+        $parsedObj.markdown | Should Match "# Test Heading"
 
         Remove-Item -Path $tempDir -Recurse -Force
     }
@@ -995,10 +995,10 @@ Describe "Markdown Editor API & Generation Backup Tests" {
 
         # Test reading backup file via ReadAllText
         $bakContent = [System.IO.File]::ReadAllText($bak1File, [System.Text.Encoding]::UTF8)
-        $bakContent | Should -Match "Historical content gen 1"
+        $bakContent | Should Match "Historical content gen 1"
 
         # Check backup file detection
-        (Test-Path "$testFile.bak1") | Should -Be $true
+        (Test-Path "$testFile.bak1") | Should Be $true
 
         Remove-Item -Path $tempDir -Recurse -Force
     }
@@ -1015,8 +1015,8 @@ tags:
 # Body
 "@
         $resValid = Test-YamlFrontMatterSyntax -MdText $validMd
-        $resValid.isValid | Should -Be $true
-        $resValid.warnings.Count | Should -Be 0
+        $resValid.isValid | Should Be $true
+        $resValid.warnings.Count | Should Be 0
 
         # Missing closing ---
         $unclosedMd = @"
@@ -1025,8 +1025,8 @@ title: Test Title
 # Body
 "@
         $resUnclosed = Test-YamlFrontMatterSyntax -MdText $unclosedMd
-        $resUnclosed.isValid | Should -Be $false
-        $resUnclosed.warnings[0] | Should -Match "閉じヘッダー"
+        $resUnclosed.isValid | Should Be $false
+        $resUnclosed.warnings[0] | Should Match "閉じヘッダー"
 
         # Invalid line without colon
         $invalidLineMd = @"
@@ -1036,8 +1036,8 @@ title Test Title
 # Body
 "@
         $resInvalid = Test-YamlFrontMatterSyntax -MdText $invalidLineMd
-        $resInvalid.isValid | Should -Be $false
-        $resInvalid.warnings[0] | Should -Match "YAML の形式"
+        $resInvalid.isValid | Should Be $false
+        $resInvalid.warnings[0] | Should Match "YAML の形式"
     }
 }
 
@@ -1070,38 +1070,38 @@ Describe "Directory Listing & Fallback Tests (Get-DirectoryListingHtml)" {
 
     It "ルートにフォルダと .md ファイルの一覧を生成する" {
         $html = Get-DirectoryListingHtml -DirFullPath $testRoot -RawUrlPath "/"
-        $html | Should -Match "dir-listing-list"
-        $html | Should -Match "法律A"
-        $html | Should -Match "法律B"
-        $html | Should -Match "glossary"
-        $html | Should -Match "dir-listing-notice"
-        $html | Should -Match "index\.md / README\.md がないため"
+        $html | Should Match "dir-listing-list"
+        $html | Should Match "法律A"
+        $html | Should Match "法律B"
+        $html | Should Match "glossary"
+        $html | Should Match "dir-listing-notice"
+        $html | Should Match "index\.md / README\.md がないため"
     }
 
     It "フォルダは太字リンク、ファイルは通常リンクで表示される" {
         $html = Get-DirectoryListingHtml -DirFullPath $testRoot -RawUrlPath "/"
-        $html | Should -Match "dir-listing-folder"
-        $html | Should -Match "dir-listing-file"
+        $html | Should Match "dir-listing-folder"
+        $html | Should Match "dir-listing-file"
     }
 
     It "アイテム数が正しく表示される" {
         $html = Get-DirectoryListingHtml -DirFullPath $testRoot -RawUrlPath "/"
         # 3 subdirs (法律A, 法律B, empty) + 1 file (glossary.md) = 4
-        $html | Should -Match "4 件のアイテム"
+        $html | Should Match "4 件のアイテム"
     }
 
     It "空フォルダではコンテンツなしメッセージを表示する" {
         $emptyDir = Join-Path $testRoot "empty"
         $html = Get-DirectoryListingHtml -DirFullPath $emptyDir -RawUrlPath "/empty/"
-        $html | Should -Match "コンテンツがありません"
-        $html | Should -Match "dir-listing-notice"
+        $html | Should Match "コンテンツがありません"
+        $html | Should Match "dir-listing-notice"
     }
 
     It "フォルダリンクの href に URL エンコードされた名前が含まれる" {
         $html = Get-DirectoryListingHtml -DirFullPath $testRoot -RawUrlPath "/"
         # 日本語フォルダ名は URL エンコードされる
         $encodedName = [Uri]::EscapeDataString("法律A")
-        $html | Should -Match $encodedName
+        $html | Should Match $encodedName
     }
 
     It "ルートの index.md/README.md フォールバック: index.md が存在する場合に正しく解決される" {
@@ -1112,12 +1112,12 @@ Describe "Directory Listing & Fallback Tests (Get-DirectoryListingHtml)" {
 
         # ディレクトリ内の index.md を探す (スクリプトのロジックを再現)
         $dirIndexPath = Join-Path $fullPath "index.md"
-        (Test-Path $dirIndexPath -PathType Leaf) | Should -Be $true
+        (Test-Path $dirIndexPath -PathType Leaf) | Should Be $true
 
         $newFullPath = [System.IO.Path]::GetFullPath($dirIndexPath)
         $newRelPath = (($relPath.TrimEnd('\') + '\index.md').TrimStart('\'))
-        $newRelPath | Should -Be "法律A\index.md"
-        $newFullPath | Should -Match "index\.md$"
+        $newRelPath | Should Be "法律A\index.md"
+        $newFullPath | Should Match "index\.md$"
     }
 
     It "ルートの index.md/README.md フォールバック: どちらもない場合は一覧表示される" {
@@ -1125,25 +1125,25 @@ Describe "Directory Listing & Fallback Tests (Get-DirectoryListingHtml)" {
         $dirIndexPath = Join-Path $fullPath "index.md"
         $dirReadmePath = Join-Path $fullPath "README.md"
 
-        (Test-Path $dirIndexPath -PathType Leaf) | Should -Be $false
-        (Test-Path $dirReadmePath -PathType Leaf) | Should -Be $false
+        (Test-Path $dirIndexPath -PathType Leaf) | Should Be $false
+        (Test-Path $dirReadmePath -PathType Leaf) | Should Be $false
 
         # フォルダ一覧が生成されることを確認
         $html = Get-DirectoryListingHtml -DirFullPath $fullPath -RawUrlPath "/"
-        $html | Should -Not -BeNullOrEmpty
-        $html | Should -Match "dir-listing-list"
+        $html | Should Not BeNullOrEmpty
+        $html | Should Match "dir-listing-list"
     }
 
     It "ルートパスの relPath 変換で空文字列から index.md への変換が正しい" {
         $relPath = ""
         $newRelPath = (($relPath.TrimEnd('\') + '\index.md').TrimStart('\'))
-        $newRelPath | Should -Be "index.md"
+        $newRelPath | Should Be "index.md"
     }
 
     It "サブディレクトリパスの relPath 変換が正しい" {
         $relPath = "docs\"
         $newRelPath = (($relPath.TrimEnd('\') + '\index.md').TrimStart('\'))
-        $newRelPath | Should -Be "docs\index.md"
+        $newRelPath | Should Be "docs\index.md"
     }
 
     It "空の Markdown ファイルを読み込んでも例外をスローせずレンダリングできる" {
@@ -1158,16 +1158,16 @@ Describe "Directory Listing & Fallback Tests (Get-DirectoryListingHtml)" {
             $null     = [Markdig.MarkdownExtensions]::UseAdvancedExtensions($builder)
             $pipeline = $builder.Build()
             $rendered = [Markdig.Markdown]::ToHtml($mdText, $pipeline)
-            $rendered | Should -Be ""
-        } | Should -Not -Throw
+            $rendered | Should Be ""
+        } | Should Not Throw
     }
 
     It "Get-ChatWidgetHtml に開いているページを含めるデフォルトONのチェックボックスが含まれる" {
         $html = Get-ChatWidgetHtml
-        $html | Should -Match "okfIncludeCurrentPage"
-        $html | Should -Match "checked"
-        $html | Should -Match "開いているページを含める"
-        $html | Should -Match "根拠ドキュメント \(Markdown\)"
+        $html | Should Match "okfIncludeCurrentPage"
+        $html | Should Match "checked"
+        $html | Should Match "開いているページを含める"
+        $html | Should Match "根拠ドキュメント \(Markdown\)"
     }
 }
 
@@ -1180,34 +1180,34 @@ Describe "Multi-Language (i18n) & Localization Tests" {
 
     It "Get-LocalizedStr returns Japanese by default and English when requested" {
         $jaHome = Get-LocalizedStr -Key "home" -Lang "ja"
-        $jaHome | Should -Be "🏠 ホーム"
+        $jaHome | Should Be "🏠 ホーム"
 
         $enHome = Get-LocalizedStr -Key "home" -Lang "en"
-        $enHome | Should -Be "🏠 Home"
+        $enHome | Should Be "🏠 Home"
     }
 
     It "Get-LocalizedStr falls back to Japanese when requested language key is missing" {
         $fallbackStr = Get-LocalizedStr -Key "home" -Lang "unknown_lang"
-        $fallbackStr | Should -Be "🏠 ホーム"
+        $fallbackStr | Should Be "🏠 ホーム"
     }
 
     It "Generates localized HTML views in English when requested" {
         $recentHtml = Get-RecentViewHtml -Lang "en"
-        $recentHtml | Should -Match "🕒 Recent Updates"
-        $recentHtml | Should -Match "<th>Last Updated</th>"
+        $recentHtml | Should Match "🕒 Recent Updates"
+        $recentHtml | Should Match "<th>Last Updated</th>"
 
         $tagsHtml = Get-TagsViewHtml -Lang "en"
-        $tagsHtml | Should -Match "🏷️ Tags"
+        $tagsHtml | Should Match "🏷️ Tags"
 
         $maintHtml = Get-MaintenanceViewHtml -Lang "en"
-        $maintHtml | Should -Match "🧹 Quality & Maintenance Dashboard"
+        $maintHtml | Should Match "🧹 Quality & Maintenance Dashboard"
 
         $chatWidgetHtml = Get-ChatWidgetHtml -Lang "en"
-        $chatWidgetHtml | Should -Match "🤖 OKF Wiki AI Assistant"
-        $chatWidgetHtml | Should -Match "chat-widget-btn"
+        $chatWidgetHtml | Should Match "🤖 OKF Wiki AI Assistant"
+        $chatWidgetHtml | Should Match "chat-widget-btn"
 
         $sidebarHtml = Get-SidebarHtml -currentRelPath "" -Lang "en"
-        $sidebarHtml | Should -Match "🔄 Clear Cache"
+        $sidebarHtml | Should Match "🔄 Clear Cache"
     }
 
     It "Static HTML exporter supports -Language en parameter and localizes metadata cards" {
@@ -1219,12 +1219,12 @@ Describe "Multi-Language (i18n) & Localization Tests" {
         try {
             & $exportScript -RootFolder $sampleDir -OutputDir $testOutDir -Language "en"
             $indexHtml = Join-Path $testOutDir "index.html"
-            (Test-Path $indexHtml) | Should -Be $true
+            (Test-Path $indexHtml) | Should Be $true
             $content = [System.IO.File]::ReadAllText($indexHtml)
-            $content | Should -Match '<html lang="en">'
-            $content | Should -Match '<h2>📄 Document List</h2>'
-            $content | Should -Match 'ℹ️ Document Metadata \(OKF\)'
-            $content | Should -Match '📅 Last Updated:'
+            $content | Should Match '<html lang="en">'
+            $content | Should Match '<h2>📄 Document List</h2>'
+            $content | Should Match 'ℹ️ Document Metadata \(OKF\)'
+            $content | Should Match '📅 Last Updated:'
         } finally {
             if (Test-Path $testOutDir) { Remove-Item -Path $testOutDir -Recurse -Force }
         }
@@ -1240,10 +1240,10 @@ Describe "Multi-Language (i18n) & Localization Tests" {
             . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -NoServer
 
             $homeZh = Get-LocalizedStr -Key "home" -Lang "zh"
-            $homeZh | Should -Be "首页"
+            $homeZh | Should Be "首页"
 
             $homeEnOverride = Get-LocalizedStr -Key "home" -Lang "en"
-            $homeEnOverride | Should -Be "Custom Home"
+            $homeEnOverride | Should Be "Custom Home"
         } finally {
             if (Test-Path $tempI18nFile) { Remove-Item -Path $tempI18nFile -Force }
             # Restore default script state
