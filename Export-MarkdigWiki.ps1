@@ -382,8 +382,9 @@ function Get-OkfTopBarHtml {
         $tagsHtml = "<div class='okf-tags'>" + ($tagBadges -join " ") + "</div>"
     }
 
+    $warningMsg = Get-LocalizedStr -Key "warning_deprecated" -Lang $Lang
     $warningBanner = if ($Meta.Status -eq "deprecated") {
-        '<div class="warning-banner">⚠️ <strong>警告: 非推奨ドキュメント</strong><br>このドキュメントは非推奨または旧版です。最新の情報を参照してください。</div>'
+        "<div class=""warning-banner"">$warningMsg</div>"
     } else { "" }
 
     return @"
@@ -417,8 +418,12 @@ function Get-OkfFooterCardHtml {
         $tagsHtml = "<div class='okf-tags'>" + ($tagBadges -join " ") + "</div>"
     }
 
+    $authorLabel     = Get-LocalizedStr -Key "metadata_author" -Lang $Lang
+    $lastUpdateLabel = Get-LocalizedStr -Key "metadata_last_updated" -Lang $Lang
+    $cardTitleLabel  = Get-LocalizedStr -Key "metadata_card_title" -Lang $Lang
+
     $authorHtml = if (-not [string]::IsNullOrWhiteSpace($author)) {
-        "<span class='okf-author'>👤 著者: $author</span>"
+        "<span class='okf-author'>$authorLabel$author</span>"
     } else { "" }
 
     $descHtml = if (-not [string]::IsNullOrWhiteSpace($desc)) {
@@ -428,12 +433,12 @@ function Get-OkfFooterCardHtml {
     return @"
 <footer class="okf-footer-card">
     <div class="okf-footer-header">
-        <span class="okf-footer-title">ℹ️ ドキュメント メタデータ (OKF)</span>
+        <span class="okf-footer-title">$cardTitleLabel</span>
     </div>
     $descHtml
     <div class="okf-footer-meta">
         $authorHtml
-        <span>📅 最終更新: $lastUpd</span>
+        <span>$lastUpdateLabel$lastUpd</span>
     </div>
     $tagsHtml
 </footer>

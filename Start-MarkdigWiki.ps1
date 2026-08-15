@@ -592,51 +592,55 @@ $script:SidebarMdFiles = @()
 $script:SidebarCachedHtml = $null
 
 function Get-SidebarHtml {
-    param ($currentRelPath)
-    
-    if ($null -eq $script:SidebarCachedHtml -or [string]::IsNullOrEmpty($script:SidebarCachedHtml)) {
-        if ($null -eq $script:SidebarMdFiles -or $script:SidebarMdFiles.Count -eq 0) {
-            $script:SidebarMdFiles = Get-ChildItem -Path $wikiDir -Recurse -Filter "*.md" | 
-                Where-Object { $_.FullName -notmatch '[\\/]\.(git|lib|tests|dist)[\\/]' } |
-                Sort-Object FullName
-        }
+    param (
+        $currentRelPath,
+        [string]$Lang = "ja"
+    )
 
-        $treeNode = Build-ServerFileTreeNode -allMdFiles $script:SidebarMdFiles -wikiDir $wikiDir
-        $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath "" -wikiDir $wikiDir
+    if ($null -eq $script:SidebarMdFiles -or $script:SidebarMdFiles.Count -eq 0) {
+        $script:SidebarMdFiles = Get-ChildItem -Path $wikiDir -Recurse -Filter "*.md" |
+            Where-Object { $_.FullName -notmatch '[\\/]\.(git|lib|tests|dist)[\\/]' } |
+            Sort-Object FullName
+    }
 
-        $refreshButtonHtml = @'
+    $treeNode = Build-ServerFileTreeNode -allMdFiles $script:SidebarMdFiles -wikiDir $wikiDir
+    $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath "" -wikiDir $wikiDir
+
+    $clearCacheLabel = Get-LocalizedStr -Key "sidebar_clear_cache" -Lang $Lang
+    $processingLabel = Get-LocalizedStr -Key "sidebar_processing" -Lang $Lang
+    $failLabel       = Get-LocalizedStr -Key "sidebar_cache_fail" -Lang $Lang
+    $errLabel        = Get-LocalizedStr -Key "sidebar_error_occurred" -Lang $Lang
+
+    $refreshButtonHtml = @"
 <div style="margin-top: 20px; padding: 10px; border-top: 1px solid #e1e4e8;">
     <button onclick="refreshWikiSidebarCache(this)" style="width: 100%; padding: 6px 12px; font-size: 12px; background: #fff; border: 1px solid #d1d5da; border-radius: 6px; cursor: pointer; color: #586069; display: flex; align-items: center; justify-content: center; gap: 4px;">
-        🔄 キャッシュクリア
+        $clearCacheLabel
     </button>
 </div>
 <script>
 function refreshWikiSidebarCache(btn) {
     btn.disabled = true;
-    btn.innerText = "⏳ 処理中...";
+    btn.innerText = "$processingLabel";
     fetch('/api/clear-cache')
         .then(res => res.json())
         .then(data => {
             if (data.success) {
                 location.reload();
             } else {
-                alert("キャッシュクリアに失敗しました。");
+                alert("$failLabel");
                 btn.disabled = false;
-                btn.innerText = "🔄 キャッシュクリア";
+                btn.innerText = "$clearCacheLabel";
             }
         })
         .catch(err => {
-            alert("エラーが発生しました。");
+            alert("$errLabel");
             btn.disabled = false;
-            btn.innerText = "🔄 キャッシュクリア";
+            btn.innerText = "$clearCacheLabel";
         });
 }
 </script>
-'@
-        $script:SidebarCachedHtml = $treeHtml + $refreshButtonHtml
-    }
-
-    return $script:SidebarCachedHtml
+"@
+    return $treeHtml + $refreshButtonHtml
 }
 
 # --- ディレクトリ一覧 HTML 生成関数 ---
@@ -2620,7 +2624,6 @@ function Get-ChatWidgetHtml {
             input.addEventListener("keypress", function(e) { if (e.key === "Enter") sendMsg(); });
         });
     </script>
-'@
 "@
     return $widget
 }

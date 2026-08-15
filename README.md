@@ -37,8 +37,13 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
     - `config.json` の `editor.maxBackups` (既定値 3) に基づく自動世代バックアップローテーション (`.bak1`, `.bak2`, ...)。
     - エディターモーダル上での過去世代ドロップダウンプレビュー選択 ＆ ワンクリックでのロールバック復元 UI。
     - 保存時の OKF (YAML Front Matter) 構文エラー自動検出 ＆ マイルドなアドバイス表示 (ソフトLint)。
+  - **🌐 多言語化 (i18n) & UI 表示言語切替**:
+    - デフォルト日本語 (`ja`)、サブ英語 (`en`) に標準対応。
+    - 外部 `i18n.json` ファイルをルートに配置することで、コード改修なしで任意言語の追加・キーの上書き拡張が可能。
+    - 優先順位: 1. ブラウザ Cookie (`lang=...`) ＞ 2. 起動時パラメータ (`-Language` / `-Lang`) または `config.json` ＞ 3. デフォルト (`ja`)。
+    - ヘッダー右上に言語選択ドロップダウン（`[日本語 (JA)]` / `[English (EN)]`）を標準搭載。
   - **動的ナビゲーション & ビュー**: 最近の更新 (`/recent`), タグ集計/検索 (`/tags`), 品質・メンテナンスダッシュボード (`/maintenance`), 著者ディレクトリ (`/authors`), AND 検索 (`/search`)
-  - **静的エキスポート**: `Export-MarkdigWiki.ps1` による OKF メタデータカード同梱型 HTML 一括出力
+  - **静的エキスポート**: `Export-MarkdigWiki.ps1` による OKF メタデータカード同梱型 HTML 一括出力 (`-Language` オプション対応)
   - **Markdown レンダリング**: .NET 4.6.2 ビルド版 `Markdig.dll` (GFM テーブル・コードブロック・タスクリスト・YamlFrontMatter 対応)
   - **図形・ダイアグラム**: `lib/mermaid.min.js` 同梱による 100% オフライン Mermaid ダイアグラム表示
 - **セキュリティ機能**:
@@ -108,7 +113,7 @@ SimpleWiki/
 - **ドラッグ＆ドロップ**: 閲覧したい Markdown フォルダを `Start-MarkdigWiki.bat` にドラッグ＆ドロップします。
 - **PowerShell から実行**:
   ```powershell
-  .\Start-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -Port 8080
+  .\Start-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -Port 8080 -Language en
   ```
 
 #### 提供エンドポイント / 機能
@@ -132,7 +137,7 @@ SimpleWiki/
 - **ドラッグ＆ドロップ**: 変換したい Markdown フォルダを `Export-MarkdigWiki.bat` にドラッグ＆ドロップします。
 - **PowerShell から実行**:
   ```powershell
-  .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "C:\inetpub\wwwroot\wiki"
+  .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "C:\inetpub\wwwroot\wiki" -Language en
   ```
 
 ---
