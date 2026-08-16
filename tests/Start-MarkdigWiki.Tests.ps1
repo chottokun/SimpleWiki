@@ -822,10 +822,11 @@ Describe "Agentic RAG & OKF Tools Tests" {
         $res.answer | Should Not BeNullOrEmpty
     }
 
-    It "Start-MarkdigWiki.ps1 system prompt includes rules for traversing index.md and README.md links" {
-        $psContent = Get-Content -Path (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -Raw -Encoding UTF8
-        $psContent | Should -Match "index\.md や README\.md 等の目次・概要ドキュメントを参照した際"
-        $psContent | Should -Match "read_doc\(relPath\)"
+    It "lib/WikiRag.ps1 system prompt and read_doc include rules for traversing index.md and README.md links" {
+        $ragContent = Get-Content -Path (Join-Path $projectRoot "lib\WikiRag.ps1") -Raw -Encoding UTF8
+        $ragContent | Should -Match "index\.md や README\.md 等の目次・概要ドキュメントを参照した際"
+        $ragContent | Should -Match "read_doc\(relPath\)"
+        $ragContent | Should -Match "💡【ネクストステップ指示 \(自律深掘り\)】"
     }
 
     It "Invoke-AgenticRagChat supports custom SystemPrompt parameter" {
