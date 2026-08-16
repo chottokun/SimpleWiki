@@ -30,8 +30,10 @@ Google が提唱する **OKF (Open Knowledge Format)** の思想に基づき、M
   - `/api/index.json`: 全ドキュメントの構造化メタデータ一覧
   - `/api/chunks.json`: 見出し (H2/H3) 単位の自動セマンティック分割済み JSON チャンク API
   - `/api/chat`: WinRT 日本語形態素解析 ＋ OKF 文脈検索 ＋ マルチターン対話履歴対応 LLM RAG AI チャット API
+- 🌐 **多言語対応 (i18n)**: 日本語/英語のワンクリック切り替え、外部辞書 `i18n.json` 拡張、多言語チャットプロンプト対応。
+- ⚙️ **Web 設定管理 (`/settings`) ＆ 3世代バックアップ**: ブラウザからの各種オプション設定と自動ローテーションバックアップ。
 - 🔍 **豊富な動的ナビゲーションビュー**:
-  - 🕒 [最近の更新](/recent) | 🏷️ [タグ目録](/tags) | 🧹 [品質ダッシュボード](/maintenance) | 👥 [著者一覧](/authors) | 🔍 [全文検索](/search)
+  - 🕒 [最近の更新](/recent) | 🏷️ [タグ目録](/tags) | 🧹 [品質ダッシュボード](/maintenance) | 👥 [著者一覧](/authors) | 🔍 [全文検索](/search) | ⚙️ [システム設定](/settings)
 - 🔒 **安全設計 ＆ キー暗号化**: ディレクトリトラバーサル防止 (`403 Forbidden`)、XSS サニタイズ、Windows DPAPI / AES-256 キー暗号化ユーティリティ (`Set-ApiKey.bat`)。
 - 🎨 **GitHub スタイル ＆ オフライン Mermaid.js**: GFM テーブル、コードハイライト、タスクリスト、100% オフラインダイアグラム表示対応。
 
@@ -66,9 +68,12 @@ Google が提唱する **OKF (Open Knowledge Format)** の思想に基づき、M
 ## 📋 システムチェックリスト
 
 - [x] `Markdig.dll` (.NET Framework 4.6.2) による高度 Markdown パース
+- [x] 多言語化 (i18n) ＆ 言語セレクタ ＆ 外部辞書 `i18n.json`
 - [x] ディレクトリトラバーサル防止 (`403 Forbidden`)
 - [x] XSS 対策 (`HtmlEncode`)
-- [x] Google OKF YAML Front Matter 解析 ＆ スマートフォールバック
+- [x] Google OKF (Open Knowledge Format) v0.2 メタデータ解析 ＆ スマートフォールバック
 - [x] スリム・トップバー ＆ 終端フッターカードの 2 段構成 UI
 - [x] RAG 用セマンティックチャンク自動分割 API (`/api/chunks.json`)
-- [x] 3 段階品質検証フェーズ (AST / Pester 24件 / E2E Export) 100% PASS
+- [x] 3 段階品質検証フェーズ (AST / Pester 110件 / E2E Export) 100% PASS
+
+

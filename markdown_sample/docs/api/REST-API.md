@@ -134,12 +134,20 @@ Wiki 内の `status: active` ドキュメントを自動文脈検索し、グラ
 {
   "mode": "agentic",
   "message": "基幹DBの復旧手順と、そこで使う用語『K-DAT』の注意点をまとめて",
+  "lang": "ja",
+  "includeCurrentPage": true,
+  "currentRelPath": "docs/詳細仕様.md",
   "history": [
     { "role": "user", "content": "こんにちは" },
     { "role": "assistant", "content": "社内Wikiアシスタントです。何かお手伝いできますか？" }
   ]
 }
 ```
+
+- **`lang`**: 言語コード（`"ja"`, `"en"` 等。未指定時はクエリ・Cookie・設定から自動解決）。
+- **`includeCurrentPage`**: 現在開いているページのコンテキストを最優先でプロンプトに含めるか（既定値: `true`）。
+- **`currentRelPath`**: 現在開いているページの相対パス。
+
 
 ### レスポンス構造例 (Agentic モード):
 ```json

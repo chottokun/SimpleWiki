@@ -239,7 +239,68 @@ status: : : invalid syntax
         { $script:testMeta = Get-DocumentMetadata -File $fakeFile -RelPath "docs/broken.md" -MdText $mdText } | Should Not Throw
         $script:testMeta.Title | Should Be "Malformed YAML"
     }
+
+    It "Parses OKF v0.2 metadata fields (version, contributors, reviewer, superseded_by, related, stable status)" {
+        $mdText = @"
+---
+title: "Architecture Spec v0.2"
+version: "0.2.0"
+status: stable
+reviewer: "Kenji Sato"
+contributors:
+  - "Hanako Suzuki"
+  - "Ichiro Tanaka"
+superseded_by: "docs/v3-arch.md"
+related:
+  - "docs/api.md"
+  - "docs/guide.md"
+---
+# Content
+"@
+        $meta = Get-DocumentMetadata -File $null -RelPath "docs/arch.md" -MdText $mdText
+        $meta.Title | Should Be "Architecture Spec v0.2"
+        $meta.Version | Should Be "0.2.0"
+        $meta.Status | Should Be "stable"
+        $meta.Reviewer | Should Be "Kenji Sato"
+        $meta.Contributors.Count | Should Be 2
+        $meta.Contributors -contains "Hanako Suzuki" | Should Be $true
+        $meta.SupersededBy | Should Be "docs/v3-arch.md"
+        $meta.Related.Count | Should Be 2
+        $meta.LastUpdated | Should Be $null
+
+        # TopBar and Footer HTML rendering
+        $topBar = Get-OkfTopBarHtml -Meta $meta -Lang "ja"
+        $topBar | Should Match "🌟 Stable"
+        $topBar | Should Match "v0.2.0"
+
+        $footer = Get-OkfFooterCardHtml -Meta $meta -Lang "ja"
+        $footer | Should Match "v0.2.0"
+        $footer | Should Match "Kenji Sato"
+        $footer | Should Match "Hanako Suzuki"
+        $footer | Should Match "docs/api.md"
+        $footer | Should Match "不明"
+    }
+
+    It "Handles complete metadata absence with graceful fallbacks" {
+        $plainText = "Just some plain text without any YAML front matter."
+        $meta = Get-DocumentMetadata -File $null -RelPath "" -MdText $plainText
+        $meta.Title | Should Be "Untitled"
+        $meta.Status | Should Be "active"
+        $meta.Domain | Should Be "root"
+        $meta.Version | Should Be ""
+        $meta.Contributors.Count | Should Be 0
+        $meta.Related.Count | Should Be 0
+        $meta.LastUpdated | Should Be $null
+
+        # UI renders cleanly without exceptions
+        $topBar = Get-OkfTopBarHtml -Meta $meta -Lang "en"
+        $topBar | Should Match "Active"
+
+        $footer = Get-OkfFooterCardHtml -Meta $meta -Lang "en"
+        $footer | Should Match "Unknown"
+    }
 }
+
 
 Describe 'OKF Dynamic View and API Endpoint Tests' {
     BeforeAll {
@@ -1313,4 +1374,237 @@ Describe 'Index Cache and Settings View Tests' {
         $html | Should Match "cacheFolder"
     }
 }
+
+Describe "Multi-Language (i18n) & Localization Tests" {
+    BeforeAll {
+        $serverScript = Join-Path $projectRoot "Start-MarkdigWiki.ps1"
+        . $serverScript -DotSourceOnly
+    }
+
+    It "Get-LocalizedStr returns Japanese by default and English when requested" {
+        $jaHome = Get-LocalizedStr -Key "home" -Lang "ja"
+        $jaHome | Should Be "🏠 ホーム"
+
+        $enHome = Get-LocalizedStr -Key "home" -Lang "en"
+        $enHome | Should Be "🏠 Home"
+    }
+
+    It "Get-LocalizedStr falls back to Japanese when requested language key is missing" {
+        $fallbackStr = Get-LocalizedStr -Key "home" -Lang "unknown_lang"
+        $fallbackStr | Should Be "🏠 ホーム"
+    }
+
+    It "Get-RequestLanguage resolves language with correct priority: Query > Cookie > Config > Default" {
+        $cfgJa = [PSCustomObject]@{ defaultLanguage = "ja" }
+        $cfgEn = [PSCustomObject]@{ defaultLanguage = "en" }
+
+        # 1. Query parameter overrides all (both NameValueCollection and Hashtable)
+        $qParams = [System.Web.HttpUtility]::ParseQueryString("lang=en")
+        $cookieCol = New-Object System.Net.CookieCollection
+        $cookieCol.Add((New-Object System.Net.Cookie("lang", "ja", "/", "localhost")))
+        $resolved = Get-RequestLanguage -QueryParams $qParams -Cookies $cookieCol -Config $cfgJa
+        $resolved | Should Be "en"
+
+        $qHash = @{ "lang" = "en" }
+        $resolvedHash = Get-RequestLanguage -QueryParams $qHash -Cookies $cookieCol -Config $cfgJa
+        $resolvedHash | Should Be "en"
+
+        # 2. Cookie overrides Config
+        $emptyQ = [System.Web.HttpUtility]::ParseQueryString("")
+        $resolvedCookie = Get-RequestLanguage -QueryParams $emptyQ -Cookies $cookieCol -Config $cfgEn
+        $resolvedCookie | Should Be "ja"
+
+        # 3. Config defaultLanguage
+        $resolvedCfg = Get-RequestLanguage -QueryParams $emptyQ -Cookies (New-Object System.Net.CookieCollection) -Config $cfgEn
+        $resolvedCfg | Should Be "en"
+
+        # 4. Default fallback
+        $resolvedDef = Get-RequestLanguage -QueryParams $emptyQ -Cookies (New-Object System.Net.CookieCollection) -Config $null
+        $resolvedDef | Should Be "ja"
+    }
+
+    It "Generates localized HTML views in English when requested" {
+        $recentHtml = Get-RecentViewHtml -Lang "en"
+        $recentHtml | Should Match "🕒 Recent Updates"
+        $recentHtml | Should Match "<th>Last Updated</th>"
+
+        $tagsHtml = Get-TagsViewHtml -Lang "en"
+        $tagsHtml | Should Match "🏷️ Tags"
+
+        $maintHtml = Get-MaintenanceViewHtml -Lang "en"
+        $maintHtml | Should Match "🧹 Quality & Maintenance Dashboard"
+
+        $authorsHtml = Get-AuthorsViewHtml -Lang "en"
+        $authorsHtml | Should Match "👥 Authors"
+
+        $searchHtml = Get-SearchViewHtml -Query "test" -Lang "en"
+        $searchHtml | Should Match "🔍 OKF Knowledge Search Results"
+        $searchHtml | Should Match "Active"
+
+        $settingsHtml = Get-SettingsViewHtml -Lang "en"
+        $settingsHtml | Should Match "⚙️ System Settings"
+        $settingsHtml | Should Match "Enable index cache"
+
+        $chatWidgetHtml = Get-ChatWidgetHtml -Lang "en"
+        $chatWidgetHtml | Should Match "🤖 OKF Wiki AI Assistant"
+        $chatWidgetHtml | Should Match "chat-widget-btn"
+
+        $sidebarHtml = Get-SidebarHtml -currentRelPath "" -Lang "en"
+        $sidebarHtml | Should Match "🔄 Clear Cache"
+    }
+
+    It "Static HTML exporter supports -Language en parameter and localizes metadata cards" {
+        $exportScript = Join-Path $projectRoot "Export-MarkdigWiki.ps1"
+        $sampleDir    = Join-Path $projectRoot "markdown_sample"
+        $testOutDir   = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_I18nExportTest"
+
+        if (Test-Path $testOutDir) { Remove-Item -Path $testOutDir -Recurse -Force }
+        try {
+            & $exportScript -RootFolder $sampleDir -OutputDir $testOutDir -Language "en"
+            $indexHtml = Join-Path $testOutDir "index.html"
+            (Test-Path $indexHtml) | Should Be $true
+            $content = [System.IO.File]::ReadAllText($indexHtml)
+            $content | Should Match '<html lang="en">'
+            $content | Should Match '<h2>📄 Document List</h2>'
+            $content | Should Match 'ℹ️ Document Metadata \(OKF\)'
+            $content | Should Match 'Last Updated:'
+        } finally {
+            if (Test-Path $testOutDir) { Remove-Item -Path $testOutDir -Recurse -Force }
+        }
+    }
+
+    It "Dynamically merges external i18n.json dictionary entries" {
+        $tempI18nFile = Join-Path $projectRoot "i18n.json"
+        $i18nContent = '{ "zh": { "home": "首页" }, "en": { "home": "Custom Home" } }'
+        [System.IO.File]::WriteAllText($tempI18nFile, $i18nContent, [System.Text.Encoding]::UTF8)
+
+        try {
+            # Reload script logic to parse i18n.json
+            . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -DotSourceOnly
+
+            $homeZh = Get-LocalizedStr -Key "home" -Lang "zh"
+            $homeZh | Should Be "首页"
+
+            $homeEnOverride = Get-LocalizedStr -Key "home" -Lang "en"
+            $homeEnOverride | Should Be "Custom Home"
+        } finally {
+            if (Test-Path $tempI18nFile) { Remove-Item -Path $tempI18nFile -Force }
+            # Restore default script state
+            . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -DotSourceOnly
+        }
+    }
+
+    It "Get-LocalizedStr safely handles format arguments and non-existent keys" {
+        # FormatArgs substitution
+        $itemsJa = Get-LocalizedStr -Key "items_count" -Lang "ja" -FormatArgs @(42)
+        $itemsJa | Should Be "42 件のアイテム"
+
+        $itemsEn = Get-LocalizedStr -Key "items_count" -Lang "en" -FormatArgs @(42)
+        $itemsEn | Should Be "42 items"
+
+        # Missing key returns the key itself
+        $missing = Get-LocalizedStr -Key "non_existent_custom_key_123" -Lang "en"
+        $missing | Should Be "non_existent_custom_key_123"
+    }
+
+    It "Get-RequestLanguage normalizes uppercase and mixed-case language inputs" {
+        $qParams = [System.Web.HttpUtility]::ParseQueryString("lang=EN")
+        $resolved = Get-RequestLanguage -QueryParams $qParams -Cookies $null -Config $null
+        $resolved | Should Be "en"
+
+        $cookieCol = New-Object System.Net.CookieCollection
+        $cookieCol.Add((New-Object System.Net.Cookie("lang", "JA", "/", "localhost")))
+        $resolvedCookie = Get-RequestLanguage -QueryParams $null -Cookies $cookieCol -Config $null
+        $resolvedCookie | Should Be "ja"
+    }
+
+    It "Get-DirectoryListingHtml produces properly localized output in English" {
+        $sampleDir = Join-Path $projectRoot "markdown_sample"
+        $dirHtml = Get-DirectoryListingHtml -DirFullPath $sampleDir -RawUrlPath "/" -Lang "en"
+        $dirHtml | Should Match "items"
+        $dirHtml | Should Match "Showing directory listing because index.md / README.md is missing."
+    }
+
+    It "Get-OkfTopBarHtml and Get-OkfFooterCardHtml correctly localize warning and labels in English" {
+        $mockMeta = [PSCustomObject]@{
+            Title       = "Test Deprecated Doc"
+            Description = "A test deprecated document"
+            Author      = "Tester"
+            Domain      = "testing"
+            Status      = "deprecated"
+            Tags        = @("test")
+            LastUpdated = (Get-Date "2025-01-01")
+        }
+
+        $topBar = Get-OkfTopBarHtml -Meta $mockMeta -RelPath "test.md" -Lang "en"
+        $topBar | Should Match "Warning: Deprecated Document"
+        $topBar | Should Match "Edit"
+
+        $footer = Get-OkfFooterCardHtml -Meta $mockMeta -Lang "en"
+        $footer | Should Match "Document Metadata \(OKF\)"
+        $footer | Should Match "Author:"
+        $footer | Should Match "Last Updated:"
+    }
+
+    It "Chat prompts (Fast RAG and Agentic RAG) are localized properly in English and Japanese" {
+        $sysJa = Get-LocalizedStr -Key "default_system_prompt" -Lang "ja"
+        $sysJa | Should Match "Wikiのナレッジを元に回答するアシスタント"
+        $sysJa | Should Match "用語のブレも考慮し"
+
+        $sysEn = Get-LocalizedStr -Key "default_system_prompt" -Lang "en"
+        $sysEn | Should Match "assistant who answers based on the knowledge of the Wiki"
+        $sysEn | Should Match "variations in terminology"
+
+        $agentJa = Get-LocalizedStr -Key "default_agentic_system_prompt" -Lang "ja"
+        $agentJa | Should Match "自律調査して回答する Agentic RAG アシスタント"
+
+        $agentEn = Get-LocalizedStr -Key "default_agentic_system_prompt" -Lang "en"
+        $agentEn | Should Match "Agentic RAG assistant that autonomously investigates"
+
+        # Agentic RAG fallback with Lang = "en"
+        $resEn = Invoke-AgenticRagChat -ApiUrl "http://invalid-url-for-test.local/v1" -ApiKey "dummy" -Model "test" -UserMessage "What is the architecture?" -MaxTurns 1 -Lang "en"
+        $resEn.answer | Should Match "I autonomously investigated the Wiki|I searched the Wiki"
+    }
+}
+
+
+
+Describe "Repository Code Quality, Syntax & Character Encoding Validation Tests" {
+    It "All PowerShell script files parse successfully without AST syntax errors" {
+        $psFiles = Get-ChildItem -Path $projectRoot -Recurse -Include "*.ps1", "*.psm1", "*.psd1" |
+            Where-Object { $_.FullName -notmatch '[\\/]\.(git|cache)[\\/]' }
+
+        foreach ($file in $psFiles) {
+            $tokens = $null
+            $errs = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errs)
+            $errCount = if ($errs) { $errs.Count } else { 0 }
+            $errCount | Should Be 0
+        }
+    }
+
+    It "All PowerShell scripts (.ps1, .psm1, .psd1) are encoded as UTF-8 with BOM" {
+        $psFiles = Get-ChildItem -Path $projectRoot -Recurse -Include "*.ps1", "*.psm1", "*.psd1" |
+            Where-Object { $_.FullName -notmatch '[\\/]\.(git|cache)[\\/]' }
+
+        foreach ($file in $psFiles) {
+            $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+            $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+            $hasBom | Should Be $true
+        }
+    }
+
+    It "All Batch files (.bat) are strictly encoded as UTF-8 without BOM (No-BOM)" {
+        $batFiles = Get-ChildItem -Path $projectRoot -Recurse -Include "*.bat" |
+            Where-Object { $_.FullName -notmatch '[\\/]\.(git|cache)[\\/]' }
+
+        foreach ($file in $batFiles) {
+            $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+            $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+            $hasBom | Should Be $false
+        }
+    }
+}
+
+
 

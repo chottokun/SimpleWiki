@@ -385,11 +385,18 @@ function Search-OkfDocs {
     $results = [System.Collections.Generic.List[PSObject]]::new()
 
     foreach ($item in $script:WikiIndex) {
-        # 1. Status Filter
+        # 1. Status Filter (OKF v0.2: stable/active, draft/wip/review, deprecated/archived/obsolete)
         $st = if ($item.Status) { $item.Status.ToString().ToLower().Trim() } else { "active" }
-        if ($stFilterLower -ne "all" -and $stFilterLower -ne "" -and $st -ne $stFilterLower) {
-            continue
+        if ($stFilterLower -ne "all" -and $stFilterLower -ne "") {
+            $isMatch = ($st -eq $stFilterLower)
+            if (-not $isMatch) {
+                if ($stFilterLower -eq "active" -and $st -eq "stable") { $isMatch = $true }
+                if ($stFilterLower -eq "draft" -and ($st -in @("wip", "review", "in-review"))) { $isMatch = $true }
+                if ($stFilterLower -eq "deprecated" -and ($st -in @("archived", "obsolete"))) { $isMatch = $true }
+            }
+            if (-not $isMatch) { continue }
         }
+
 
         # 2. Domain Filter
         if (-not [string]::IsNullOrWhiteSpace($DomainFilter)) {

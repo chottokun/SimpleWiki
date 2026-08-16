@@ -5,11 +5,35 @@
 # ==============================================================================
 param (
     [string]$RootFolder = "",
-    [string]$OutputDir  = ""
+    [string]$OutputDir  = "",
+    [Alias("Lang")]
+    [string]$Language   = ""
 )
 
 $scriptDir = [System.IO.Path]::GetFullPath($PSScriptRoot)
 $libDir    = Join-Path $scriptDir "lib"
+
+# --- モジュールのロード (lib/*.ps1) ---
+. (Join-Path $libDir "WikiI18n.ps1")
+. (Join-Path $libDir "WikiMetadata.ps1")
+. (Join-Path $libDir "WikiViews.ps1")
+
+Import-ExternalI18n -TargetScriptDir $scriptDir
+
+$exportLang = $Language
+if ([string]::IsNullOrWhiteSpace($exportLang)) {
+    $configPath = Join-Path $scriptDir "config.json"
+    if (Test-Path $configPath) {
+        try {
+            $cfg = (Get-Content $configPath -Raw -Encoding UTF8) | ConvertFrom-Json
+            if ($cfg -and $cfg.defaultLanguage) { $exportLang = $cfg.defaultLanguage }
+            elseif ($cfg -and $cfg.language) { $exportLang = $cfg.language }
+        } catch {}
+    }
+}
+if ([string]::IsNullOrWhiteSpace($exportLang) -or -not $script:I18n.ContainsKey($exportLang)) {
+    $exportLang = "ja"
+}
 
 # 入力ルートフォルダの設定 (指定がない場合は markdown_sample フォルダ、存在しない場合は $PSScriptRoot)
 if ([string]::IsNullOrWhiteSpace($RootFolder)) {
@@ -43,6 +67,7 @@ Write-Host "==========================================================" -Foregro
 Write-Host "  Markdig Wiki 静的 HTML エキスポート開始" -ForegroundColor Green
 Write-Host "  入力元: $wikiDir" -ForegroundColor Yellow
 Write-Host "  出力先: $targetDistDir" -ForegroundColor Cyan
+Write-Host "  言語:   $exportLang" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Green
 
 # --- 1. Markdig.dll および依存ライブラリのロード ---
@@ -56,11 +81,6 @@ Get-ChildItem -Path $libDir -Filter "*.dll" | ForEach-Object {
     if ($IsWindows -or $env:OS -eq "Windows_NT") { Unblock-File -Path $_.FullName -ErrorAction SilentlyContinue }
     Add-Type -Path $_.FullName
 }
-
-
-# --- モジュールのロード (lib/*.ps1) ---
-. (Join-Path $libDir "WikiMetadata.ps1")
-. (Join-Path $libDir "WikiViews.ps1")
 
 function Build-FileTreeNode {
     param ($allMdFiles, $wikiDir)
@@ -98,13 +118,11 @@ function Test-ExportNodeHasActiveFile {
             return $true
         }
     }
-
-    foreach ($folderName in $node.SubFolders.Keys) {
-        if (Test-ExportNodeHasActiveFile -node $node.SubFolders[$folderName] -currentFile $currentFile) {
+    foreach ($subFolder in $node.SubFolders.Values) {
+        if (Test-ExportNodeHasActiveFile -node $subFolder -currentFile $currentFile) {
             return $true
         }
     }
-
     return $false
 }
 
@@ -113,37 +131,38 @@ function Render-ExportFolderTreeHtml {
 
     $html = "<ul>`n"
 
-    foreach ($file in $node.Files) {
-        $targetHtmlPath = $file.FullName -replace '\.md$', '.html'
-        $targetUri      = New-Object System.Uri($targetHtmlPath)
-        $relativeUri    = $currentUri.MakeRelativeUri($targetUri).ToString()
-        $title          = [System.Net.WebUtility]::HtmlEncode($file.BaseName)
-        $activeClass    = if ($file.FullName -eq $currentFile.FullName) { ' class="active"' } else { '' }
-
-        $html += "  <li class='nav-file'><a href='$relativeUri'$activeClass>$title</a></li>`n"
-    }
-
+    # 1. フォルダの描画 (再帰)
     foreach ($folderName in $node.SubFolders.Keys) {
-        $subNode     = $node.SubFolders[$folderName]
-        $encodedName = [System.Net.WebUtility]::HtmlEncode($folderName)
-        $subHtml     = Render-ExportFolderTreeHtml -node $subNode -currentFile $currentFile -currentUri $currentUri
-
-        $isOpen   = Test-ExportNodeHasActiveFile -node $subNode -currentFile $currentFile
-        $openAttr = if ($isOpen) { " open" } else { "" }
+        $subNode = $node.SubFolders[$folderName]
+        $hasActive = Test-ExportNodeHasActiveFile -node $subNode -currentFile $currentFile
+        $openAttr = if ($hasActive) { " open" } else { "" }
+        $encodedFolder = [System.Net.WebUtility]::HtmlEncode($folderName)
 
         $html += "  <li class='nav-folder'>`n"
         $html += "    <details$openAttr>`n"
-        $html += "      <summary class='folder-title'>📁 $encodedName</summary>`n"
-        $html += "      $subHtml`n"
+        $html += "      <summary class='folder-title'>📁 $encodedFolder</summary>`n"
+        $html += "      " + (Render-ExportFolderTreeHtml -node $subNode -currentFile $currentFile -currentUri $currentUri) + "`n"
         $html += "    </details>`n"
         $html += "  </li>`n"
+    }
+
+    # 2. ファイルの描画
+    foreach ($file in $node.Files) {
+        $fileHtmlPath = $file.FullName -replace '\.md$', '.html'
+        $fileUri      = New-Object System.Uri($fileHtmlPath)
+        $relHref      = $currentUri.MakeRelativeUri($fileUri).ToString()
+
+        $isActive = ($file.FullName -eq $currentFile.FullName)
+        $activeClass = if ($isActive) { " class='active'" } else { "" }
+
+        $encodedTitle = [System.Net.WebUtility]::HtmlEncode($file.BaseName)
+        $html += "  <li class='nav-file'><a href='$relHref'$activeClass>📄 $encodedTitle</a></li>`n"
     }
 
     $html += "</ul>"
     return $html
 }
 
-# --- OKF メタデータ抽出し ＆ 自動補完 (フォールバック) 関数 ---
 function Get-ExportSidebarHtml {
     param ($currentFile, $allMdFiles, $wikiDir)
 
@@ -166,7 +185,7 @@ $pipeline = $builder.Build()
 
 $template = @'
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="{4}">
 <head>
 <meta charset="UTF-8">
 <title>{0} - SimpleWiki OKF</title>
@@ -196,12 +215,15 @@ $template = @'
     img { max-width: 100%; }
 
     /* OKF Custom Components */
-    .okf-card { background: #f8f9fa; border: 1px solid #e1e4e8; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
-    .okf-card-header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #586069; font-weight: bold; }
-    .okf-desc { font-size: 14px; color: #24292e; margin: 10px 0; }
-    .okf-card-footer { display: flex; gap: 20px; font-size: 12px; color: #586069; }
-    .okf-tags { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
-    .tag-badge { background: #e1e4e8; color: #0366d6; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
+    .okf-top-bar { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #586069; margin-bottom: 16px; border-bottom: 1px dashed #e1e4e8; padding-bottom: 8px; }
+    .okf-footer-card { background: #f8f9fa; border: 1px solid #e1e4e8; border-radius: 6px; padding: 16px; margin-top: 40px; }
+    .okf-footer-header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: bold; color: #444; border-bottom: 1px solid #e1e4e8; padding-bottom: 8px; margin-bottom: 10px; }
+    .okf-footer-meta { display: flex; gap: 20px; font-size: 12px; color: #586069; margin-top: 10px; }
+    .okf-api-link { font-size: 11px; color: #0366d6; text-decoration: none; padding: 2px 8px; background: #e1e4e8; border-radius: 12px; }
+    .okf-api-link:hover { background: #0366d6; color: #fff; }
+    .okf-desc { font-size: 13px; color: #586069; margin: 6px 0 10px 0; }
+    .okf-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .tag-badge { background: #e1e4e8; color: #0366d6; text-decoration: none; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
     .badge { padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
     .badge-active { background: #28a745; color: #fff; }
     .badge-draft { background: #ffc107; color: #212529; }
@@ -211,7 +233,7 @@ $template = @'
 </head>
 <body>
     <nav>
-        <h2>📄 ドキュメント一覧</h2>
+        <h2>{5}</h2>
         {1}
     </nav>
     <main>
@@ -252,8 +274,8 @@ foreach ($file in $allMdFiles) {
     $meta     = Get-DocumentMetadata -File $file -RelPath $relPath -MdText $mdText
     $bodyHtml = [Markdig.Markdown]::ToHtml($mdText, $pipeline)
 
-    $okfTopBar   = Get-OkfTopBarHtml -Meta $meta
-    $okfFooter   = Get-OkfFooterCardHtml -Meta $meta
+    $okfTopBar   = Get-OkfTopBarHtml -Meta $meta -Lang $exportLang
+    $okfFooter   = Get-OkfFooterCardHtml -Meta $meta -Lang $exportLang
     $bodyHtml    = $okfTopBar + $bodyHtml + $okfFooter
 
     # 本文中の .md ハイパーリンクを .html に自動変換
@@ -269,7 +291,8 @@ foreach ($file in $allMdFiles) {
     $mermaidUri  = New-Object System.Uri($mermaidDist)
     $relMermaid  = $destUri.MakeRelativeUri($mermaidUri).ToString()
 
-    $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyHtml).Replace("{3}", $relMermaid)
+    $docListTitle = Get-LocalizedStr -Key "doc_list_title" -Lang $exportLang
+    $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyHtml).Replace("{3}", $relMermaid).Replace("{4}", $exportLang).Replace("{5}", $docListTitle)
     $fullHtml = $fullHtml -replace "\r?\n", "`r`n"
 
     [System.IO.File]::WriteAllText($destFile, $fullHtml, [System.Text.Encoding]::UTF8)

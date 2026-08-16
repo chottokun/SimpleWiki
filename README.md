@@ -18,9 +18,16 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
   2. IIS, Nginx, Apache などの外部 Web サーバー向けに一括で静的 HTML サイトを生成・デプロイ。
   3. WinRT 形態素解析と LLM RAG による閉域網・ローカル AI チャットアシスタントの統合。
   4. 高度な検索エンジン（AND/NOT構文・除外検索・インデックスキャッシュ）による高速なナレッジ検索。
-  5. GUI ツール (`Export-GUI.bat`) による直感的なフォルダ選択とエキスポート。
+  5. 多言語化（i18n: 日本語 / 英語 / 外部辞書拡張）によるグローバル対応。
+  6. GUI ツール (`Export-GUI.bat`) による直感的なフォルダ選択とエキスポート。
 - **アーキテクチャ概要**:
   - **リアルタイム閲覧 & OKF ナレッジハブ**: `System.Net.HttpListener` によるローカル Web サーバー (`http://localhost:8080/`)
+  - **🌐 多言語化 (i18n) ＆ 言語セレクタ ＆ 外部辞書拡張 (`lib/WikiI18n.ps1`)**:
+    - **日本語 (`ja`) / 英語 (`en`)** の標準ビルトイン辞書を搭載。
+    - ヘッダーの言語セレクタドロップダウンによるワンクリック即時切り替え（Cookie 保存）。
+    - クエリパラメータ (`?lang=en`) によるダイレクト言語指定および静的エキスポート (`-Language en`) 対応。
+    - ルート直下の `i18n.json` による外部辞書拡張（中国語等の新規言語追加や既存文言の上書き）。
+    - チャットプロンプト（Fast RAG / Agentic RAG）およびコンテキスト見出し・思考ログ・フォールバック回答の自動ローカライズ。
   - **🔍 高度な OKF 検索エンジン ＆ NOT 構文（除外検索） ＆ インデックスキャッシュ**:
     - **WinRT 日本語形態素解析 (`Get-JapaneseWordsWinRT`)**: Windows 10/11 OS 内蔵の `Windows.Data.Text.WordsSegmenter` による完全依存 0 の分かち書き ＆ 助詞ストップワード自動除去。
     - **AND 検索 ＆ フレーズ完全一致ボーナス**: 複数キーワードの絞り込みと自然文フレーズ加点。
@@ -39,7 +46,7 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
     - **高度なチャット UI**: Markdown 表（`<table>`）、コードブロック（`<pre><code>`）、リストの完全描画、`📋 コピー` ボタン、`⛶ 拡大/縮小` トグル、`🧹 履歴クリア` ボタンを標準搭載。
   - **🔒 API Key 暗号化ユーティリティ (`Set-ApiKey.bat` / `Set-ApiKey.ps1`)**:
     - Windows DPAPI またはポータブル AES-256 暗号化（`ENC:...` / `DPAPI:...`）により、`config.json` 内の API キーを安全に保護。
-  - **Google OKF (Open Knowledge Format) 思想の準拠**: YAML Front Matter からの文脈抽出・自動補完 (フォールバック)・OKF メタデータカード描画
+  - **Google OKF (Open Knowledge Format) v0.2 思想の準拠**: YAML Front Matter からの文脈抽出・自動補完 (フォールバック)・Version / Reviewer / Contributors / Related メタデータカード描画
   - **AI エージェント / LLM 用機械可読 API**: `/api/index.json` (メタデータ), `/api/chunks.json` (自動セマンティック分割チャンク), `/api/chat` (AI チャット), `/api/config` (設定管理)
   - **✏️ Web UI 内蔵 Markdown エディター ＆ 世代管理バックアップ・復元 ＆ OKF 構文検証**:
     - Web ブラウザ上からの Markdown インプレース直接編集・保存機能 (`/api/raw`, `/api/save`)。
@@ -47,14 +54,14 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
     - エディターモーダル上での過去世代ドロップダウンプレビュー選択 ＆ ワンクリックでのロールバック復元 UI。
     - 保存時の OKF (YAML Front Matter) 構文エラー自動検出 ＆ マイルドなアドバイス表示 (ソフトLint)。
   - **動的ナビゲーション & ビュー**: 最近の更新 (`/recent`), タグ集計/検索 (`/tags`), 品質・メンテナンスダッシュボード (`/maintenance`), 著者ディレクトリ (`/authors`), AND/NOT 検索 (`/search`), システム設定 (`/settings`)
-  - **静的エキスポート**: `Export-MarkdigWiki.ps1` による OKF メタデータカード同梱型 HTML 一括出力
+  - **静的エキスポート**: `Export-MarkdigWiki.ps1` による OKF v0.2 メタデータカード同梱型 HTML 一括出力（日英多言語対応）
   - **Markdown レンダリング**: .NET 4.6.2 ビルド版 `Markdig.dll` (GFM テーブル・コードブロック・タスクリスト・YamlFrontMatter 対応)
   - **図形・ダイアグラム**: `lib/mermaid.min.js` 同梱による 100% オフライン Mermaid ダイアグラム表示
 - **セキュリティ機能**:
   - `[System.IO.Path]::GetFullPath` による絶対パス判定でのディレクトリトラバーサル防止 (`403 Forbidden`)。
   - `[System.Net.WebUtility]::HtmlEncode` による YAML 属性値・パスの XSS サニタイズ。
 - **ファイルエンコーディング規約 (`AGENTS.md`)**:
-  - スクリプトファイル (`.ps1`): **UTF-8 with BOM (`EF BB BF`)** (Windows PowerShell 5.1 での日本語化け防止)
+  - スクリプトファイル (`.ps1`, `.psm1`, `.psd1`): **UTF-8 with BOM (`EF BB BF`)** (Windows PowerShell 5.1 での日本語化け防止)
   - バッチファイル (`.bat`): **UTF-8 without BOM (No-BOM)** (`cmd.exe` の `・ｿ` エラー防止)
 
 ---
@@ -73,11 +80,13 @@ SimpleWiki/
 ├── Export-GUI.bat          <-- GUI 起動用バッチ (UTF-8 No-BOM)
 ├── config.json.example     <-- 設定ファイルテンプレート
 ├── config.json             <-- ローカル設定（自動生成・暗号化保存）
+├── i18n.json.example       <-- 外部辞書拡張テンプレート
 ├── templates/
-│   └── okf-template.md     <-- OKF 準拠ドキュメント新規作成テンプレート
+│   └── okf-template.md     <-- OKF v0.2 準拠ドキュメント新規作成テンプレート
 ├── lib/
 │   ├── Markdig.dll          <-- .NET Framework 4.6.2 ビルド版 Markdig.dll
 │   ├── System.Memory.dll    <-- .NET 4.8 依存アセンブリ
+│   ├── WikiI18n.ps1         <-- 多言語化 (i18n) 辞書 ＆ 言語判定モジュール
 │   ├── WikiMetadata.ps1     <-- OKF メタデータ抽出 & YAML 構文検証
 │   ├── WikiSearch.ps1       <-- 検索エンジン・WinRT 形態素解析・NOT構文・インデックスキャッシュ
 │   ├── WikiRag.ps1          <-- LLM RAG (Fast/Agentic) ＆ チャット API
@@ -94,7 +103,7 @@ SimpleWiki/
 │   └── images/
 │       └── architecture.svg <-- サンプル SVG 画像
 ├── tests/
-│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全94件)
+│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全110件)
 └── README.md                <-- プロジェクト記録
 ```
 
@@ -171,10 +180,15 @@ SimpleWiki/
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\tests\Start-MarkdigWiki.Tests.ps1"
 ```
-- **検証結果**: 全 94 件の Pester 自動テストが **100% PASS**。
+- **検証結果**: 全 110 件の Pester 自動テストが **100% PASS**。
   - **1. スクリプト構文・AST検証**: 全 `.ps1` ファイルの構文解析・トークン検証に合格
-  - **2. Pester 単体・統合・セキュリティテスト (全 94 件)**:
+  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 110 件)**:
     - Markdig アセンブリロード & GFM パイプライン構築
+    - 多言語化 (i18n) 辞書・言語判定（クエリ/Cookie/設定優先度）・外部辞書 `i18n.json` マージ
+    - 英語・日本語での UI HTML ビュー生成（サイドバー・トップバー・フッター・各動的画面）
+    - チャットプロンプト（Fast RAG / Agentic RAG）およびコンテキスト見出し・思考ログ・フォールバックの多言語化
+    - OKF v0.2 拡張フィールド（Version, Reviewer, Contributors, SupersededBy, Related）およびライフサイクルステータス（stable等）のパースとレンダリング
+    - 完全メタデータ欠落時のスマートフォールバック（ファイル日時欠落時の「不明」扱い保証）
     - ディレクトリトラバーサル防止 (`403 Forbidden`)
     - XSS サニタイズ (404 パス、タイトル、検索フォーム、OKF 属性値)
     - OKF メタデータ解析・YAML パース例外処理・自動補完 (フォールバック)・カンマ区切りタグ対応
@@ -189,8 +203,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\te
     - AI エージェント用 API JSON 出力 (`/api/index.json`)
     - RAG 用セマンティックチャンク自動分割 API 出力 (`/api/chunks.json`)
     - Agentic RAG / Fast RAG AI チャット API (`/api/chat`)
-    - 静的 HTML エキスポート (`Export-MarkdigWiki.ps1`) とトップバー/フッターメタデータカード統合
+    - 静的 HTML エキスポート (`Export-MarkdigWiki.ps1`) の `-Language` オプションとメタデータカード統合
+    - 全 PowerShell ファイルの UTF-8 with BOM およびバッチファイルの UTF-8 No-BOM エンコーディング検証
   - **3. E2E エキスポート検証**: 実フォルダでの全 HTML 相互リンク・CSS/JS 出力検証に成功
+
 
 ---
 

@@ -166,8 +166,8 @@ function Get-DocumentMetadata {
         }
     }
 
-    # LastUpdated
-    $lastUpdated = if ($File) { $File.LastWriteTime } else { Get-Date }
+    # LastUpdated (ファイル時刻 or YAML指定。どちらも無ければ $null で不明扱い)
+    $lastUpdated = if ($File -and (Test-Path $File.FullName)) { $File.LastWriteTime } else { $null }
     if ($yamlDict.ContainsKey("last_updated") -and -not [string]::IsNullOrWhiteSpace($yamlDict["last_updated"])) {
         $parsedDate = [DateTime]::MinValue
         if ([DateTime]::TryParse($yamlDict["last_updated"], [ref]$parsedDate)) {
@@ -175,27 +175,72 @@ function Get-DocumentMetadata {
         }
     }
 
-    # Status (active, draft, deprecated)
+    # Status (OKF v0.2: active, stable, draft, review, in-review, deprecated, archived, obsolete)
     $status = "active"
     if ($yamlDict.ContainsKey("status") -and -not [string]::IsNullOrWhiteSpace($yamlDict["status"])) {
         $st = $yamlDict["status"].ToString().ToLower().Trim()
-        if ($st -in @("active", "draft", "deprecated")) {
+        if ($st -in @("active", "stable", "draft", "review", "in-review", "deprecated", "archived", "obsolete")) {
             $status = $st
         }
     }
 
+    # OKF v0.2: Version
+    $version = ""
+    if ($yamlDict.ContainsKey("version") -and -not [string]::IsNullOrWhiteSpace($yamlDict["version"])) {
+        $version = $yamlDict["version"].ToString().Trim()
+    }
+
+    # OKF v0.2: Reviewer
+    $reviewer = ""
+    if ($yamlDict.ContainsKey("reviewer") -and -not [string]::IsNullOrWhiteSpace($yamlDict["reviewer"])) {
+        $reviewer = $yamlDict["reviewer"].ToString().Trim()
+    }
+
+    # OKF v0.2: SupersededBy (後継ドキュメント)
+    $supersededBy = ""
+    if ($yamlDict.ContainsKey("superseded_by") -and -not [string]::IsNullOrWhiteSpace($yamlDict["superseded_by"])) {
+        $supersededBy = $yamlDict["superseded_by"].ToString().Trim()
+    }
+
+    # OKF v0.2: Contributors (共同執筆者)
+    $contributors = @()
+    if ($yamlDict.ContainsKey("contributors")) {
+        if ($yamlDict["contributors"] -is [System.Collections.IEnumerable] -and $yamlDict["contributors"] -isnot [string]) {
+            $contributors = @($yamlDict["contributors"])
+        } elseif (-not [string]::IsNullOrWhiteSpace($yamlDict["contributors"])) {
+            $rawC = $yamlDict["contributors"].ToString()
+            $contributors = @($rawC -split ',\s*' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        }
+    }
+
+    # OKF v0.2: Related (関連ドキュメント)
+    $related = @()
+    if ($yamlDict.ContainsKey("related")) {
+        if ($yamlDict["related"] -is [System.Collections.IEnumerable] -and $yamlDict["related"] -isnot [string]) {
+            $related = @($yamlDict["related"])
+        } elseif (-not [string]::IsNullOrWhiteSpace($yamlDict["related"])) {
+            $rawR = $yamlDict["related"].ToString()
+            $related = @($rawR -split ',\s*' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        }
+    }
+
     return [PSCustomObject]@{
-        Title       = $title
-        Description = $description
-        Author      = $author
-        Domain      = $domain
-        Tags        = $tags
-        LastUpdated = $lastUpdated
-        Status      = $status
-        HasYaml     = $hasYaml
-        RelPath     = $RelPath
-        FullPath    = if ($File) { $File.FullName } else { "" }
-        BodyText    = $bodyText
+        Title        = $title
+        Description  = $description
+        Author       = $author
+        Domain       = $domain
+        Tags         = $tags
+        LastUpdated  = $lastUpdated
+        Status       = $status
+        Version      = $version
+        Reviewer     = $reviewer
+        SupersededBy = $supersededBy
+        Contributors = $contributors
+        Related      = $related
+        HasYaml      = $hasYaml
+        RelPath      = $RelPath
+        FullPath     = if ($File) { $File.FullName } else { "" }
+        BodyText     = $bodyText
     }
 }
 

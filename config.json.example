@@ -1,4 +1,5 @@
 {
+  "defaultLanguage": "ja",
   "rag": {
     "enabled": false,
     "apiUrl": "http://localhost:11434/v1",
@@ -10,9 +11,10 @@
     "maxAgentTurns": 5,
     "maxDocCharLength": 2000,
     "timeoutSec": 30,
-    "systemPrompt": "あなたはWikiのナレッジを元に回答するアシスタントです。提供されたコンテキスト情報のみに基づいて、正確かつ丁寧に回答してください。情報がない場合は『Wiki内に該当する情報が見つかりませんでした』と答えてください。",
-    "agenticSystemPrompt": "あなたはWikiのナレッジを自律調査して回答する Agentic RAG アシスタントです。目次(index.md)を見つけた場合は必ずリンク先の本文(read_doc)まで参照してください。"
+    "systemPrompt": "あなたはWikiのナレッジを元に回答するアシスタントです。提供されたコンテキスト情報のみに基づいて、正確かつ丁寧に回答してください。情報がない場合は『Wiki内に該当する情報が見つかりませんでした』と答えてください。用語のブレも考慮し、言及したうえで回答します。除外条件（〜以外、〜を除く等）が指定された場合はそれに従ってください。",
+    "agenticSystemPrompt": "あなたはWikiのナレッジを自律調査して回答する Agentic RAG アシスタントです。目次(index.md)を見つけた場合は必ずリンク先の本文(read_doc)まで参照してください。除外条件やノイズ除去には search_okf で '-除外語' や 'NOT 除外語' 構文を活用してください。"
   },
+
   "editor": {
     "maxBackups": 3
   },

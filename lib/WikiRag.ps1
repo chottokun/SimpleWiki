@@ -289,7 +289,9 @@ function Invoke-AgenticRagChat {
         [int]$MaxTurns = 5,
         [int]$MaxDocChars = 2000,
         [int]$TimeoutSec = 30,
-        [PSCustomObject]$CurrentDoc = $null
+        [PSCustomObject]$CurrentDoc = $null,
+        [string]$Lang = "ja",
+        [string]$CustomAgenticPrompt = ""
     )
 
     $targetDir = if (-not [string]::IsNullOrWhiteSpace($WikiDir)) { $WikiDir } else { $script:wikiDir }
@@ -299,17 +301,25 @@ function Invoke-AgenticRagChat {
     $sourcesList = [System.Collections.Generic.List[PSObject]]::new()
     $visitedPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
+    $isEn = ($Lang -eq "en")
+
+    $baseAgenticHeader = if (-not [string]::IsNullOrWhiteSpace($CustomAgenticPrompt)) {
+        $CustomAgenticPrompt
+    } else {
+        Get-LocalizedStr -Key "default_agentic_system_prompt" -Lang $Lang
+    }
+
     $tools = @(
         @{
             type = "function"
             function = @{
                 name = "search_okf"
-                description = "OKFスコアリングによりWiki内のActiveドキュメントを検索します。"
+                description = if ($isEn) { "Searches active Wiki documents using OKF scoring and keyword/NOT filtering." } else { "OKFスコアリングによりWiki内のActiveドキュメントを検索します。" }
                 parameters = @{
                     type = "object"
                     properties = @{
-                        query = @{ type = "string"; description = "検索キーワード (日本語キーワードをそのまま使用。除外したい単語がある場合は '-単語' や 'NOT 単語' が指定可能)" }
-                        domain = @{ type = "string"; description = "絞り込みドメイン (原則は空文字列 '' を指定してWiki全域を検索してください)" }
+                        query = @{ type = "string"; description = if ($isEn) { "Search query keywords (supports NOT syntax like '-word' or 'NOT word')." } else { "検索キーワード (日本語キーワードをそのまま使用。除外したい単語がある場合は '-単語' や 'NOT 単語' が指定可能)" } }
+                        domain = @{ type = "string"; description = if ($isEn) { "Domain filter (specify '' to search all Wiki documents by default)." } else { "絞り込みドメイン (原則は空文字列 '' を指定してWiki全域を検索してください)" } }
                     }
                     required = @("query")
                 }
@@ -319,11 +329,11 @@ function Invoke-AgenticRagChat {
             type = "function"
             function = @{
                 name = "lookup_glossary"
-                description = "用語集 (glossary.md) またはWiki内の記述から特定用語の定義を調べます。"
+                description = if ($isEn) { "Looks up term definitions from glossary.md or Wiki descriptions." } else { "用語集 (glossary.md) またはWiki内の記述から特定用語の定義を調べます。" }
                 parameters = @{
                     type = "object"
                     properties = @{
-                        term = @{ type = "string"; description = "調べたい社内用語" }
+                        term = @{ type = "string"; description = if ($isEn) { "Term to look up" } else { "調べたい社内用語" } }
                     }
                     required = @("term")
                 }
@@ -333,11 +343,11 @@ function Invoke-AgenticRagChat {
             type = "function"
             function = @{
                 name = "read_doc"
-                description = "指定したドキュメントの本文を取得します (YAMLヘッダー除外)。"
+                description = if ($isEn) { "Retrieves the body text of a specified markdown document (YAML header stripped)." } else { "指定したドキュメントの本文を取得します (YAMLヘッダー除外)。" }
                 parameters = @{
                     type = "object"
                     properties = @{
-                        relPath = @{ type = "string"; description = "Markdownファイルの相対パス (例: docs/infrastructure/db.md)" }
+                        relPath = @{ type = "string"; description = if ($isEn) { "Relative path to markdown file (e.g. docs/infrastructure/db.md)" } else { "Markdownファイルの相対パス (例: docs/infrastructure/db.md)" } }
                     }
                     required = @("relPath")
                 }
@@ -347,11 +357,11 @@ function Invoke-AgenticRagChat {
             type = "function"
             function = @{
                 name = "get_linked_docs"
-                description = "指定ドキュメント内に含まれる他のMarkdownファイルへのハイパーリンク一覧を取得します。"
+                description = if ($isEn) { "Retrieves all relative markdown hyperlinks contained within a specified document." } else { "指定ドキュメント内に含まれる他のMarkdownファイルへのハイパーリンク一覧を取得します。" }
                 parameters = @{
                     type = "object"
                     properties = @{
-                        relPath = @{ type = "string"; description = "調査対象のMarkdownファイルパス" }
+                        relPath = @{ type = "string"; description = if ($isEn) { "Path of markdown file to inspect" } else { "調査対象のMarkdownファイルパス" } }
                     }
                     required = @("relPath")
                 }
@@ -359,7 +369,19 @@ function Invoke-AgenticRagChat {
         }
     )
 
-    $sysPrompt = "あなたは社内Wikiのナレッジを自律調査して回答する Agentic RAG アシスタントです。`n" +
+    $sysPrompt = if ($isEn) {
+        "$baseAgenticHeader`n" +
+        "【Autonomous Exploration & Knowledge Expansion Rules】`n" +
+        "1. If direct keyword matches or explicit answers are scarce, do NOT give up with 'No information found'.`n" +
+        "2. Actively explore and drill down using `read_doc` on candidates returned by `search_okf` (top 5) and related links from `get_linked_docs`.`n" +
+        "3. Even if there is no direct answer, present related specifications, guidelines, or relevant background knowledge gathered during investigation clearly.`n" +
+        "4. Use search keywords without unwarranted modification or translation unless necessary.`n" +
+        "5. Specify an empty string '' for the domain parameter in search_okf to search broadly across the entire Wiki by default.`n" +
+        "6. Avoid deprecated content (status: deprecated) and rely on active information.`n" +
+        "7. If the user requests exclusions (e.g. 'excluding X', 'without Y'), use `-keyword` or `NOT keyword` syntax in `search_okf`.`n" +
+        "8. Reply in English with clear Markdown formatting."
+    } else {
+        "$baseAgenticHeader`n" +
         "【自律探索・キーワード限界突破ルール】`n" +
         "1. 質問に対する直接の単語一致・該当記述が見つからない・薄い場合でも『該当なし』で諦めないでください。`n" +
         "2. `search_okf` で得られた候補ドキュメント（上位 5 件）や `get_linked_docs` の関連リンクを積極的に `read_doc` で回遊・深掘りし、周辺知識や関連ガイドラインを探索してください。`n" +
@@ -368,6 +390,8 @@ function Invoke-AgenticRagChat {
         "5. search_okf の domain パラメータは原則として空文字列 '' を指定し、Wiki 全域から広範にドキュメントを検索してください。`n" +
         "6. 非推奨 (status: deprecated) の記述は避け、常に現行 (active) 情報のみを根拠にしてください。`n" +
         "7. ユーザーが『〇〇以外』『〇〇を除いて』等の除外条件を求めている場合や、ノイズを除去したい場合は、`search_okf` の query に `-除外語` や `NOT 除外語`（例: 'サーバー -Windows', 'API NOT deprecated'）を活用してください。"
+    }
+
 
     if ($CurrentDoc -and $CurrentDoc.RelPath) {
         if (-not $visitedPaths.Contains($CurrentDoc.RelPath)) {
@@ -377,14 +401,22 @@ function Invoke-AgenticRagChat {
         if ($currSnippet -and $currSnippet.Length -gt 1500) {
             $currSnippet = $currSnippet.Substring(0, 1500) + "..."
         }
-        $sysPrompt += "`n`n【現在ユーザーが開いているページのコンテキスト】`n" +
-            "・タイトル: $($CurrentDoc.Title)`n" +
-            "・相対パス: $($CurrentDoc.RelPath)`n" +
-            "・本文:`n$currSnippet"
+        if ($isEn) {
+            $sysPrompt += "`n`n【Context of Current Page Open in User's Browser】`n" +
+                "・Title: $($CurrentDoc.Title)`n" +
+                "・Relative Path: $($CurrentDoc.RelPath)`n" +
+                "・Body:`n$currSnippet"
+        } else {
+            $sysPrompt += "`n`n【現在ユーザーが開いているページのコンテキスト】`n" +
+                "・タイトル: $($CurrentDoc.Title)`n" +
+                "・相対パス: $($CurrentDoc.RelPath)`n" +
+                "・本文:`n$currSnippet"
+        }
     }
 
     $messages = [System.Collections.Generic.List[PSObject]]::new()
     [void]$messages.Add(@{ role = "system"; content = $sysPrompt })
+
 
     if ($History -and $History.Count -gt 0) {
         foreach ($h in $History) {
@@ -500,13 +532,14 @@ function Invoke-AgenticRagChat {
                         $links = Invoke-ToolGetLinkedDocs -RelPath $p -WikiDir $targetDir
                         if ($links -and $links.Count -gt 0) {
                             $linkStrList = foreach ($l in $links) { "・[$($l.LinkText)]($($l.RelPath)) [Status: $($l.Status)]" }
-                            $toolResult = "リンク一覧:`n" + ($linkStrList -join "`n")
+                            $headerTxt = if ($isEn) { "Link List:" } else { "リンク一覧:" }
+                            $toolResult = "$headerTxt`n" + ($linkStrList -join "`n")
                         } else {
-                            $toolResult = "リンクは見つかりませんでした。"
+                            $toolResult = if ($isEn) { "No hyperlinks found in document." } else { "リンクは見つかりませんでした。" }
                         }
                     }
                     default {
-                        $toolResult = "未知のツール名: $fnName"
+                        $toolResult = if ($isEn) { "Unknown tool name: $fnName" } else { "未知のツール名: $fnName" }
                     }
                 }
 
@@ -517,8 +550,11 @@ function Invoke-AgenticRagChat {
                 })
             }
         } else {
-            $finalAnswer = $resMsg.content
-            break
+            # ツール呼び出しを行わずに最終回答が返ってきた場合
+            if ($resMsg.content) {
+                $finalAnswer = $resMsg.content
+                break
+            }
         }
     }
 
@@ -539,8 +575,14 @@ function Invoke-AgenticRagChat {
     }
 
     if ([string]::IsNullOrWhiteSpace($finalAnswer)) {
-        [void]$thinkingLog.Add("⏱️ ターン上限 ($MaxTurns) に達したため、収集情報から要約回答を生成します。")
-        [void]$messages.Add(@{ role = "user"; content = "※これ以上のツール呼び出しを行わず、ここまでに取得・探索した情報を元に結論をテキストで最終出力してください。質問に対する完全な直接回答が無い場合でも『該当なし』で終わらせず、探索したドキュメントから得られる関連知識や補足情報を分かりやすく提示してください。" })
+        $maxTurnsLog = if ($isEn) { "⏱️ Reached turn limit ($MaxTurns); generating summarized answer from gathered knowledge." } else { "⏱️ ターン上限 ($MaxTurns) に達したため、収集情報から要約回答を生成します。" }
+        [void]$thinkingLog.Add($maxTurnsLog)
+        $fallbackUserPrompt = if ($isEn) {
+            "※Output your final conclusion as text based on the information gathered so far without making further tool calls. Even if there is no direct answer, clearly present related knowledge, specifications, and helpful information gathered from the explored documents in English."
+        } else {
+            "※これ以上のツール呼び出しを行わず、ここまでに取得・探索した情報を元に結論をテキストで最終出力してください。質問に対する完全な直接回答が無い場合でも『該当なし』で終わらせず、探索したドキュメントから得られる関連知識や補足情報を分かりやすく提示してください。"
+        }
+        [void]$messages.Add(@{ role = "user"; content = $fallbackUserPrompt })
 
         $payloadObj = @{
             model       = $Model
@@ -581,12 +623,21 @@ function Invoke-AgenticRagChat {
 
         if ([string]::IsNullOrWhiteSpace($finalAnswer)) {
             if ($visitedPaths.Count -gt 0) {
-                $finalAnswer = "Wiki 内を自律調査しましたが、質問に完全一致する直接記述は見つかりませんでした。\n\n### 調査した関連ドキュメント\n" + (($visitedPaths | ForEach-Object { "- [$_]($_)" }) -join "`n")
+                if ($isEn) {
+                    $finalAnswer = "I autonomously investigated the Wiki, but could not find a direct mention exactly matching your query.\n\n### Investigated Related Documents\n" + (($visitedPaths | ForEach-Object { "- [$_]($_)" }) -join "`n")
+                } else {
+                    $finalAnswer = "Wiki 内を自律調査しましたが、質問に完全一致する直接記述は見つかりませんでした。\n\n### 調査した関連ドキュメント\n" + (($visitedPaths | ForEach-Object { "- [$_]($_)" }) -join "`n")
+                }
             } else {
-                $finalAnswer = "Wiki 内を自律検索しましたが、質問に直接該当する明確な記載は見つかりませんでした。関連するガイド（`guides/環境構築.md` や `docs/詳細仕様.md` など）を参照してください。"
+                if ($isEn) {
+                    $finalAnswer = "I searched the Wiki, but could not find any direct mention matching your query. Please refer to relevant guide documents."
+                } else {
+                    $finalAnswer = "Wiki 内を自律検索しましたが、質問に直接該当する明確な記載は見つかりませんでした。関連するガイド（`guides/環境構築.md` や `docs/詳細仕様.md` など）を参照してください。"
+                }
             }
         }
     }
+
 
     return [PSCustomObject]@{
         answer      = $finalAnswer

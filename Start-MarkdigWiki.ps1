@@ -49,11 +49,14 @@ Get-ChildItem -Path $libDir -Filter "*.dll" | ForEach-Object {
 # --- OKF YAML Front Matter 構文検証関数 ---
 
 # --- モジュールのロード (lib/*.ps1) ---
+. (Join-Path $libDir "WikiI18n.ps1")
 . (Join-Path $libDir "WikiMetadata.ps1")
 . (Join-Path $libDir "WikiSecurity.ps1")
 . (Join-Path $libDir "WikiSearch.ps1")
 . (Join-Path $libDir "WikiRag.ps1")
 . (Join-Path $libDir "WikiViews.ps1")
+
+Import-ExternalI18n -TargetScriptDir $scriptDir
 
 function Write-SafeHttpResponse {
     param (
@@ -131,6 +134,8 @@ try {
         try {
             $rawPath = [System.Net.WebUtility]::UrlDecode($request.Url.LocalPath)
             $queryParams = Get-QueryParams -Request $request
+            $config = Get-ConfigJson -TargetScriptDir $scriptDir
+            $reqLang = Get-RequestLanguage -QueryParams $queryParams -Cookies $request.Cookies -Config $config
 
             # 1. API エンドポイント (/api/config, /api/index.json, /api/chunks.json, /api/chat)
             if ($rawPath -eq "/api/config") {
@@ -527,6 +532,9 @@ try {
                     }
                 }
 
+                $chatLang = if ($reqObj -and $reqObj.lang) { $reqObj.lang.ToString().ToLower().Trim() } else { $reqLang }
+                if (-not $script:I18n.ContainsKey($chatLang)) { $chatLang = "ja" }
+
                 if ($reqMode -eq "agentic") {
                     # --- Agentic RAG Mode (ReAct 自律調査) ---
                     $maxTurns = 5
@@ -538,8 +546,10 @@ try {
                         $maxDocChars = [int]$config.rag.maxDocCharLength
                     }
 
+                    $customAgenticPrompt = if ($config.rag -and $config.rag.agenticSystemPrompt) { $config.rag.agenticSystemPrompt } else { "" }
+
                     try {
-                        $agentRes = Invoke-AgenticRagChat -ApiUrl $config.rag.apiUrl -ApiKey $config.rag.apiKey -Model $config.rag.model -UserMessage $userMsg -History $processedHistory -WikiDir $wikiDir -MaxTurns $maxTurns -MaxDocChars $maxDocChars -TimeoutSec $timeoutSec -CurrentDoc $currDoc
+                        $agentRes = Invoke-AgenticRagChat -ApiUrl $config.rag.apiUrl -ApiKey $config.rag.apiKey -Model $config.rag.model -UserMessage $userMsg -History $processedHistory -WikiDir $wikiDir -MaxTurns $maxTurns -MaxDocChars $maxDocChars -TimeoutSec $timeoutSec -CurrentDoc $currDoc -Lang $chatLang -CustomAgenticPrompt $customAgenticPrompt
                         $jsonRes = @{
                             mode        = "agentic"
                             answer      = $agentRes.answer
@@ -557,7 +567,7 @@ try {
                 # --- Fast RAG Mode (1-Pass) ---
                 # 1. OKF 文脈検索 (WinRT 形態素解析エンジン)
                 Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
-                $activeDocs = @($script:WikiIndex | Where-Object { $_.Status -eq "active" })
+                $activeDocs = @($script:WikiIndex | Where-Object { $_.Status -in @("active", "stable") })
 
                 $maxDocs = 3
                 if ($config.rag -and $config.rag.maxContextDocs) {
@@ -620,6 +630,8 @@ try {
                 $contextStrBuilder = [System.Text.StringBuilder]::new()
                 $sourcesList = [System.Collections.Generic.List[PSObject]]::new()
 
+                $isChatEn = ($chatLang -eq "en")
+
                 foreach ($cDoc in $contextDocs) {
                     $relUri = "/" + [Uri]::EscapeUriString($cDoc.RelPath.Replace('\', '/'))
                     $sourcesList.Add([PSCustomObject]@{
@@ -635,20 +647,30 @@ try {
                         $snippet = $snippet.Substring(0, 800) + "..."
                     }
                     [void]$contextStrBuilder.AppendLine("---")
-                    [void]$contextStrBuilder.AppendLine("■ ドキュメント: $($cDoc.Title)")
-                    [void]$contextStrBuilder.AppendLine("・ドメイン: $($cDoc.Domain)")
-                    [void]$contextStrBuilder.AppendLine("・著者: $($cDoc.Author)")
-                    [void]$contextStrBuilder.AppendLine("・最終更新日: $($cDoc.LastUpdated.ToString('yyyy-MM-dd'))")
-                    [void]$contextStrBuilder.AppendLine("・ステータス: $($cDoc.Status) (現行)")
-                    [void]$contextStrBuilder.AppendLine("本文:")
+                    if ($isChatEn) {
+                        [void]$contextStrBuilder.AppendLine("■ Document: $($cDoc.Title)")
+                        [void]$contextStrBuilder.AppendLine("・Domain: $($cDoc.Domain)")
+                        [void]$contextStrBuilder.AppendLine("・Author: $($cDoc.Author)")
+                        [void]$contextStrBuilder.AppendLine("・Last Updated: $($cDoc.LastUpdated.ToString('yyyy-MM-dd'))")
+                        [void]$contextStrBuilder.AppendLine("・Status: $($cDoc.Status) (active)")
+                        [void]$contextStrBuilder.AppendLine("Body:")
+                    } else {
+                        [void]$contextStrBuilder.AppendLine("■ ドキュメント: $($cDoc.Title)")
+                        [void]$contextStrBuilder.AppendLine("・ドメイン: $($cDoc.Domain)")
+                        [void]$contextStrBuilder.AppendLine("・著者: $($cDoc.Author)")
+                        [void]$contextStrBuilder.AppendLine("・最終更新日: $($cDoc.LastUpdated.ToString('yyyy-MM-dd'))")
+                        [void]$contextStrBuilder.AppendLine("・ステータス: $($cDoc.Status) (現行)")
+                        [void]$contextStrBuilder.AppendLine("本文:")
+                    }
                     [void]$contextStrBuilder.AppendLine($snippet)
                 }
 
-                $baseSysPrompt = "あなたは社内Wikiのナレッジを元に回答するアシスタントです。"
+                $baseSysPrompt = Get-LocalizedStr -Key "default_system_prompt" -Lang $chatLang
                 if ($config.rag -and $config.rag.systemPrompt) {
                     $baseSysPrompt = $config.rag.systemPrompt
                 }
-                $fullSysPrompt = $baseSysPrompt + [System.Environment]::NewLine + [System.Environment]::NewLine + "[参照Wikiコンテキスト]" + [System.Environment]::NewLine + $contextStrBuilder.ToString()
+                $ctxHeader = if ($isChatEn) { "[Referenced Wiki Context]" } else { "[参照Wikiコンテキスト]" }
+                $fullSysPrompt = $baseSysPrompt + [System.Environment]::NewLine + [System.Environment]::NewLine + $ctxHeader + [System.Environment]::NewLine + $contextStrBuilder.ToString()
 
                 # 3. LLM 呼び出し
                 try {
@@ -666,6 +688,7 @@ try {
                 continue
             }
 
+
             # 2. 動的ビュー判定
             $isDynamicView = $false
             $bodyContent   = ""
@@ -673,34 +696,34 @@ try {
 
             if ($rawPath -eq "/recent") {
                 $isDynamicView = $true
-                $pageTitle     = "最近の更新"
-                $bodyContent   = Get-RecentViewHtml
+                $pageTitle     = Get-LocalizedStr -Key "recent_updates_title" -Lang $reqLang
+                $bodyContent   = Get-RecentViewHtml -Lang $reqLang
             } elseif ($rawPath -eq "/tags") {
                 $isDynamicView = $true
                 $tagParam      = $queryParams["tag"]
-                $pageTitle     = if ($tagParam) { "タグ: $tagParam" } else { "タグ一覧" }
-                $bodyContent   = Get-TagsViewHtml -SelectedTag $tagParam
+                $pageTitle     = if ($tagParam) { Get-LocalizedStr -Key "tag_results_title" -Lang $reqLang -FormatArgs @($tagParam) } else { Get-LocalizedStr -Key "tag_list_title" -Lang $reqLang }
+                $bodyContent   = Get-TagsViewHtml -SelectedTag $tagParam -Lang $reqLang
             } elseif ($rawPath -eq "/maintenance") {
                 $isDynamicView = $true
-                $pageTitle     = "品質・メンテナンス"
-                $bodyContent   = Get-MaintenanceViewHtml
+                $pageTitle     = Get-LocalizedStr -Key "maint_dashboard_title" -Lang $reqLang
+                $bodyContent   = Get-MaintenanceViewHtml -Lang $reqLang
             } elseif ($rawPath -eq "/authors") {
                 $isDynamicView = $true
                 $authorParam   = $queryParams["name"]
-                $pageTitle     = if ($authorParam) { "著者: $authorParam" } else { "著者一覧" }
-                $bodyContent   = Get-AuthorsViewHtml -SelectedAuthor $authorParam
+                $pageTitle     = if ($authorParam) { Get-LocalizedStr -Key "author_results_title" -Lang $reqLang -FormatArgs @($authorParam) } else { Get-LocalizedStr -Key "author_list_title" -Lang $reqLang }
+                $bodyContent   = Get-AuthorsViewHtml -SelectedAuthor $authorParam -Lang $reqLang
             } elseif ($rawPath -eq "/settings") {
                 $isDynamicView = $true
-                $pageTitle     = "システム設定"
-                $bodyContent   = Get-SettingsViewHtml
+                $pageTitle     = Get-LocalizedStr -Key "settings_title" -Lang $reqLang
+                $bodyContent   = Get-SettingsViewHtml -Lang $reqLang
             } elseif ($rawPath -eq "/search") {
                 $isDynamicView = $true
                 $qParam        = $queryParams["q"]
                 $stParam       = $queryParams["status"]
                 $domParam      = $queryParams["domain"]
                 $stValue       = if (-not [string]::IsNullOrWhiteSpace($stParam)) { $stParam } else { "active" }
-                $pageTitle     = if ($qParam) { "検索: $qParam" } else { "検索" }
-                $bodyContent   = Get-SearchViewHtml -Query $qParam -StatusFilter $stValue -DomainFilter $domParam
+                $pageTitle     = if ($qParam) { (Get-LocalizedStr -Key "search_btn" -Lang $reqLang) + ": " + $qParam } else { Get-LocalizedStr -Key "search_btn" -Lang $reqLang }
+                $bodyContent   = Get-SearchViewHtml -Query $qParam -StatusFilter $stValue -DomainFilter $domParam -Lang $reqLang
             }
 
             $relPath  = $rawPath.TrimStart("/").Replace("/", "\")
@@ -736,7 +759,7 @@ try {
                     $isDynamicView = $true
                     $dirName       = if ([string]::IsNullOrEmpty($relPath.TrimEnd('\'))) { "ルート" } else { [System.Net.WebUtility]::HtmlEncode($relPath.TrimEnd('\').Replace('\', ' / ')) }
                     $pageTitle     = "📁 $dirName - フォルダ一覧"
-                    $bodyContent   = Get-DirectoryListingHtml -DirFullPath $fullPath -RawUrlPath $rawPath
+                    $bodyContent   = Get-DirectoryListingHtml -DirFullPath $fullPath -RawUrlPath $rawPath -Lang $reqLang
                 }
             }
 
@@ -754,17 +777,17 @@ try {
                     $pipeline = $builder.Build()
                     $renderedHtml = [Markdig.Markdown]::ToHtml($mdText, $pipeline)
 
-                    $okfTopBar   = Get-OkfTopBarHtml -Meta $meta -RelPath $relPath
-                    $okfFooter   = Get-OkfFooterCardHtml -Meta $meta
+                    $okfTopBar   = Get-OkfTopBarHtml -Meta $meta -RelPath $relPath -Lang $reqLang
+                    $okfFooter   = Get-OkfFooterCardHtml -Meta $meta -Lang $reqLang
                     $bodyContent = $okfTopBar + $renderedHtml + $okfFooter
                     $pageTitle   = [System.Net.WebUtility]::HtmlEncode($meta.Title)
                 }
 
-                $sidebarHtml = Get-SidebarHtml -currentRelPath $relPath
+                $sidebarHtml = Get-SidebarHtml -currentRelPath $relPath -Lang $reqLang
 
                 $template = @'
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="{18}">
 <head>
 <meta charset="UTF-8">
 <title>{0} - SimpleWiki OKF</title>
@@ -849,22 +872,27 @@ try {
     <header class="top-header">
         <a href="/" class="brand">📖 SimpleWiki <span class="badge badge-active">OKF</span></a>
         <nav class="top-nav">
-            <a href="/">🏠 Home</a>
-            <a href="/recent">🕒 最近の更新</a>
-            <a href="/tags">🏷️ タグ一覧</a>
-            <a href="/maintenance">🧹 メンテナンス</a>
-            <a href="/authors">👥 著者一覧</a>
-            <a href="/settings">⚙️ 設定</a>
-            <a href="/api/index.json" target="_blank">🤖 API (JSON)</a>
+            <a href="/">{3}</a>
+            <a href="/recent">{4}</a>
+            <a href="/tags">{5}</a>
+            <a href="/maintenance">{6}</a>
+            <a href="/authors">{7}</a>
+            <a href="/settings">{19}</a>
+            <a href="/api/index.json" target="_blank">{8}</a>
         </nav>
-        <form action="/search" method="GET" accept-charset="UTF-8" class="search-form">
-            <input type="text" name="q" placeholder="Wikiを検索..." required>
-            <button type="submit">検索</button>
-        </form>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <select id="wikiLangSelect" onchange="switchWikiLanguage(this.value)" style="padding: 4px 8px; font-size: 12px; border: 1px solid #444; border-radius: 4px; background: #2f363d; color: #fff; cursor: pointer;">
+                {9}
+            </select>
+            <form action="/search" method="GET" accept-charset="UTF-8" class="search-form">
+                <input type="text" name="q" placeholder="{10}" required>
+                <button type="submit">{11}</button>
+            </form>
+        </div>
     </header>
     <div class="layout-container">
         <nav class="sidebar">
-            <h2>📄 ドキュメント一覧</h2>
+            <h2>{12}</h2>
             {1}
         </nav>
         <main>
@@ -879,19 +907,19 @@ try {
         <div class="wiki-editor-container">
             <div class="wiki-editor-header">
                 <div style="display: flex; align-items: center; gap: 12px;">
-                    <span>📝 Markdown エディター</span>
+                    <span>{13}</span>
                     <select id="wikiEditorHistorySelect" onchange="loadWikiHistoryVersion(this)" style="background: #24292e; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 2px 6px; font-size: 12px; cursor: pointer;">
-                        <option value="">最新版 (編集用)</option>
+                        <option value="">{14}</option>
                     </select>
                 </div>
                 <span style="font-size: 12px; color: #ccc;" id="wikiEditorPath"></span>
             </div>
             <div class="wiki-editor-body">
-                <textarea id="wikiEditorTextarea" class="wiki-editor-textarea" placeholder="Markdown を記述してください..."></textarea>
+                <textarea id="wikiEditorTextarea" class="wiki-editor-textarea" placeholder="{15}"></textarea>
             </div>
             <div class="wiki-editor-footer">
-                <button class="wiki-editor-cancel-btn" onclick="closeWikiEditor()">キャンセル</button>
-                <button class="wiki-editor-save-btn" onclick="saveWikiMarkdown()">保存</button>
+                <button class="wiki-editor-cancel-btn" onclick="closeWikiEditor()">{16}</button>
+                <button class="wiki-editor-save-btn" onclick="saveWikiMarkdown()">{17}</button>
             </div>
         </div>
     </div>
@@ -905,7 +933,7 @@ try {
             document.getElementById("wikiEditorModal").style.display = "flex";
 
             const selectEl = document.getElementById("wikiEditorHistorySelect");
-            selectEl.innerHTML = '<option value="">最新版 (編集用)</option>';
+            selectEl.innerHTML = '<option value="">{14}</option>';
 
             fetch("/api/raw?relPath=" + encodeURIComponent(relPath))
                 .then(res => res.json())
@@ -959,6 +987,11 @@ try {
                 .catch(err => {
                     document.getElementById("wikiEditorTextarea").value = "エラー: " + err;
                 });
+        }
+
+        function switchWikiLanguage(lang) {
+            document.cookie = "lang=" + lang + "; path=/; max-age=31536000";
+            location.reload();
         }
 
         function closeWikiEditor() {
@@ -1034,11 +1067,42 @@ try {
 </body>
 </html>
 '@
-                $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent)
-
+                $chatWidgetHtml = ""
                 $config = Get-ConfigJson -TargetScriptDir $scriptDir
                 if ($config.rag -and $config.rag.enabled) {
-                    $chatWidgetHtml = Get-ChatWidgetHtml
+                    $chatWidgetHtml = Get-ChatWidgetHtml -Lang $reqLang
+                }
+
+                $navHome      = Get-LocalizedStr -Key "home" -Lang $reqLang
+                $navRecent    = Get-LocalizedStr -Key "recent_updates" -Lang $reqLang
+                $navTags      = Get-LocalizedStr -Key "tags" -Lang $reqLang
+                $navMaint     = Get-LocalizedStr -Key "maintenance" -Lang $reqLang
+                $navAuthors   = Get-LocalizedStr -Key "authors" -Lang $reqLang
+                $navSettings  = Get-LocalizedStr -Key "settings" -Lang $reqLang
+                $navApi       = Get-LocalizedStr -Key "api_json" -Lang $reqLang
+                $searchHolder = Get-LocalizedStr -Key "search_placeholder" -Lang $reqLang
+                $searchBtnTxt = Get-LocalizedStr -Key "search_btn" -Lang $reqLang
+                $docListTitle = Get-LocalizedStr -Key "doc_list_title" -Lang $reqLang
+                $edTitle      = Get-LocalizedStr -Key "editor_title" -Lang $reqLang
+                $edLatest     = Get-LocalizedStr -Key "editor_latest_version" -Lang $reqLang
+                $edHolder     = Get-LocalizedStr -Key "editor_placeholder" -Lang $reqLang
+                $edCancel     = Get-LocalizedStr -Key "editor_cancel_btn" -Lang $reqLang
+                $edSave       = Get-LocalizedStr -Key "editor_save_btn" -Lang $reqLang
+
+                $langOptionsHtml = foreach ($k in ($script:I18n.Keys | Sort-Object)) {
+                    $sel = if ($k -eq $reqLang) { "selected" } else { "" }
+                    $label = switch ($k) {
+                        "ja" { "日本語 (JP)" }
+                        "en" { "English (EN)" }
+                        default { $k.ToUpper() }
+                    }
+                    "<option value='$k' $sel>$label</option>"
+                }
+                $langOptionsStr = $langOptionsHtml -join ""
+
+                $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{13}", $edTitle).Replace("{14}", $edLatest).Replace("{15}", $edHolder).Replace("{16}", $edCancel).Replace("{17}", $edSave).Replace("{18}", $reqLang).Replace("{19}", $navSettings)
+
+                if (-not [string]::IsNullOrWhiteSpace($chatWidgetHtml)) {
                     $fullHtml = $fullHtml.Replace("</body>", "$chatWidgetHtml`n</body>")
                 }
 

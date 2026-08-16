@@ -5,7 +5,10 @@
 # ==============================================================================
 
 function Get-SidebarHtml {
-    param ($currentRelPath)
+    param (
+        $currentRelPath,
+        [string]$Lang = "ja"
+    )
 
     if ($null -eq $script:SidebarCachedHtml -or [string]::IsNullOrEmpty($script:SidebarCachedHtml)) {
         if ($null -eq $script:SidebarMdFiles -or $script:SidebarMdFiles.Count -eq 0) {
@@ -16,47 +19,53 @@ function Get-SidebarHtml {
 
         $treeNode = Build-ServerFileTreeNode -allMdFiles $script:SidebarMdFiles -wikiDir $wikiDir
         $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath "" -wikiDir $wikiDir
+        $script:SidebarCachedHtml = $treeHtml
+    }
 
-        $refreshButtonHtml = @'
+    $clearCacheText = Get-LocalizedStr -Key "sidebar_clear_cache" -Lang $Lang
+    $procText       = Get-LocalizedStr -Key "sidebar_processing" -Lang $Lang
+    $failText       = Get-LocalizedStr -Key "sidebar_clear_failed" -Lang $Lang
+    $errText        = Get-LocalizedStr -Key "sidebar_error" -Lang $Lang
+
+    $refreshButtonHtml = @"
 <div style="margin-top: 20px; padding: 10px; border-top: 1px solid #e1e4e8;">
     <button onclick="refreshWikiSidebarCache(this)" style="width: 100%; padding: 6px 12px; font-size: 12px; background: #fff; border: 1px solid #d1d5da; border-radius: 6px; cursor: pointer; color: #586069; display: flex; align-items: center; justify-content: center; gap: 4px;">
-        🔄 キャッシュクリア
+        $clearCacheText
     </button>
 </div>
 <script>
 function refreshWikiSidebarCache(btn) {
     btn.disabled = true;
-    btn.innerText = "⏳ 処理中...";
+    btn.innerText = "$procText";
     fetch('/api/clear-cache')
         .then(res => res.json())
         .then(data => {
             if (data.success) {
                 location.reload();
             } else {
-                alert("キャッシュクリアに失敗しました。");
+                alert("$failText");
                 btn.disabled = false;
-                btn.innerText = "🔄 キャッシュクリア";
+                btn.innerText = "$clearCacheText";
             }
         })
         .catch(err => {
-            alert("エラーが発生しました。");
+            alert("$errText");
             btn.disabled = false;
-            btn.innerText = "🔄 キャッシュクリア";
+            btn.innerText = "$clearCacheText";
         });
 }
 </script>
-'@
-        $script:SidebarCachedHtml = $treeHtml + $refreshButtonHtml
-    }
+"@
 
-    return $script:SidebarCachedHtml
+    return $script:SidebarCachedHtml + $refreshButtonHtml
 }
 
 # --- ディレクトリ一覧 HTML 生成関数 ---
 function Get-DirectoryListingHtml {
     param (
         [string]$DirFullPath,
-        [string]$RawUrlPath
+        [string]$RawUrlPath,
+        [string]$Lang = "ja"
     )
 
     $cleanUrl = $RawUrlPath.TrimEnd("/")
@@ -78,10 +87,12 @@ function Get-DirectoryListingHtml {
     $mdFiles = Get-ChildItem -LiteralPath $DirFullPath -Filter "*.md" -File -ErrorAction SilentlyContinue | Sort-Object Name
 
     if ($subDirs.Count -eq 0 -and $mdFiles.Count -eq 0) {
-        $html += "<p>このフォルダにはコンテンツがありません。</p>`n"
+        $noContentText = Get-LocalizedStr -Key "no_content" -Lang $Lang
+        $html += "<p>$noContentText</p>`n"
     } else {
         $totalCount = $subDirs.Count + $mdFiles.Count
-        $html += "<p style='color:#586069; font-size:13px;'>$totalCount 件のアイテム</p>`n"
+        $itemsCountText = Get-LocalizedStr -Key "items_count" -Lang $Lang -FormatArgs @($totalCount)
+        $html += "<p style='color:#586069; font-size:13px;'>$itemsCountText</p>`n"
         $html += "<ul class='dir-listing-list'>`n"
 
         foreach ($dir in $subDirs) {
@@ -101,7 +112,8 @@ function Get-DirectoryListingHtml {
         $html += "</ul>`n"
     }
 
-    $html += "<div class='dir-listing-notice'>ℹ️ index.md / README.md がないため、フォルダ一覧を表示しています。</div>`n"
+    $noIndexWarningText = Get-LocalizedStr -Key "no_index_warning" -Lang $Lang
+    $html += "<div class='dir-listing-notice'>$noIndexWarningText</div>`n"
 
     return $html
 }
@@ -110,15 +122,27 @@ function Get-DirectoryListingHtml {
 function Get-OkfTopBarHtml {
     param (
         [Parameter(Mandatory = $true)]$Meta,
-        [string]$RelPath = ""
+        [string]$RelPath = "",
+        [string]$Lang = "ja"
     )
 
-    $domain      = [System.Net.WebUtility]::HtmlEncode($Meta.Domain)
+    $domain = [System.Net.WebUtility]::HtmlEncode($Meta.Domain)
     $statusBadge = switch ($Meta.Status) {
-        "draft"      { '<span class="badge badge-draft">📝 Draft</span>' }
-        "deprecated" { '<span class="badge badge-deprecated">🗑️ Deprecated</span>' }
-        default      { '<span class="badge badge-active">✅ Active</span>' }
+        "draft"       { '<span class="badge badge-draft">📝 Draft</span>' }
+        "wip"         { '<span class="badge badge-draft">📝 WIP</span>' }
+        "review"      { '<span class="badge badge-draft" style="background:#fff3cd; color:#856404; border-color:#ffeeba;">🔍 Review</span>' }
+        "in-review"   { '<span class="badge badge-draft" style="background:#fff3cd; color:#856404; border-color:#ffeeba;">🔍 Review</span>' }
+        "deprecated"  { '<span class="badge badge-deprecated">🗑️ Deprecated</span>' }
+        "archived"    { '<span class="badge badge-deprecated" style="background:#fbe9e7; color:#c62828; border-color:#ffccbc;">📦 Archived</span>' }
+        "obsolete"    { '<span class="badge badge-deprecated">🗑️ Obsolete</span>' }
+        "stable"      { '<span class="badge badge-active" style="background:#e8f4fd; color:#0366d6; border-color:#c8e1ff;">🌟 Stable</span>' }
+        default       { '<span class="badge badge-active">✅ Active</span>' }
     }
+
+    $verBadge = if ($Meta.Version -and -not [string]::IsNullOrWhiteSpace($Meta.Version)) {
+        $encVer = [System.Net.WebUtility]::HtmlEncode($Meta.Version)
+        "<span class='badge badge-active' style='background:#e1e4e8; color:#24292e; border:none; font-weight:normal;'>v$encVer</span>"
+    } else { "" }
 
     $tagsHtml = ""
     if ($Meta.Tags -and $Meta.Tags.Count -gt 0) {
@@ -130,14 +154,24 @@ function Get-OkfTopBarHtml {
         $tagsHtml = "<div class='okf-tags'>" + ($tagBadges -join " ") + "</div>"
     }
 
-    $warningBanner = if ($Meta.Status -eq "deprecated") {
-        '<div class="warning-banner">⚠️ <strong>警告: 非推奨ドキュメント</strong><br>このドキュメントは非推奨または旧版です。最新の情報を参照してください。</div>'
+    $isDep = ($Meta.Status -in @("deprecated", "archived", "obsolete"))
+    $warningBanner = if ($isDep) {
+        $warnText = Get-LocalizedStr -Key "warning_deprecated" -Lang $Lang
+        $supersededHtml = ""
+        if ($Meta.SupersededBy -and -not [string]::IsNullOrWhiteSpace($Meta.SupersededBy)) {
+            $supNotice = Get-LocalizedStr -Key "superseded_by_notice" -Lang $Lang
+            $encSup = [System.Net.WebUtility]::HtmlEncode($Meta.SupersededBy)
+            $urlSup = "/" + [Uri]::EscapeUriString($Meta.SupersededBy.Replace('\', '/').TrimStart('/'))
+            $supersededHtml = "<br><span style='margin-top:4px; display:inline-block;'>$supNotice<a href='$urlSup' style='color:#735c0f; font-weight:bold; text-decoration:underline;'>📄 $encSup</a></span>"
+        }
+        "<div class=""warning-banner"">$warnText$supersededHtml</div>"
     } else { "" }
 
     $editBtnHtml = ""
     if (-not [string]::IsNullOrWhiteSpace($RelPath)) {
         $safeRel = [System.Net.WebUtility]::HtmlEncode($RelPath.Replace("\", "/"))
-        $editBtnHtml = "<button class='edit-doc-btn' data-relpath='$safeRel' onclick='openWikiEditor(this)'>✏️ 編集</button>"
+        $editBtnText = Get-LocalizedStr -Key "edit_doc_btn" -Lang $Lang
+        $editBtnHtml = "<button class='edit-doc-btn' data-relpath='$safeRel' onclick='openWikiEditor(this)'>$editBtnText</button>"
     }
 
     return @"
@@ -146,6 +180,7 @@ $warningBanner
     <div class="okf-top-left">
         <span class="okf-domain">📁 $domain</span>
         $statusBadge
+        $verBadge
         $editBtnHtml
     </div>
     $tagsHtml
@@ -154,11 +189,28 @@ $warningBanner
 }
 
 function Get-OkfFooterCardHtml {
-    param ([Parameter(Mandatory = $true)]$Meta)
+    param (
+        [Parameter(Mandatory = $true)]$Meta,
+        [string]$Lang = "ja"
+    )
 
     $desc    = [System.Net.WebUtility]::HtmlEncode($Meta.Description)
     $author  = [System.Net.WebUtility]::HtmlEncode($Meta.Author)
-    $lastUpd = $Meta.LastUpdated.ToString("yyyy-MM-dd")
+    
+    $lastUpd = if ($Meta.LastUpdated -and $Meta.LastUpdated -ne [DateTime]::MinValue) {
+        $Meta.LastUpdated.ToString("yyyy-MM-dd")
+    } else {
+        Get-LocalizedStr -Key "unknown" -Lang $Lang
+    }
+
+    $cardTitle   = Get-LocalizedStr -Key "metadata_card_title" -Lang $Lang
+    $authorLbl   = Get-LocalizedStr -Key "metadata_author" -Lang $Lang
+    $lastUpdLbl  = Get-LocalizedStr -Key "metadata_last_updated" -Lang $Lang
+    $apiJsonLbl  = Get-LocalizedStr -Key "api_json" -Lang $Lang
+    $verLbl      = Get-LocalizedStr -Key "metadata_version" -Lang $Lang
+    $revLbl      = Get-LocalizedStr -Key "metadata_reviewer" -Lang $Lang
+    $contribLbl  = Get-LocalizedStr -Key "metadata_contributors" -Lang $Lang
+    $relatedLbl  = Get-LocalizedStr -Key "metadata_related" -Lang $Lang
 
     $tagsHtml = ""
     if ($Meta.Tags -and $Meta.Tags.Count -gt 0) {
@@ -172,7 +224,31 @@ function Get-OkfFooterCardHtml {
 
     $authorHtml = if (-not [string]::IsNullOrWhiteSpace($author)) {
         $urlAuthor = [Uri]::EscapeDataString($Meta.Author)
-        "<span class='okf-author'>👤 著者: <a href='/authors?name=$urlAuthor'>$author</a></span>"
+        "<span class='okf-author'>$authorLbl<a href='/authors?name=$urlAuthor'>$author</a></span>"
+    } else { "" }
+
+    $versionHtml = if ($Meta.Version -and -not [string]::IsNullOrWhiteSpace($Meta.Version)) {
+        $encV = [System.Net.WebUtility]::HtmlEncode($Meta.Version)
+        "<span>$verLbl<strong>v$encV</strong></span>"
+    } else { "" }
+
+    $reviewerHtml = if ($Meta.Reviewer -and -not [string]::IsNullOrWhiteSpace($Meta.Reviewer)) {
+        $encR = [System.Net.WebUtility]::HtmlEncode($Meta.Reviewer)
+        "<span>$revLbl$encR</span>"
+    } else { "" }
+
+    $contributorsHtml = if ($Meta.Contributors -and $Meta.Contributors.Count -gt 0) {
+        $cList = ($Meta.Contributors | ForEach-Object { [System.Net.WebUtility]::HtmlEncode($_) }) -join ", "
+        "<span>$contribLbl$cList</span>"
+    } else { "" }
+
+    $relatedHtml = if ($Meta.Related -and $Meta.Related.Count -gt 0) {
+        $rLinks = foreach ($r in $Meta.Related) {
+            $encRel = [System.Net.WebUtility]::HtmlEncode($r)
+            $urlRel = "/" + [Uri]::EscapeUriString($r.Replace('\', '/').TrimStart('/'))
+            "<a href='$urlRel' style='color:#0366d6; text-decoration:none;'>📄 $encRel</a>"
+        }
+        "<div style='margin-top:8px; font-size:12px; color:#586069;'>$relatedLbl" + ($rLinks -join " &nbsp;|&nbsp; ") + "</div>"
     } else { "" }
 
     $descHtml = if (-not [string]::IsNullOrWhiteSpace($desc)) {
@@ -182,26 +258,32 @@ function Get-OkfFooterCardHtml {
     return @"
 <footer class="okf-footer-card">
     <div class="okf-footer-header">
-        <span class="okf-footer-title">ℹ️ ドキュメント メタデータ (OKF)</span>
-        <a href="/api/index.json" target="_blank" class="okf-api-link">🤖 API (JSON)</a>
+        <span class="okf-footer-title">$cardTitle</span>
+        <a href="/api/index.json" target="_blank" class="okf-api-link">$apiJsonLbl</a>
     </div>
     $descHtml
-    <div class="okf-footer-meta">
+    <div class="okf-footer-meta" style="display:flex; flex-wrap:wrap; gap:16px;">
         $authorHtml
-        <span>📅 最終更新: $lastUpd</span>
+        $versionHtml
+        $reviewerHtml
+        $contributorsHtml
+        <span>$lastUpdLbl$lastUpd</span>
     </div>
+    $relatedHtml
     $tagsHtml
 </footer>
 "@
 }
 
+
 # 互換用別名関数
 function Get-OkfCardHtml {
     param (
         [Parameter(Mandatory = $true)]$Meta,
-        [string]$RelPath = ""
+        [string]$RelPath = "",
+        [string]$Lang = "ja"
     )
-    return (Get-OkfTopBarHtml -Meta $Meta -RelPath $RelPath) + (Get-OkfFooterCardHtml -Meta $Meta)
+    return (Get-OkfTopBarHtml -Meta $Meta -RelPath $RelPath -Lang $Lang) + (Get-OkfFooterCardHtml -Meta $Meta -Lang $Lang)
 }
 
 # --- 機械可読 API JSON 生成関数 (AI エージェント / LLM 用) ---
@@ -390,8 +472,20 @@ function Get-ApiChunksJson {
 
 # --- 最近の更新一覧ビュー生成関数 ---
 function Get-RecentViewHtml {
+    param (
+        [string]$Lang = "ja"
+    )
+
     Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
     $sorted = $script:WikiIndex | Sort-Object LastUpdated -Descending
+
+    $titleLbl   = Get-LocalizedStr -Key "recent_updates_title" -Lang $Lang
+    $descLbl    = Get-LocalizedStr -Key "recent_updates_desc" -Lang $Lang
+    $colLastUpd = Get-LocalizedStr -Key "table_col_last_updated" -Lang $Lang
+    $colTitle   = Get-LocalizedStr -Key "table_col_title" -Lang $Lang
+    $colDomain  = Get-LocalizedStr -Key "table_col_domain" -Lang $Lang
+    $colAuthor  = Get-LocalizedStr -Key "table_col_author" -Lang $Lang
+    $colStatus  = Get-LocalizedStr -Key "table_col_status" -Lang $Lang
 
     $rowsHtml = foreach ($item in $sorted) {
         $relUri   = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
@@ -404,11 +498,11 @@ function Get-RecentViewHtml {
     }
 
     return @"
-<h1>🕒 最近の更新ドキュメント</h1>
-<p>Wiki内の全ドキュメントを更新日順に表示しています。</p>
+<h1>$titleLbl</h1>
+<p>$descLbl</p>
 <table class="okf-table">
     <thead>
-        <tr><th>最終更新日</th><th>タイトル</th><th>ドメイン</th><th>著者</th><th>状態</th></tr>
+        <tr><th>$colLastUpd</th><th>$colTitle</th><th>$colDomain</th><th>$colAuthor</th><th>$colStatus</th></tr>
     </thead>
     <tbody>
         $($rowsHtml -join "`n")
@@ -419,11 +513,15 @@ function Get-RecentViewHtml {
 
 # --- タグ目録 & 絞り込みビュー生成関数 ---
 function Get-TagsViewHtml {
-    param ([string]$SelectedTag = "")
+    param (
+        [string]$SelectedTag = "",
+        [string]$Lang = "ja"
+    )
 
     Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
 
     if ([string]::IsNullOrWhiteSpace($SelectedTag)) {
+        $tagListTitle = Get-LocalizedStr -Key "tag_list_title" -Lang $Lang
         $tagCounts = @{}
         foreach ($item in $script:WikiIndex) {
             foreach ($t in $item.Tags) {
@@ -441,7 +539,7 @@ function Get-TagsViewHtml {
         }
 
         return @"
-<h1>🏷️ タグ一覧</h1>
+<h1>$tagListTitle</h1>
 <div class="tag-cloud">
     $($cloudHtml -join " ")
 </div>
@@ -449,6 +547,8 @@ function Get-TagsViewHtml {
     } else {
         $filtered = @($script:WikiIndex | Where-Object { $_.Tags -contains $SelectedTag })
         $encTag   = [System.Net.WebUtility]::HtmlEncode($SelectedTag)
+        $tagResultsTitle = Get-LocalizedStr -Key "tag_results_title" -Lang $Lang -FormatArgs @($encTag)
+        $backToTags      = Get-LocalizedStr -Key "back_to_tags" -Lang $Lang
 
         $cardsHtml = foreach ($item in $filtered) {
             $relUri = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
@@ -458,8 +558,8 @@ function Get-TagsViewHtml {
         }
 
         return @"
-<h1>🏷️ タグ: $encTag</h1>
-<p><a href="/tags">← 全タグ一覧へ戻る</a></p>
+<h1>$tagResultsTitle</h1>
+<p><a href="/tags">$backToTags</a></p>
 <div class="tag-results">
     $($cardsHtml -join "`n")
 </div>
@@ -469,6 +569,10 @@ function Get-TagsViewHtml {
 
 # --- 品質・メンテナンスダッシュボード生成関数 ---
 function Get-MaintenanceViewHtml {
+    param (
+        [string]$Lang = "ja"
+    )
+
     Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
     $now = Get-Date
 
@@ -476,9 +580,16 @@ function Get-MaintenanceViewHtml {
     $draftDocs      = @($script:WikiIndex | Where-Object { $_.Status -eq "draft" })
     $deprecatedDocs = @($script:WikiIndex | Where-Object { $_.Status -eq "deprecated" })
 
-    function Render-DocList ($docArray) {
+    $maintTitle   = Get-LocalizedStr -Key "maint_dashboard_title" -Lang $Lang
+    $maintDesc    = Get-LocalizedStr -Key "maint_dashboard_desc" -Lang $Lang
+    $maintStale   = Get-LocalizedStr -Key "maint_stale_docs" -Lang $Lang
+    $maintDraft   = Get-LocalizedStr -Key "maint_drafts" -Lang $Lang
+    $maintDep     = Get-LocalizedStr -Key "maint_deprecated" -Lang $Lang
+    $maintNoDocs  = Get-LocalizedStr -Key "maint_no_docs" -Lang $Lang
+
+    function Render-DocList ($docArray, $emptyMsg) {
         $arr = @($docArray)
-        if ($arr.Count -eq 0) { return "<p class='empty-msg'>該当ドキュメントはありません。</p>" }
+        if ($arr.Count -eq 0) { return "<p class='empty-msg'>$emptyMsg</p>" }
         $items = foreach ($item in $arr) {
             $relUri  = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
             $title   = [System.Net.WebUtility]::HtmlEncode($item.Title)
@@ -489,44 +600,49 @@ function Get-MaintenanceViewHtml {
     }
 
     return @"
-<h1>🧹 品質・メンテナンスダッシュボード</h1>
-<p>ドキュメントの風化を防ぎ、ナレッジの信頼性を維持するための管理画面です。</p>
+<h1>$maintTitle</h1>
+<p>$maintDesc</p>
 
 <div class="maint-section warning-box">
-    <h2>⚠️ 更新停滞ドキュメント (最終更新から365日以上経過)</h2>
-    $(Render-DocList $staleDocs)
+    <h2>$maintStale</h2>
+    $(Render-DocList $staleDocs $maintNoDocs)
 </div>
 
 <div class="maint-section info-box">
-    <h2>📝 下書き一覧 (status: draft)</h2>
-    $(Render-DocList $draftDocs)
+    <h2>$maintDraft</h2>
+    $(Render-DocList $draftDocs $maintNoDocs)
 </div>
 
 <div class="maint-section danger-box">
-    <h2>🗑️ 非推奨・旧版一覧 (status: deprecated)</h2>
-    $(Render-DocList $deprecatedDocs)
+    <h2>$maintDep</h2>
+    $(Render-DocList $deprecatedDocs $maintNoDocs)
 </div>
 "@
 }
 
 # --- 著者一覧ビュー生成関数 ---
 function Get-AuthorsViewHtml {
-    param ([string]$SelectedAuthor = "")
+    param (
+        [string]$SelectedAuthor = "",
+        [string]$Lang = "ja"
+    )
 
     Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
 
     if ([string]::IsNullOrWhiteSpace($SelectedAuthor)) {
+        $authorListTitle = Get-LocalizedStr -Key "author_list_title" -Lang $Lang
         $authors = @($script:WikiIndex | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Author) } | Group-Object Author)
 
         $listHtml = foreach ($g in ($authors | Sort-Object Name)) {
             $encAuthor = [System.Net.WebUtility]::HtmlEncode($g.Name)
             $urlAuthor = [Uri]::EscapeDataString($g.Name)
             $count     = $g.Count
-            "<li><a href='/authors?name=$urlAuthor'>👤 $encAuthor</a> <span class='muted'>($count 件)</span></li>"
+            $itemsText = Get-LocalizedStr -Key "items_count" -Lang $Lang -FormatArgs @($count)
+            "<li><a href='/authors?name=$urlAuthor'>👤 $encAuthor</a> <span class='muted'>($itemsText)</span></li>"
         }
 
         return @"
-<h1>👥 著者一覧</h1>
+<h1>$authorListTitle</h1>
 <ul>
     $($listHtml -join "`n")
 </ul>
@@ -534,6 +650,8 @@ function Get-AuthorsViewHtml {
     } else {
         $filtered  = @($script:WikiIndex | Where-Object { $_.Author -eq $SelectedAuthor })
         $encAuthor = [System.Net.WebUtility]::HtmlEncode($SelectedAuthor)
+        $authorResTitle = Get-LocalizedStr -Key "author_results_title" -Lang $Lang -FormatArgs @($encAuthor)
+        $backToAuthors  = Get-LocalizedStr -Key "back_to_authors" -Lang $Lang
 
         $itemsHtml = foreach ($item in $filtered) {
             $relUri = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
@@ -542,8 +660,8 @@ function Get-AuthorsViewHtml {
         }
 
         return @"
-<h1>👥 著者: $encAuthor</h1>
-<p><a href="/authors">← 全著者一覧へ戻る</a></p>
+<h1>$authorResTitle</h1>
+<p><a href="/authors">$backToAuthors</a></p>
 <ul>
     $($itemsHtml -join "`n")
 </ul>
@@ -551,13 +669,13 @@ function Get-AuthorsViewHtml {
     }
 }
 
-# --- キーワードハイライト処理関数 ---
-
+# --- 検索ビュー生成関数 ---
 function Get-SearchViewHtml {
     param (
         [string]$Query = "",
         [string]$StatusFilter = "active",
-        [string]$DomainFilter = ""
+        [string]$DomainFilter = "",
+        [string]$Lang = "ja"
     )
 
     if ([string]::IsNullOrWhiteSpace($StatusFilter)) { $StatusFilter = "active" }
@@ -582,6 +700,11 @@ function Get-SearchViewHtml {
     $optDraft      = if ($stFilterLower -eq "draft")      { "selected" } else { "" }
     $optDeprecated = if ($stFilterLower -eq "deprecated") { "selected" } else { "" }
     $optAll        = if ($stFilterLower -eq "all")        { "selected" } else { "" }
+
+    $searchScoreLbl  = Get-LocalizedStr -Key "search_score" -Lang $Lang
+    $domainPrefixLbl = Get-LocalizedStr -Key "search_domain_prefix" -Lang $Lang
+    $authorPrefixLbl = Get-LocalizedStr -Key "metadata_author" -Lang $Lang
+    $lastUpdPrefixLbl = Get-LocalizedStr -Key "metadata_last_updated" -Lang $Lang
 
     $resultsHtmlList = foreach ($r in $sortedResults) {
         $item   = $r.Meta
@@ -610,7 +733,10 @@ function Get-SearchViewHtml {
             $tagsHtml = "<div class='okf-tags' style='margin-top:4px;'>" + ($badges -join " ") + "</div>"
         }
 
-        $scoreHtml = if ($r.Score -gt 0) { "<span style='font-size:12px; color:#6a737d; margin-left:10px;'>(関連度スコア: $($r.Score))</span>" } else { "" }
+        $scoreHtml = if ($r.Score -gt 0) {
+            $scoreText = [string]::Format($searchScoreLbl, $r.Score)
+            "<span style='font-size:12px; color:#6a737d; margin-left:10px;'>$scoreText</span>"
+        } else { "" }
 
         @"
 <div class="search-item" style="border-bottom: 1px solid #e1e4e8; padding: 14px 0;">
@@ -618,7 +744,7 @@ function Get-SearchViewHtml {
         <a href="$relUri">$titleHtml</a> $statusBadge $scoreHtml
     </h3>
     <div style="font-size: 12px; color: #586069; margin-bottom: 6px;">
-        📁 ドメイン: $domainEnc | 📅 最終更新: $lastUpd | 👤 著者: $authorEnc
+        $domainPrefixLbl$domainEnc | $lastUpdPrefixLbl$lastUpd | $authorPrefixLbl$authorEnc
     </div>
     $tagsHtml
     <p style="margin: 8px 0 0 0; font-size: 13px; color: #444; background: #f8f9fa; padding: 6px 10px; border-left: 3px solid #0366d6; border-radius: 2px;">
@@ -628,34 +754,46 @@ function Get-SearchViewHtml {
 "@
     }
 
+    $resultsTitleLbl = Get-LocalizedStr -Key "search_results_title" -Lang $Lang -FormatArgs @($sortedResults.Count)
+    $keyHolderLbl    = Get-LocalizedStr -Key "search_keyword_label" -Lang $Lang
+    $statusLbl       = Get-LocalizedStr -Key "search_status_label" -Lang $Lang
+    $stActiveLbl     = Get-LocalizedStr -Key "search_status_active" -Lang $Lang
+    $stDraftLbl      = Get-LocalizedStr -Key "search_status_draft" -Lang $Lang
+    $stDepLbl        = Get-LocalizedStr -Key "search_status_dep" -Lang $Lang
+    $stAllLbl        = Get-LocalizedStr -Key "search_status_all" -Lang $Lang
+    $domainLbl       = Get-LocalizedStr -Key "search_domain_label" -Lang $Lang
+    $domainHolderLbl = Get-LocalizedStr -Key "search_domain_placeholder" -Lang $Lang
+    $searchBtnLbl    = Get-LocalizedStr -Key "search_btn" -Lang $Lang
+    $noResultsLbl    = Get-LocalizedStr -Key "search_no_results" -Lang $Lang
+
     $resultsContent = if ($sortedResults.Count -gt 0) {
         $resultsHtmlList -join "`n"
     } else {
-        "<p style='color: #666; margin-top: 20px;'>該当するドキュメントが見つかりませんでした。</p>"
+        "<p style='color: #666; margin-top: 20px;'>$noResultsLbl</p>"
     }
 
     return @"
-<h1>🔍 OKF ナレッジ検索結果 ($($sortedResults.Count) 件)</h1>
+<h1>$resultsTitleLbl</h1>
 <div style="background: #f6f8fa; padding: 16px; border: 1px solid #e1e4e8; border-radius: 6px; margin-bottom: 20px;">
     <form action="/search" method="GET" accept-charset="UTF-8" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
         <div style="flex: 1; min-width: 200px;">
-            <input type="text" name="q" value="$encQuery" placeholder="キーワード (例: PostgreSQL 障害)" style="width: 100%; padding: 6px 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px;">
+            <input type="text" name="q" value="$encQuery" placeholder="$keyHolderLbl" style="width: 100%; padding: 6px 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px;">
         </div>
         <div>
-            <label style="font-size: 12px; font-weight: bold; color: #586069;">ステータス:</label>
+            <label style="font-size: 12px; font-weight: bold; color: #586069;">$statusLbl</label>
             <select name="status" style="padding: 6px 10px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px;">
-                <option value="active" $optActive>現行 (Active)</option>
-                <option value="draft" $optDraft>下書き (Draft)</option>
-                <option value="deprecated" $optDeprecated>非推奨 (Deprecated)</option>
-                <option value="all" $optAll>すべて (All)</option>
+                <option value="active" $optActive>$stActiveLbl</option>
+                <option value="draft" $optDraft>$stDraftLbl</option>
+                <option value="deprecated" $optDeprecated>$stDepLbl</option>
+                <option value="all" $optAll>$stAllLbl</option>
             </select>
         </div>
         <div>
-            <label style="font-size: 12px; font-weight: bold; color: #586069;">ドメイン:</label>
-            <input type="text" name="domain" value="$encDomain" placeholder="例: infrastructure" style="padding: 6px 10px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; width: 140px;">
+            <label style="font-size: 12px; font-weight: bold; color: #586069;">$domainLbl</label>
+            <input type="text" name="domain" value="$encDomain" placeholder="$domainHolderLbl" style="padding: 6px 10px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; width: 140px;">
         </div>
         <div>
-            <button type="submit" style="padding: 6px 16px; font-size: 14px; background: #0366d6; color: #fff; border: none; border-radius: 4px; cursor: pointer;">🔍 検索</button>
+            <button type="submit" style="padding: 6px 16px; font-size: 14px; background: #0366d6; color: #fff; border: none; border-radius: 4px; cursor: pointer;">🔍 $searchBtnLbl</button>
         </div>
     </form>
 </div>
@@ -669,38 +807,62 @@ function Get-OKFSearchResultsHtml {
     param (
         [string]$query = "",
         [string]$statusFilter = "active",
-        [string]$domainFilter = ""
+        [string]$domainFilter = "",
+        [string]$Lang = "ja"
     )
-    return Get-SearchViewHtml -Query $query -StatusFilter $statusFilter -DomainFilter $domainFilter
+    return Get-SearchViewHtml -Query $query -StatusFilter $statusFilter -DomainFilter $domainFilter -Lang $Lang
 }
 
-# --- UTF-8 URL クエリパラメータ解析関数 ---
-
 function Get-ChatWidgetHtml {
-    $widget = @'
+    param (
+        [string]$Lang = "ja"
+    )
+
+    $btnTitle       = Get-LocalizedStr -Key "chat_widget_btn" -Lang $Lang
+    $headerTitle    = Get-LocalizedStr -Key "chat_header_title" -Lang $Lang
+    $expandTitle    = Get-LocalizedStr -Key "chat_expand" -Lang $Lang
+    $collapseTitle  = Get-LocalizedStr -Key "chat_collapse" -Lang $Lang
+    $clearTitle     = Get-LocalizedStr -Key "chat_clear_history" -Lang $Lang
+    $modeLbl        = Get-LocalizedStr -Key "chat_mode_label" -Lang $Lang
+    $inclCurrLbl    = Get-LocalizedStr -Key "chat_include_current" -Lang $Lang
+    $welcomeMsg     = Get-LocalizedStr -Key "chat_welcome_msg" -Lang $Lang
+    $inputHolder    = Get-LocalizedStr -Key "chat_input_placeholder" -Lang $Lang
+    $sendBtnLbl     = Get-LocalizedStr -Key "chat_send_btn" -Lang $Lang
+    $resetHistoryJs = Get-LocalizedStr -Key "chat_reset_history" -Lang $Lang
+    $thinkFastJs    = Get-LocalizedStr -Key "chat_thinking_fast" -Lang $Lang
+    $thinkAgentJs   = Get-LocalizedStr -Key "chat_thinking_agent" -Lang $Lang
+    $commErrorJs    = Get-LocalizedStr -Key "chat_comm_error" -Lang $Lang
+    $errorPrefixJs  = Get-LocalizedStr -Key "chat_error_prefix" -Lang $Lang
+    $agentThinkJs   = Get-LocalizedStr -Key "chat_agent_thinking" -Lang $Lang
+    $sourceDocsJs   = Get-LocalizedStr -Key "chat_source_docs" -Lang $Lang
+    $sourceEmptyJs  = Get-LocalizedStr -Key "chat_source_empty" -Lang $Lang
+    $copyBtnJs      = Get-LocalizedStr -Key "chat_copy_btn" -Lang $Lang
+    $copyDoneJs     = Get-LocalizedStr -Key "chat_copy_completed" -Lang $Lang
+
+    $widget = @"
     <!-- Floating Chat Widget -->
-    <button id="okfChatBtn" class="chat-widget-btn">🤖 Wiki AI チャット</button>
+    <button id="okfChatBtn" class="chat-widget-btn">$btnTitle</button>
     <div id="okfChatBox" class="chat-box">
         <div class="chat-header">
-            <span>🤖 OKF Wiki AI アシスタント</span>
+            <span>$headerTitle</span>
             <div class="chat-header-actions">
-                <button id="okfChatExpandBtn" class="chat-header-expand" title="ウィンドウを拡大/縮小">⛶ 拡大</button>
-                <button id="okfChatClearBtn" class="chat-header-clear" title="会話履歴をクリア">🧹 履歴クリア</button>
+                <button id="okfChatExpandBtn" class="chat-header-expand" title="ウィンドウを拡大/縮小">$expandTitle</button>
+                <button id="okfChatClearBtn" class="chat-header-clear" title="会話履歴をクリア">$clearTitle</button>
                 <button id="okfChatCloseBtn" class="chat-header-close">✕</button>
             </div>
         </div>
         <div class="chat-mode-selector">
-            <span class="mode-label">モード:</span>
+            <span class="mode-label">$modeLbl</span>
             <label><input type="radio" name="okfRagMode" value="fast" checked> ⚡ Fast</label>
             <label><input type="radio" name="okfRagMode" value="agentic"> 🧠 Agentic</label>
-            <label style="margin-left: auto; color: #24292e; font-weight: normal; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px;"><input type="checkbox" id="okfIncludeCurrentPage" checked> 📄 開いているページを含める</label>
+            <label style="margin-left: auto; color: #24292e; font-weight: normal; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px;"><input type="checkbox" id="okfIncludeCurrentPage" checked> $inclCurrLbl</label>
         </div>
         <div id="okfChatMessages" class="chat-messages">
-            <div class="chat-msg assistant">こんにちは！Wiki内のナレッジを元にお答えします。質問を入力してください。（例: 「REST APIの仕様について教えて」「Linux以外のサーバー手順は？」など、-キーワード や NOTキーワード で除外指定も可能です）</div>
+            <div class="chat-msg assistant">$welcomeMsg</div>
         </div>
         <div class="chat-input-area">
-            <input type="text" id="okfChatInput" placeholder="Wikiに質問... (-単語 で除外検索も可能)" />
-            <button id="okfChatSendBtn">送信</button>
+            <input type="text" id="okfChatInput" placeholder="$inputHolder" />
+            <button id="okfChatSendBtn">$sendBtnLbl</button>
         </div>
     </div>
     <style>
@@ -767,9 +929,9 @@ function Get-ChatWidgetHtml {
                 expandBtn.addEventListener("click", function() {
                     box.classList.toggle("expanded");
                     if (box.classList.contains("expanded")) {
-                        expandBtn.textContent = "🗗 縮小";
+                        expandBtn.textContent = "$collapseTitle";
                     } else {
-                        expandBtn.textContent = "⛶ 拡大";
+                        expandBtn.textContent = "$expandTitle";
                     }
                 });
             }
@@ -777,7 +939,7 @@ function Get-ChatWidgetHtml {
             if (clearBtn) {
                 clearBtn.addEventListener("click", function() {
                     chatHistory = [];
-                    msgs.innerHTML = '<div class="chat-msg assistant">会話履歴をリセットしました。質問を入力してください。</div>';
+                    msgs.innerHTML = '<div class="chat-msg assistant">$resetHistoryJs</div>';
                 });
             }
 
@@ -787,9 +949,9 @@ function Get-ChatWidgetHtml {
 
             function parseInline(str) {
                 var s = escapeHtml(str);
-                s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-                s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
-                s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<a href='$2' target='_blank'>$1</a>");
+                s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>`$1</strong>");
+                s = s.replace(/`([^`]+)`/g, "<code>`$1</code>");
+                s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<a href='`$2' target='_blank'>`$1</a>");
                 return s;
             }
 
@@ -870,7 +1032,8 @@ function Get-ChatWidgetHtml {
                 } else {
                     var innerHtml = "";
                     if (thinkingLog && thinkingLog.length > 0) {
-                        innerHtml += "<details class='chat-thinking'><summary>🧠 Agent 思考プロセス (" + thinkingLog.length + " ステップ)</summary><ul>";
+                        var thinkTitle = "$agentThinkJs".replace("{0}", thinkingLog.length);
+                        innerHtml += "<details class='chat-thinking'><summary>" + thinkTitle + "</summary><ul>";
                         thinkingLog.forEach(function(item) {
                             innerHtml += "<li>" + escapeHtml(item) + "</li>";
                         });
@@ -882,7 +1045,7 @@ function Get-ChatWidgetHtml {
                 if (sources && sources.length > 0) {
                     var srcDiv = document.createElement("div");
                     srcDiv.className = "chat-sources";
-                    var srcHtml = "📖 <strong>根拠ドキュメント (Markdown):</strong><ul style='margin: 4px 0 0 16px; padding: 0;'>";
+                    var srcHtml = "$sourceDocsJs<ul style='margin: 4px 0 0 16px; padding: 0;'>";
                     sources.forEach(function(s) {
                         var dateInfo = s.lastUpdated ? " (" + escapeHtml(s.lastUpdated) + ")" : "";
                         srcHtml += "<li>📄 <a href='" + escapeHtml(s.relUri) + "' target='_blank'>" + escapeHtml(s.title || s.relPath) + "</a>" + dateInfo + "</li>";
@@ -893,7 +1056,7 @@ function Get-ChatWidgetHtml {
                 } else {
                     var srcDiv = document.createElement("div");
                     srcDiv.className = "chat-sources";
-                    srcDiv.innerHTML = "📖 <strong>根拠ドキュメント:</strong> なし (特定のドキュメント参照なし)";
+                    srcDiv.innerHTML = "$sourceEmptyJs";
                     div.appendChild(srcDiv);
                 }
                 if (role === "assistant" && text !== "🤔 思考中...") {
@@ -901,11 +1064,11 @@ function Get-ChatWidgetHtml {
                     actionDiv.className = "chat-msg-actions";
                     var copyBtn = document.createElement("button");
                     copyBtn.className = "chat-copy-btn";
-                    copyBtn.innerHTML = "📋 コピー";
+                    copyBtn.innerHTML = "$copyBtnJs";
                     copyBtn.addEventListener("click", function() {
                         var performCopy = function() {
-                            copyBtn.innerHTML = "✓ コピー完了";
-                            setTimeout(function() { copyBtn.innerHTML = "📋 コピー"; }, 1500);
+                            copyBtn.innerHTML = "$copyDoneJs";
+                            setTimeout(function() { copyBtn.innerHTML = "$copyBtnJs"; }, 1500);
                         };
                         if (navigator.clipboard && navigator.clipboard.writeText) {
                             navigator.clipboard.writeText(text).then(performCopy).catch(function() {
@@ -946,16 +1109,16 @@ function Get-ChatWidgetHtml {
                 appendMsg("user", q);
                 input.value = "";
                 sendBtn.disabled = true;
-                appendMsg("assistant", mode === "agentic" ? "🧠 自律深掘り調査中..." : "⚡ 検索・生成中...");
+                appendMsg("assistant", mode === "agentic" ? "$thinkAgentJs" : "$thinkFastJs");
 
                 fetch("/api/chat", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ mode: mode, message: q, history: chatHistory, includeCurrentPage: includeCurrentPage, currentRelPath: currentPath })
+                    body: JSON.stringify({ mode: mode, message: q, history: chatHistory, includeCurrentPage: includeCurrentPage, currentRelPath: currentPath, lang: "$Lang" })
                 }).then(function(res) { return res.json(); }).then(function(data) {
                     msgs.removeChild(msgs.lastChild);
                     if (data.error) {
-                        appendMsg("assistant", "⚠️ エラー: " + data.message);
+                        appendMsg("assistant", "$errorPrefixJs" + data.message);
                     } else {
                         appendMsg("assistant", data.answer, data.sources, data.thinkingLog);
                         chatHistory.push({ role: "user", content: q });
@@ -963,7 +1126,7 @@ function Get-ChatWidgetHtml {
                     }
                 }).catch(function(err) {
                     msgs.removeChild(msgs.lastChild);
-                    appendMsg("assistant", "⚠️ 通信エラーが発生しました。");
+                    appendMsg("assistant", "$commErrorJs");
                 }).finally(function() {
                     sendBtn.disabled = false;
                 });
@@ -973,12 +1136,16 @@ function Get-ChatWidgetHtml {
             input.addEventListener("keypress", function(e) { if (e.key === "Enter") sendMsg(); });
         });
     </script>
-'@
+"@
     return $widget
 }
 
 # --- システム設定ビュー生成関数 ---
 function Get-SettingsViewHtml {
+    param (
+        [string]$Lang = "ja"
+    )
+
     $config = Get-ConfigJson -TargetScriptDir $scriptDir
 
     $prebuildChecked   = if ($config.search -and $config.search.prebuildIndex -eq $true) { "checked" } else { "" }
@@ -990,12 +1157,37 @@ function Get-SettingsViewHtml {
     $model             = if ($config.rag -and $config.rag.model) { [System.Net.WebUtility]::HtmlEncode($config.rag.model) } else { "qwen2.5-coder-7b-instruct" }
 
     $cachedCount = if ($null -ne $script:WikiIndex) { $script:WikiIndex.Count } else { 0 }
-    $lastScanStr = if ($script:WikiIndexLastScan -and $script:WikiIndexLastScan -gt [DateTime]::MinValue) { $script:WikiIndexLastScan.ToString("yyyy-MM-dd HH:mm:ss") } else { "未実行" }
+    $notRunText  = Get-LocalizedStr -Key "settings_not_run" -Lang $Lang
+    $lastScanStr = if ($script:WikiIndexLastScan -and $script:WikiIndexLastScan -gt [DateTime]::MinValue) { $script:WikiIndexLastScan.ToString("yyyy-MM-dd HH:mm:ss") } else { $notRunText }
+
+    $titleLbl       = Get-LocalizedStr -Key "settings_title" -Lang $Lang
+    $descLbl        = Get-LocalizedStr -Key "settings_desc" -Lang $Lang
+    $searchTitleLbl = Get-LocalizedStr -Key "settings_search_title" -Lang $Lang
+    $prebuildLbl    = Get-LocalizedStr -Key "settings_prebuild_label" -Lang $Lang
+    $defOffLbl      = Get-LocalizedStr -Key "settings_default_off" -Lang $Lang
+    $prebuildDesc   = Get-LocalizedStr -Key "settings_prebuild_desc" -Lang $Lang
+    $cacheLbl       = Get-LocalizedStr -Key "settings_cache_label" -Lang $Lang
+    $cacheDesc      = Get-LocalizedStr -Key "settings_cache_desc" -Lang $Lang
+    $cacheFoldLbl   = Get-LocalizedStr -Key "settings_cache_folder" -Lang $Lang
+    $cachedStatLbl  = Get-LocalizedStr -Key "settings_cached_status" -Lang $Lang -FormatArgs @($cachedCount, $lastScanStr)
+    $rebuildBtnLbl  = Get-LocalizedStr -Key "settings_rebuild_btn" -Lang $Lang
+    $ragTitleLbl    = Get-LocalizedStr -Key "settings_rag_title" -Lang $Lang
+    $ragEnableLbl   = Get-LocalizedStr -Key "settings_rag_enable" -Lang $Lang
+    $apiUrlLbl      = Get-LocalizedStr -Key "settings_api_url" -Lang $Lang
+    $modelLbl       = Get-LocalizedStr -Key "settings_model" -Lang $Lang
+    $saveBtnLbl     = Get-LocalizedStr -Key "settings_save_btn" -Lang $Lang
+
+    $savedSuccessJs = Get-LocalizedStr -Key "settings_saved_success" -Lang $Lang
+    $savedErrorJs   = Get-LocalizedStr -Key "settings_saved_error" -Lang $Lang
+    $commErrorJs    = Get-LocalizedStr -Key "settings_comm_error" -Lang $Lang
+    $rebuildRunJs   = Get-LocalizedStr -Key "settings_rebuild_running" -Lang $Lang
+    $rebuildStartJs = Get-LocalizedStr -Key "settings_rebuild_start" -Lang $Lang
+    $rebuildFailJs  = Get-LocalizedStr -Key "settings_rebuild_failed" -Lang $Lang
 
     return @"
 <div class="settings-container">
-    <h2>⚙️ システム設定</h2>
-    <p>検索キャッシュや起動時動作、LLM/RAG連携の各種オプションを設定します。</p>
+    <h2>$titleLbl</h2>
+    <p>$descLbl</p>
 
     <div id="settingsToast" class="okf-card" style="display:none; border-left: 4px solid #28a745; margin-bottom: 20px;">
         <span id="settingsToastMsg" style="font-weight: bold;"></span>
@@ -1003,55 +1195,55 @@ function Get-SettingsViewHtml {
 
     <form id="settingsForm" onsubmit="saveSettings(event)" style="display: flex; flex-direction: column; gap: 20px;">
         <div class="okf-card">
-            <div class="okf-card-header">🔍 検索＆インデックス設定</div>
+            <div class="okf-card-header">$searchTitleLbl</div>
             <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 12px;">
                 <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
                     <input type="checkbox" id="prebuildIndex" name="prebuildIndex" $prebuildChecked>
-                    <span><strong>起動時にインデックスを新規生成する</strong>（デフォルト: オフ）</span>
+                    <span><strong>$prebuildLbl</strong> $defOffLbl</span>
                 </label>
                 <div style="font-size: 13px; color: #586069; margin-left: 24px;">
-                    サーバー起動時に全 Markdown ドキュメントのメタデータと本文インデックスを事前構築します。
+                    $prebuildDesc
                 </div>
 
                 <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-top: 8px;">
                     <input type="checkbox" id="useCache" name="useCache" $useCacheChecked>
-                    <span><strong>インデックスキャッシュを有効化する</strong>（デフォルト: オフ）</span>
+                    <span><strong>$cacheLbl</strong> $defOffLbl</span>
                 </label>
                 <div style="font-size: 13px; color: #586069; margin-left: 24px;">
-                    生成したインデックスをディスクに保存し、次回以降の読み込みを高速化します。
+                    $cacheDesc
                 </div>
 
                 <div style="margin-left: 24px; margin-top: 5px;">
-                    <label for="cacheFolder" style="font-size: 13px; font-weight: bold;">キャッシュ保存フォルダ名:</label><br>
+                    <label for="cacheFolder" style="font-size: 13px; font-weight: bold;">$cacheFoldLbl</label><br>
                     <input type="text" id="cacheFolder" name="cacheFolder" value="$cacheFolder" style="width: 250px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;" required>
                 </div>
             </div>
 
             <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eaecef; font-size: 13px; color: #586069; display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <strong>現在のメモリ内インデックス状態:</strong> $cachedCount 件保持 (最終読み込み: $lastScanStr)
+                    <strong>$cachedStatLbl</strong>
                 </div>
                 <button type="button" id="rebuildBtn" onclick="rebuildIndexNow()" style="padding: 6px 12px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
-                    🔄 今すぐインデックス再生成
+                    $rebuildBtnLbl
                 </button>
             </div>
         </div>
 
         <div class="okf-card">
-            <div class="okf-card-header">🤖 AI / LLM RAG 設定</div>
+            <div class="okf-card-header">$ragTitleLbl</div>
             <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 12px;">
                 <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
                     <input type="checkbox" id="ragEnabled" name="ragEnabled" $ragEnabledChecked>
-                    <span><strong>LLM RAG チャット機能を有効化</strong></span>
+                    <span><strong>$ragEnableLbl</strong></span>
                 </label>
 
                 <div style="margin-left: 24px; display: flex; flex-direction: column; gap: 10px;">
                     <div>
-                        <label for="apiUrl" style="font-size: 13px; font-weight: bold;">API エンドポイント URL:</label><br>
+                        <label for="apiUrl" style="font-size: 13px; font-weight: bold;">$apiUrlLbl</label><br>
                         <input type="text" id="apiUrl" name="apiUrl" value="$apiUrl" style="width: 100%; max-width: 400px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;">
                     </div>
                     <div>
-                        <label for="model" style="font-size: 13px; font-weight: bold;">使用モデル名:</label><br>
+                        <label for="model" style="font-size: 13px; font-weight: bold;">$modelLbl</label><br>
                         <input type="text" id="model" name="model" value="$model" style="width: 100%; max-width: 400px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;">
                     </div>
                 </div>
@@ -1060,7 +1252,7 @@ function Get-SettingsViewHtml {
 
         <div>
             <button type="submit" id="saveBtn" style="padding: 10px 24px; background: #28a745; color: white; border: none; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer;">
-                💾 設定を保存する
+                $saveBtnLbl
             </button>
         </div>
     </form>
@@ -1092,7 +1284,7 @@ function saveSettings(e) {
     e.preventDefault();
     var saveBtn = document.getElementById('saveBtn');
     saveBtn.disabled = true;
-    saveBtn.innerText = '保存中...';
+    saveBtn.innerText = '...';
 
     var payload = {
         search: {
@@ -1115,17 +1307,17 @@ function saveSettings(e) {
     .then(function(res) { return res.json(); })
     .then(function(data) {
         saveBtn.disabled = false;
-        saveBtn.innerText = '💾 設定を保存する';
+        saveBtn.innerText = '$saveBtnLbl';
         if (data.success) {
-            showToast('✅ 設定を正常に保存しました。', false);
+            showToast('$savedSuccessJs', false);
         } else {
-            showToast('❌ 保存エラー: ' + (data.message || '設定の更新に失敗しました。'), true);
+            showToast('$savedErrorJs' + (data.message || ''), true);
         }
     })
     .catch(function(err) {
         saveBtn.disabled = false;
-        saveBtn.innerText = '💾 設定を保存する';
-        showToast('❌ 通信エラーが発生しました。', true);
+        saveBtn.innerText = '$saveBtnLbl';
+        showToast('$commErrorJs', true);
     });
 }
 
@@ -1133,33 +1325,32 @@ function rebuildIndexNow() {
     var rebuildBtn = document.getElementById('rebuildBtn');
     if (rebuildBtn) {
         rebuildBtn.disabled = true;
-        rebuildBtn.innerText = '⏳ インデックス構築中...';
+        rebuildBtn.innerText = '$rebuildRunJs';
     }
-    showToast('⏳ インデックスを再構築しています... 完了までお待ちください', false, 0);
+    showToast('$rebuildStartJs', false, 0);
 
     fetch('/api/config?action=rebuild_index', { method: 'POST' })
     .then(function(res) { return res.json(); })
     .then(function(data) {
         if (rebuildBtn) {
             rebuildBtn.disabled = false;
-            rebuildBtn.innerText = '🔄 今すぐインデックス再生成';
+            rebuildBtn.innerText = '$rebuildBtnLbl';
         }
         if (data.success) {
             showToast('✅ ' + data.message, false, 3000);
             setTimeout(function() { location.reload(); }, 1200);
         } else {
-            showToast('❌ 再生成失敗: ' + (data.message || 'エラーが発生しました'), true, 5000);
+            showToast('$rebuildFailJs' + (data.message || ''), true, 5000);
         }
     })
     .catch(function(err) {
         if (rebuildBtn) {
             rebuildBtn.disabled = false;
-            rebuildBtn.innerText = '🔄 今すぐインデックス再生成';
+            rebuildBtn.innerText = '$rebuildBtnLbl';
         }
-        showToast('❌ 再生成中に通信エラーが発生しました。', true, 5000);
+        showToast('$commErrorJs', true, 5000);
     });
 }
 </script>
 "@
 }
-
