@@ -97,6 +97,18 @@ Write-Host "  URL: $prefix" -ForegroundColor Cyan
 Write-Host "  ※ 終了するにはこのウィンドウで [Ctrl + C] を押してください" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Green
 
+# 起動時インデックス事前生成 (ノンブロッキング配慮 & エラーハンドリング)
+$initCfg = Get-ConfigJson -TargetScriptDir $scriptDir
+if ($initCfg.search -and $initCfg.search.prebuildIndex -eq $true) {
+    try {
+        Write-Host "インデックスを事前生成中..." -ForegroundColor Cyan
+        $prebuilt = Build-WikiIndex -TargetWikiDir $wikiDir
+        Write-Host "インデックス事前生成完了 ($($prebuilt.Count) 件のドキュメント)" -ForegroundColor Green
+    } catch {
+        Write-Warning "起動時のインデックス事前生成中にエラーが発生しましたが、サーバー起動を継続します: $_"
+    }
+}
+
 # 既定のブラウザで開く
 Start-Process $prefix
 
@@ -120,7 +132,169 @@ try {
             $rawPath = [System.Net.WebUtility]::UrlDecode($request.Url.LocalPath)
             $queryParams = Get-QueryParams -Request $request
 
-            # 1. API エンドポイント (/api/index.json, /api/chunks.json, /api/chat)
+            # 1. API エンドポイント (/api/config, /api/index.json, /api/chunks.json, /api/chat)
+            if ($rawPath -eq "/api/config") {
+                $configPath = Join-Path $scriptDir "config.json"
+                if ($request.HttpMethod -eq "GET") {
+                    $currCfg = Get-ConfigJson -TargetScriptDir $scriptDir
+                    $safeCfg = [ordered]@{
+                        search = if ($currCfg.search) { $currCfg.search } else { @{ prebuildIndex = $false; useCache = $false; cacheFolder = ".cache" } }
+                        rag    = if ($currCfg.rag) {
+                            @{
+                                enabled      = [bool]$currCfg.rag.enabled
+                                apiUrl       = [string]$currCfg.rag.apiUrl
+                                model        = [string]$currCfg.rag.model
+                                systemPrompt = [string]$currCfg.rag.systemPrompt
+                            }
+                        } else { @{ enabled = $false; apiUrl = "http://localhost:11434/v1"; model = "qwen2.5-coder-7b-instruct" } }
+                        api    = if ($currCfg.api) { $currCfg.api } else { @{ defaultLimit = 100; maxLimit = 1000 } }
+                    }
+                    $jsonRes = $safeCfg | ConvertTo-Json -Depth 5
+                    Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+                    continue
+                }
+
+                if ($request.HttpMethod -eq "POST") {
+                    # インデックス手動再構築アクション
+                    if ($queryParams.ContainsKey("action") -and $queryParams["action"] -eq "rebuild_index") {
+                        try {
+                            $script:WikiIndex = @()
+                            $rebuilt = Build-WikiIndex -TargetWikiDir $wikiDir -ForceRefresh
+                            $jsonRes = @{ success = $true; count = $rebuilt.Count; message = "インデックスを正常に再構築しました ($($rebuilt.Count) 件)" } | ConvertTo-Json
+                            Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+                        } catch {
+                            $jsonRes = @{ success = $false; message = "インデックス再構築中にエラーが発生しました: $_" } | ConvertTo-Json
+                            Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 500
+                        }
+                        continue
+                    }
+
+                    # 設定保存リクエスト
+                    $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
+                    $bodyText = $reader.ReadToEnd()
+                    $reqObj = try { $bodyText | ConvertFrom-Json } catch { $null }
+
+                    if ($null -eq $reqObj) {
+                        $jsonRes = @{ success = $false; message = "リクエスト JSON のパースに失敗しました。" } | ConvertTo-Json
+                        Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 400
+                        continue
+                    }
+
+                    # 既存設定の読み込み
+                    $existingConfig = Get-ConfigJson -TargetScriptDir $scriptDir
+                    $cfgDict = [ordered]@{}
+                    if ($null -ne $existingConfig) {
+                        if ($existingConfig.rag) {
+                            $cfgDict["rag"] = [ordered]@{
+                                enabled         = [bool]$existingConfig.rag.enabled
+                                apiUrl          = [string]$existingConfig.rag.apiUrl
+                                apiKey          = [string]$existingConfig.rag.apiKey
+                                model           = [string]$existingConfig.rag.model
+                                maxContextDocs  = if ($existingConfig.rag.maxContextDocs) { [int]$existingConfig.rag.maxContextDocs } else { 3 }
+                                maxHistoryTurns = if ($existingConfig.rag.maxHistoryTurns) { [int]$existingConfig.rag.maxHistoryTurns } else { 3 }
+                                maxHistoryChars = if ($existingConfig.rag.maxHistoryChars) { [int]$existingConfig.rag.maxHistoryChars } else { 4000 }
+                                timeoutSec      = if ($existingConfig.rag.timeoutSec) { [int]$existingConfig.rag.timeoutSec } else { 30 }
+                                systemPrompt    = [string]$existingConfig.rag.systemPrompt
+                            }
+                        }
+                        if ($existingConfig.api) {
+                            $cfgDict["api"] = [ordered]@{
+                                defaultLimit = if ($existingConfig.api.defaultLimit) { [int]$existingConfig.api.defaultLimit } else { 100 }
+                                maxLimit     = if ($existingConfig.api.maxLimit) { [int]$existingConfig.api.maxLimit } else { 1000 }
+                            }
+                        }
+                        if ($existingConfig.search) {
+                            $cfgDict["search"] = [ordered]@{
+                                prebuildIndex = [bool]$existingConfig.search.prebuildIndex
+                                useCache      = [bool]$existingConfig.search.useCache
+                                cacheFolder   = [string]$existingConfig.search.cacheFolder
+                            }
+                        }
+                    }
+
+                    if (-not $cfgDict.ContainsKey("search")) {
+                        $cfgDict["search"] = [ordered]@{ prebuildIndex = $false; useCache = $false; cacheFolder = ".cache" }
+                    }
+
+                    # バリデーションエラー用変数
+                    $validationError = $null
+
+                    # search 設定の安全な更新
+                    if ($reqObj.PSObject.Properties["search"]) {
+                        $sObj = $reqObj.search
+                        if ($sObj.PSObject.Properties["prebuildIndex"]) {
+                            $cfgDict["search"]["prebuildIndex"] = [bool]$sObj.prebuildIndex
+                        }
+                        if ($sObj.PSObject.Properties["useCache"]) {
+                            $cfgDict["search"]["useCache"] = [bool]$sObj.useCache
+                        }
+                        if ($sObj.PSObject.Properties["cacheFolder"]) {
+                            $cFolder = [string]$sObj.cacheFolder
+                            if ([string]::IsNullOrWhiteSpace($cFolder) -or $cFolder -match '[\:\\/\.\.]') {
+                                $validationError = "キャッシュフォルダ名が無効です。英数字・ハイフン・アンダースコア・ドット始まりのみ許可されています (ディレクトリトラバーサルは禁止)。"
+                            } else {
+                                $cfgDict["search"]["cacheFolder"] = $cFolder
+                            }
+                        }
+                    }
+
+                    # rag 設定の安全な更新
+                    if ($null -eq $validationError -and $reqObj.PSObject.Properties["rag"]) {
+                        if (-not $cfgDict.ContainsKey("rag")) {
+                            $cfgDict["rag"] = [ordered]@{ enabled = $false; apiUrl = "http://localhost:11434/v1"; model = "qwen2.5-coder-7b-instruct" }
+                        }
+                        $rObj = $reqObj.rag
+                        if ($rObj.PSObject.Properties["enabled"]) {
+                            $cfgDict["rag"]["enabled"] = [bool]$rObj.enabled
+                        }
+                        if ($rObj.PSObject.Properties["apiUrl"] -and -not [string]::IsNullOrWhiteSpace($rObj.apiUrl)) {
+                            $cfgDict["rag"]["apiUrl"] = [string]$rObj.apiUrl
+                        }
+                        if ($rObj.PSObject.Properties["model"] -and -not [string]::IsNullOrWhiteSpace($rObj.model)) {
+                            $cfgDict["rag"]["model"] = [string]$rObj.model
+                        }
+                    }
+
+                    if ($null -ne $validationError) {
+                        $respJson = @{ success = $false; message = $validationError } | ConvertTo-Json
+                        Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($respJson)) -ContentType "application/json; charset=utf-8" -StatusCode 400
+                        continue
+                    }
+
+                    try {
+                        $jsonContent = $cfgDict | ConvertTo-Json -Depth 5
+                        $tmpConfigPath = "$configPath.tmp"
+
+                        # 1. 一時ファイルに安全に書き出し (UTF-8)
+                        [System.IO.File]::WriteAllText($tmpConfigPath, $jsonContent, [System.Text.Encoding]::UTF8)
+
+                        # 2. 既存 config.json がある場合、3世代バックアップローテーション
+                        if (Test-Path $configPath) {
+                            $maxConfigBackups = 3
+                            for ($bIdx = $maxConfigBackups - 1; $bIdx -ge 1; $bIdx--) {
+                                $oldBak = "$configPath.bak$bIdx"
+                                $newBak = "$configPath.bak$($bIdx + 1)"
+                                if (Test-Path $oldBak) {
+                                    Copy-Item -Path $oldBak -Destination $newBak -Force
+                                }
+                            }
+                            Copy-Item -Path $configPath -Destination "$configPath.bak1" -Force
+                        }
+
+                        # 3. アトミック置換
+                        Move-Item -Path $tmpConfigPath -Destination $configPath -Force
+
+                        $respJson = @{ success = $true; message = "設定を正常に更新しました (バックアップを作成しました)。" } | ConvertTo-Json
+                        Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($respJson)) -ContentType "application/json; charset=utf-8"
+                    } catch {
+                        if (Test-Path $tmpConfigPath) { Remove-Item -Path $tmpConfigPath -Force -ErrorAction SilentlyContinue }
+                        $respJson = @{ success = $false; message = "config.json の書き込みに失敗しました: $_" } | ConvertTo-Json
+                        Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($respJson)) -ContentType "application/json; charset=utf-8" -StatusCode 500
+                    }
+                    continue
+                }
+            }
+
             if ($rawPath -eq "/api/index.json") {
                 $jsonStr = Get-ApiIndexJson -QueryParams $queryParams
                 $bytes   = [System.Text.Encoding]::UTF8.GetBytes($jsonStr)
@@ -515,6 +689,10 @@ try {
                 $authorParam   = $queryParams["name"]
                 $pageTitle     = if ($authorParam) { "著者: $authorParam" } else { "著者一覧" }
                 $bodyContent   = Get-AuthorsViewHtml -SelectedAuthor $authorParam
+            } elseif ($rawPath -eq "/settings") {
+                $isDynamicView = $true
+                $pageTitle     = "システム設定"
+                $bodyContent   = Get-SettingsViewHtml
             } elseif ($rawPath -eq "/search") {
                 $isDynamicView = $true
                 $qParam        = $queryParams["q"]
@@ -676,6 +854,7 @@ try {
             <a href="/tags">🏷️ タグ一覧</a>
             <a href="/maintenance">🧹 メンテナンス</a>
             <a href="/authors">👥 著者一覧</a>
+            <a href="/settings">⚙️ 設定</a>
             <a href="/api/index.json" target="_blank">🤖 API (JSON)</a>
         </nav>
         <form action="/search" method="GET" accept-charset="UTF-8" class="search-form">

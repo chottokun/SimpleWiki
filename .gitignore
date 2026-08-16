@@ -48,8 +48,15 @@ dotnet-uninstall-debian-packages.sh
 # Export output directory
 dist/
 
-# LLM Configuration (Secret API Keys)
+# Search Index Cache
+.cache/
+**/.cache/
+*.tmp*
+
+# LLM Configuration (Secret API Keys) & Backups
 config.json
+config.json.bak*
+
 
 # Development plans and scratch files
 plan/

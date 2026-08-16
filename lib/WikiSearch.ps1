@@ -4,26 +4,155 @@
 #  文字コード: UTF-8 with BOM
 # ==============================================================================
 
+function Get-WikiCachePath {
+    param (
+        [string]$TargetWikiDir = $script:wikiDir
+    )
+    $config = Get-ConfigJson -TargetScriptDir $scriptDir
+    $cacheSubFolder = if ($config.search -and -not [string]::IsNullOrWhiteSpace($config.search.cacheFolder)) { $config.search.cacheFolder } else { ".cache" }
+
+    $targetDir = if (-not [string]::IsNullOrWhiteSpace($TargetWikiDir)) { $TargetWikiDir } else { $scriptDir }
+    $cacheDir  = Join-Path $targetDir $cacheSubFolder
+    return Join-Path $cacheDir ".index-cache.json"
+}
+
+function Save-WikiIndexCache {
+    param (
+        [string]$TargetWikiDir = $script:wikiDir
+    )
+    try {
+        $config = Get-ConfigJson -TargetScriptDir $scriptDir
+        if (-not ($config.search -and $config.search.useCache -eq $true)) {
+            return $false
+        }
+
+        $cacheFilePath = Get-WikiCachePath -TargetWikiDir $TargetWikiDir
+        $cacheDir      = [System.IO.Path]::GetDirectoryName($cacheFilePath)
+
+        if (-not (Test-Path $cacheDir)) {
+            New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
+        }
+
+        $cachePayload = @{
+            Version       = "1.0"
+            GeneratedAt   = (Get-Date).ToString("o")
+            TargetDir     = $TargetWikiDir
+            DirWriteTime  = $script:WikiIndexDirWriteTime.Ticks
+            Items         = $script:WikiIndex
+        }
+
+        $json = $cachePayload | ConvertTo-Json -Depth 5
+        [System.IO.File]::WriteAllText($cacheFilePath, $json, [System.Text.Encoding]::UTF8)
+        return $true
+    } catch {
+        Write-Warning "インデックスキャッシュの保存に失敗しました: $_"
+        return $false
+    }
+}
+
+function Load-WikiIndexCache {
+    param (
+        [string]$TargetWikiDir = $script:wikiDir
+    )
+    try {
+        $config = Get-ConfigJson -TargetScriptDir $scriptDir
+        if (-not ($config.search -and $config.search.useCache -eq $true)) {
+            return $false
+        }
+
+        $cacheFilePath = Get-WikiCachePath -TargetWikiDir $TargetWikiDir
+        if (-not (Test-Path $cacheFilePath)) { return $false }
+
+        $json = [System.IO.File]::ReadAllText($cacheFilePath, [System.Text.Encoding]::UTF8)
+        if ([string]::IsNullOrWhiteSpace($json)) { return $false }
+
+        $cacheData = $json | ConvertFrom-Json
+        if (-not $cacheData -or $null -eq $cacheData.Items) { return $false }
+
+        $targetDir = if (-not [string]::IsNullOrWhiteSpace($TargetWikiDir)) { $TargetWikiDir } else { $scriptDir }
+        if ((Test-Path $targetDir) -and (Test-Path -LiteralPath $cacheFilePath)) {
+            $cacheItem = Get-Item -LiteralPath $cacheFilePath -ErrorAction SilentlyContinue
+            if ($cacheItem) {
+                $cacheFileWriteTime = $cacheItem.LastWriteTime
+                $currentMdFiles = @(Get-ChildItem -Path $targetDir -Recurse -Filter "*.md" -ErrorAction SilentlyContinue |
+                    Where-Object { $_.FullName -notmatch '[\\/]\.(git|lib|tests|dist|\.cache)[\\/]' })
+
+                # ファイル件数が異なる場合（追加・削除された場合）はキャッシュ無効
+                if ($currentMdFiles.Count -ne $cacheData.Items.Count) {
+                    return $false
+                }
+
+                # キャッシュ作成後に更新されたファイルが存在する場合はキャッシュ無効
+                $hasNewer = $false
+                foreach ($f in $currentMdFiles) {
+                    if ($f.LastWriteTime -gt $cacheFileWriteTime) {
+                        $hasNewer = $true
+                        break
+                    }
+                }
+                if ($hasNewer) {
+                    return $false
+                }
+            }
+        }
+
+        $itemList = [System.Collections.Generic.List[PSObject]]::new()
+        foreach ($item in $cacheData.Items) {
+            $lastUpdated = [DateTime]::MinValue
+            if (-not [DateTime]::TryParse($item.LastUpdated, [ref]$lastUpdated)) {
+                $lastUpdated = Get-Date
+            }
+            $psObj = [PSCustomObject]@{
+                Title       = $item.Title
+                Description = $item.Description
+                Author      = $item.Author
+                Domain      = $item.Domain
+                Tags        = @($item.Tags)
+                LastUpdated = $lastUpdated
+                Status      = $item.Status
+                HasYaml     = [bool]$item.HasYaml
+                RelPath     = $item.RelPath
+                FullPath    = $item.FullPath
+                BodyText    = $item.BodyText
+            }
+            $itemList.Add($psObj)
+        }
+
+        $script:WikiIndex = $itemList.ToArray()
+        $script:WikiIndexDirWriteTime = (Get-Item $targetDir).LastWriteTime
+        $script:WikiIndexLastScan = Get-Date
+        return $true
+    } catch {
+        Write-Warning "インデックスキャッシュの読み込みに失敗しました: $_"
+        return $false
+    }
+}
+
 function Build-WikiIndex {
     param (
-        [string]$TargetWikiDir = $wikiDir,
+        [string]$TargetWikiDir = $script:wikiDir,
         [switch]$ForceRefresh
     )
 
-    if (-not (Test-Path $TargetWikiDir)) { return @() }
+    $targetDir = if (-not [string]::IsNullOrWhiteSpace($TargetWikiDir)) { $TargetWikiDir } else { $scriptDir }
+    if (-not (Test-Path $targetDir)) { return @() }
 
-    $currentWriteTime = (Get-Item $TargetWikiDir).LastWriteTime
+    $currentWriteTime = (Get-Item $targetDir).LastWriteTime
     if (-not $ForceRefresh -and $script:WikiIndex.Count -gt 0 -and $script:WikiIndexDirWriteTime -eq $currentWriteTime) {
         return $script:WikiIndex
     }
 
-    $mdFiles = Get-ChildItem -Path $TargetWikiDir -Recurse -Filter "*.md" |
-        Where-Object { $_.FullName -notmatch '[\\/]\.(git|lib|tests|dist)[\\/]' } |
+    if (-not $ForceRefresh -and (Load-WikiIndexCache -TargetWikiDir $targetDir)) {
+        return $script:WikiIndex
+    }
+
+    $mdFiles = Get-ChildItem -Path $targetDir -Recurse -Filter "*.md" |
+        Where-Object { $_.FullName -notmatch '[\\/]\.(git|lib|tests|dist|\.cache)[\\/]' } |
         Sort-Object FullName
 
     $indexList = [System.Collections.Generic.List[PSObject]]::new()
     foreach ($file in $mdFiles) {
-        $relPath = $file.FullName.Substring($TargetWikiDir.Length).TrimStart("\", "/")
+        $relPath = $file.FullName.Substring($targetDir.Length).TrimStart("\", "/")
         $meta    = Get-DocumentMetadata -File $file -RelPath $relPath
         $indexList.Add($meta)
     }
@@ -31,6 +160,8 @@ function Build-WikiIndex {
     $script:WikiIndex = $indexList.ToArray()
     $script:WikiIndexDirWriteTime = $currentWriteTime
     $script:WikiIndexLastScan = Get-Date
+
+    Save-WikiIndexCache -TargetWikiDir $targetDir | Out-Null
 
     return $script:WikiIndex
 }
@@ -344,7 +475,7 @@ function Search-OkfDocs {
 # --- Agentic Tools (PowerShell 内部実行ファンクション) ---
 
 function Get-QueryParams {
-    param ([Parameter(Mandatory = $true)][System.Net.HttpListenerRequest]$Request)
+    param ([Parameter(Mandatory = $true)][object]$Request)
     $queryDict = @{}
     $rawQuery = $Request.Url.Query
     if (-not [string]::IsNullOrWhiteSpace($rawQuery)) {
