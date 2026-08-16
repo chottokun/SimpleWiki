@@ -136,3 +136,7 @@ tmp/*
 
 # Ignore CTRF report files
 crtf/*
+
+# logs
+logs/*
+!logs/.gitkeep

@@ -821,6 +821,19 @@ Describe "Agentic RAG & OKF Tools Tests" {
         $res | Should Not Be $null
         $res.answer | Should Not BeNullOrEmpty
     }
+
+    It "lib/WikiRag.ps1 system prompt and read_doc include rules for traversing index.md and README.md links" {
+        $ragContent = Get-Content -Path (Join-Path $projectRoot "lib\WikiRag.ps1") -Raw -Encoding UTF8
+        $ragContent | Should -Match "index\.md や README\.md 等の目次・概要ドキュメントを参照した際"
+        $ragContent | Should -Match "read_doc\(relPath\)"
+        $ragContent | Should -Match "💡【ネクストステップ指示 \(自律深掘り\)】"
+    }
+
+    It "Invoke-AgenticRagChat supports custom SystemPrompt parameter" {
+        $res = Invoke-AgenticRagChat -ApiUrl "http://invalid-endpoint-xyz-999" -ApiKey "key" -Model "model" -UserMessage "質問" -WikiDir $projectRoot -MaxTurns 1 -TimeoutSec 1 -SystemPrompt "カスタムプロンプト"
+        $res | Should Not Be $null
+        $res.thinkingLog.Count | Should BeGreaterThan 0
+    }
 }
 
 Describe "Markdown Editor API & Generation Backup Tests" {
