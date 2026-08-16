@@ -56,7 +56,7 @@ function Test-YamlFrontMatterSyntax {
 # --- OKF メタデータ抽出し ＆ 自動補完 (フォールバック) 関数 ---
 function Get-DocumentMetadata {
     param (
-        [Parameter(Mandatory = $true)]$File,
+        [Parameter(Mandatory = $false)]$File = $null,
         [string]$RelPath = "",
         [string]$MdText = ""
     )

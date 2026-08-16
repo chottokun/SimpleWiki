@@ -13,5 +13,11 @@
   "api": {
     "defaultLimit": 100,
     "maxLimit": 1000
+  },
+  "search": {
+    "prebuildIndex": false,
+    "useCache": false,
+    "cacheFolder": ".cache"
   }
 }
+

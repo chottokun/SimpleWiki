@@ -47,7 +47,7 @@ function Invoke-ToolSearchOkf {
             [void]$sb.AppendLine("    ・本文スニペット:`n$($r.Snippet)")
         }
     }
-    [void]$sb.AppendLine("`n※ 情報を網羅・検証するために、必要に応じて未確認の上記候補ドキュメントの RelPath に対して `read_doc(relPath)` を呼び出して参照してください。")
+    [void]$sb.AppendLine("`n※ 情報を網羅・検証するために、必要に応じて未確認の上記候補ドキュメントの RelPath に対して ``read_doc(relPath)`` を呼び出して参照してください。")
     return $sb.ToString()
 }
 

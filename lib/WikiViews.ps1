@@ -974,4 +974,189 @@ function Get-ChatWidgetHtml {
     return $widget
 }
 
-# --- 安全な HTTP レスポンス送信関数 ---
+# --- システム設定ビュー生成関数 ---
+function Get-SettingsViewHtml {
+    $config = Get-ConfigJson -TargetScriptDir $scriptDir
+
+    $prebuildChecked   = if ($config.search -and $config.search.prebuildIndex -eq $true) { "checked" } else { "" }
+    $useCacheChecked   = if ($config.search -and $config.search.useCache -eq $true) { "checked" } else { "" }
+    $cacheFolder       = if ($config.search -and -not [string]::IsNullOrWhiteSpace($config.search.cacheFolder)) { [System.Net.WebUtility]::HtmlEncode($config.search.cacheFolder) } else { ".cache" }
+
+    $ragEnabledChecked = if ($config.rag -and $config.rag.enabled -eq $true) { "checked" } else { "" }
+    $apiUrl            = if ($config.rag -and $config.rag.apiUrl) { [System.Net.WebUtility]::HtmlEncode($config.rag.apiUrl) } else { "http://localhost:11434/v1" }
+    $model             = if ($config.rag -and $config.rag.model) { [System.Net.WebUtility]::HtmlEncode($config.rag.model) } else { "qwen2.5-coder-7b-instruct" }
+
+    $cachedCount = if ($null -ne $script:WikiIndex) { $script:WikiIndex.Count } else { 0 }
+    $lastScanStr = if ($script:WikiIndexLastScan -and $script:WikiIndexLastScan -gt [DateTime]::MinValue) { $script:WikiIndexLastScan.ToString("yyyy-MM-dd HH:mm:ss") } else { "未実行" }
+
+    return @"
+<div class="settings-container">
+    <h2>⚙️ システム設定</h2>
+    <p>検索キャッシュや起動時動作、LLM/RAG連携の各種オプションを設定します。</p>
+
+    <div id="settingsToast" class="okf-card" style="display:none; border-left: 4px solid #28a745; margin-bottom: 20px;">
+        <span id="settingsToastMsg" style="font-weight: bold;"></span>
+    </div>
+
+    <form id="settingsForm" onsubmit="saveSettings(event)" style="display: flex; flex-direction: column; gap: 20px;">
+        <div class="okf-card">
+            <div class="okf-card-header">🔍 検索＆インデックス設定</div>
+            <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 12px;">
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                    <input type="checkbox" id="prebuildIndex" name="prebuildIndex" $prebuildChecked>
+                    <span><strong>起動時にインデックスを新規生成する</strong>（デフォルト: オフ）</span>
+                </label>
+                <div style="font-size: 13px; color: #586069; margin-left: 24px;">
+                    サーバー起動時に全 Markdown ドキュメントのメタデータと本文インデックスを事前構築します。
+                </div>
+
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-top: 8px;">
+                    <input type="checkbox" id="useCache" name="useCache" $useCacheChecked>
+                    <span><strong>インデックスキャッシュを有効化する</strong>（デフォルト: オフ）</span>
+                </label>
+                <div style="font-size: 13px; color: #586069; margin-left: 24px;">
+                    生成したインデックスをディスクに保存し、次回以降の読み込みを高速化します。
+                </div>
+
+                <div style="margin-left: 24px; margin-top: 5px;">
+                    <label for="cacheFolder" style="font-size: 13px; font-weight: bold;">キャッシュ保存フォルダ名:</label><br>
+                    <input type="text" id="cacheFolder" name="cacheFolder" value="$cacheFolder" style="width: 250px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;" required>
+                </div>
+            </div>
+
+            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eaecef; font-size: 13px; color: #586069; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <strong>現在のメモリ内インデックス状態:</strong> $cachedCount 件保持 (最終読み込み: $lastScanStr)
+                </div>
+                <button type="button" id="rebuildBtn" onclick="rebuildIndexNow()" style="padding: 6px 12px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
+                    🔄 今すぐインデックス再生成
+                </button>
+            </div>
+        </div>
+
+        <div class="okf-card">
+            <div class="okf-card-header">🤖 AI / LLM RAG 設定</div>
+            <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 12px;">
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                    <input type="checkbox" id="ragEnabled" name="ragEnabled" $ragEnabledChecked>
+                    <span><strong>LLM RAG チャット機能を有効化</strong></span>
+                </label>
+
+                <div style="margin-left: 24px; display: flex; flex-direction: column; gap: 10px;">
+                    <div>
+                        <label for="apiUrl" style="font-size: 13px; font-weight: bold;">API エンドポイント URL:</label><br>
+                        <input type="text" id="apiUrl" name="apiUrl" value="$apiUrl" style="width: 100%; max-width: 400px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;">
+                    </div>
+                    <div>
+                        <label for="model" style="font-size: 13px; font-weight: bold;">使用モデル名:</label><br>
+                        <input type="text" id="model" name="model" value="$model" style="width: 100%; max-width: 400px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <button type="submit" id="saveBtn" style="padding: 10px 24px; background: #28a745; color: white; border: none; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer;">
+                💾 設定を保存する
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+var toastTimer = null;
+function showToast(msg, isError, duration) {
+    var toast = document.getElementById('settingsToast');
+    var toastMsg = document.getElementById('settingsToastMsg');
+    if (toastTimer) {
+        clearTimeout(toastTimer);
+        toastTimer = null;
+    }
+    toast.style.display = 'block';
+    toast.style.borderColor = isError ? '#dc3545' : '#28a745';
+    toastMsg.style.color = isError ? '#721c24' : '#155724';
+    toastMsg.innerText = msg;
+    var dur = (typeof duration === 'number') ? duration : 4000;
+    if (dur > 0) {
+        toastTimer = setTimeout(function() {
+            toast.style.display = 'none';
+            toastTimer = null;
+        }, dur);
+    }
+}
+
+function saveSettings(e) {
+    e.preventDefault();
+    var saveBtn = document.getElementById('saveBtn');
+    saveBtn.disabled = true;
+    saveBtn.innerText = '保存中...';
+
+    var payload = {
+        search: {
+            prebuildIndex: document.getElementById('prebuildIndex').checked,
+            useCache: document.getElementById('useCache').checked,
+            cacheFolder: document.getElementById('cacheFolder').value.trim()
+        },
+        rag: {
+            enabled: document.getElementById('ragEnabled').checked,
+            apiUrl: document.getElementById('apiUrl').value.trim(),
+            model: document.getElementById('model').value.trim()
+        }
+    };
+
+    fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        saveBtn.disabled = false;
+        saveBtn.innerText = '💾 設定を保存する';
+        if (data.success) {
+            showToast('✅ 設定を正常に保存しました。', false);
+        } else {
+            showToast('❌ 保存エラー: ' + (data.message || '設定の更新に失敗しました。'), true);
+        }
+    })
+    .catch(function(err) {
+        saveBtn.disabled = false;
+        saveBtn.innerText = '💾 設定を保存する';
+        showToast('❌ 通信エラーが発生しました。', true);
+    });
+}
+
+function rebuildIndexNow() {
+    var rebuildBtn = document.getElementById('rebuildBtn');
+    if (rebuildBtn) {
+        rebuildBtn.disabled = true;
+        rebuildBtn.innerText = '⏳ インデックス構築中...';
+    }
+    showToast('⏳ インデックスを再構築しています... 完了までお待ちください', false, 0);
+
+    fetch('/api/config?action=rebuild_index', { method: 'POST' })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        if (rebuildBtn) {
+            rebuildBtn.disabled = false;
+            rebuildBtn.innerText = '🔄 今すぐインデックス再生成';
+        }
+        if (data.success) {
+            showToast('✅ ' + data.message, false, 3000);
+            setTimeout(function() { location.reload(); }, 1200);
+        } else {
+            showToast('❌ 再生成失敗: ' + (data.message || 'エラーが発生しました'), true, 5000);
+        }
+    })
+    .catch(function(err) {
+        if (rebuildBtn) {
+            rebuildBtn.disabled = false;
+            rebuildBtn.innerText = '🔄 今すぐインデックス再生成';
+        }
+        showToast('❌ 再生成中に通信エラーが発生しました。', true, 5000);
+    });
+}
+</script>
+"@
+}
+
