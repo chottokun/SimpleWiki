@@ -17,27 +17,36 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
   1. 任意ディレクトリの Markdown ドキュメント群を閉域網・オフライン環境で即座に Web Wiki 化。
   2. IIS, Nginx, Apache などの外部 Web サーバー向けに一括で静的 HTML サイトを生成・デプロイ。
   3. WinRT 形態素解析と LLM RAG による閉域網・ローカル AI チャットアシスタントの統合。
-  4. GUI ツール (`Export-GUI.bat`) による直感的なフォルダ選択とエキスポート。
+  4. 高度な検索エンジン（AND/NOT構文・除外検索・インデックスキャッシュ）による高速なナレッジ検索。
+  5. GUI ツール (`Export-GUI.bat`) による直感的なフォルダ選択とエキスポート。
 - **アーキテクチャ概要**:
   - **リアルタイム閲覧 & OKF ナレッジハブ**: `System.Net.HttpListener` によるローカル Web サーバー (`http://localhost:8080/`)
+  - **🔍 高度な OKF 検索エンジン ＆ NOT 構文（除外検索） ＆ インデックスキャッシュ**:
+    - **WinRT 日本語形態素解析 (`Get-JapaneseWordsWinRT`)**: Windows 10/11 OS 内蔵の `Windows.Data.Text.WordsSegmenter` による完全依存 0 の分かち書き ＆ 助詞ストップワード自動除去。
+    - **AND 検索 ＆ フレーズ完全一致ボーナス**: 複数キーワードの絞り込みと自然文フレーズ加点。
+    - **🚫 NOT 構文（除外検索）**: `-キーワード`, `NOT キーワード`, `!キーワード`, `NOT "フレーズ"` をサポート。単語中ハイフン（`K-DAT`）の誤認を防止する堅牢なパーサー。
+    - **⚡ ディスクキャッシュ (`.cache/.index-cache.json`)**: 起動時事前インデックス生成・キャッシュ読込による検索高速化。ファイル削除・更新を検知してゾンビキャッシュを自動排除。
+  - **⚙️ Web 設定管理画面 (`/settings`) ＆ 3世代バックアップ**:
+    - Web ブラウザ上からの検索キャッシュ・起動時インデックス・RAG 設定の変更・保存。
+    - `config.json` 保存時の **3世代ローテーションバックアップ (`.bak1` 〜 `.bak3`)** とアトミック安全書き込み。
+    - 「今すぐインデックス再生成」ボタンによる即時リフレッシュ ＆ 非同期ローディング UI。
   - **🤖 2モード制 LLM RAG AI チャットアシスタント ＆ POST `/api/chat` API**:
     - **⚡ Fast RAG (高速1-Pass)** / **🧠 Agentic RAG (ReAct自律調査)** の2モード選択トグル機能。
-    - **4つの Agentic Tools**: `search_okf` (重み付け検索), `lookup_glossary` (用語定義抽出), `read_doc` (本文取得・非推奨警告), `get_linked_docs` (相対リンク追跡) による自律探索。
+    - **4つの Agentic Tools**: `search_okf` (重み付け・NOT検索対応), `lookup_glossary` (用語定義抽出), `read_doc` (本文取得・非推奨警告), `get_linked_docs` (相対リンク追跡) による自律探索。
     - **思考プロセス (`thinkingLog`) の可視化**: UI 上でのアコーディオン開閉による探索ステップ追跡。
     - さくら AI API / Ollama / LM Studio / OpenAI 等の各種 REST LLM エンドポイントへ対応。
-    - **WinRT 日本語形態素解析 (`Get-JapaneseWordsWinRT`)**: Windows 10/11 OS 内蔵の `Windows.Data.Text.WordsSegmenter` による完全依存 0 の分かち書き ＆ 助詞ストップワード自動除去。
     - **マルチターン対話履歴 (history) 管理 ＆ 安全文字数ガード**: `config.json` で可変調整（`maxHistoryTurns: 3`, `maxHistoryChars: 4000`, `maxAgentTurns: 5`, `maxDocCharLength: 2000`）。
     - **高度なチャット UI**: Markdown 表（`<table>`）、コードブロック（`<pre><code>`）、リストの完全描画、`📋 コピー` ボタン、`⛶ 拡大/縮小` トグル、`🧹 履歴クリア` ボタンを標準搭載。
   - **🔒 API Key 暗号化ユーティリティ (`Set-ApiKey.bat` / `Set-ApiKey.ps1`)**:
     - Windows DPAPI またはポータブル AES-256 暗号化（`ENC:...` / `DPAPI:...`）により、`config.json` 内の API キーを安全に保護。
   - **Google OKF (Open Knowledge Format) 思想の準拠**: YAML Front Matter からの文脈抽出・自動補完 (フォールバック)・OKF メタデータカード描画
-  - **AI エージェント / LLM 用機械可読 API**: `/api/index.json` (メタデータ), `/api/chunks.json` (自動セマンティック分割チャンク), `/api/chat` (AI チャット)
+  - **AI エージェント / LLM 用機械可読 API**: `/api/index.json` (メタデータ), `/api/chunks.json` (自動セマンティック分割チャンク), `/api/chat` (AI チャット), `/api/config` (設定管理)
   - **✏️ Web UI 内蔵 Markdown エディター ＆ 世代管理バックアップ・復元 ＆ OKF 構文検証**:
     - Web ブラウザ上からの Markdown インプレース直接編集・保存機能 (`/api/raw`, `/api/save`)。
     - `config.json` の `editor.maxBackups` (既定値 3) に基づく自動世代バックアップローテーション (`.bak1`, `.bak2`, ...)。
     - エディターモーダル上での過去世代ドロップダウンプレビュー選択 ＆ ワンクリックでのロールバック復元 UI。
     - 保存時の OKF (YAML Front Matter) 構文エラー自動検出 ＆ マイルドなアドバイス表示 (ソフトLint)。
-  - **動的ナビゲーション & ビュー**: 最近の更新 (`/recent`), タグ集計/検索 (`/tags`), 品質・メンテナンスダッシュボード (`/maintenance`), 著者ディレクトリ (`/authors`), AND 検索 (`/search`)
+  - **動的ナビゲーション & ビュー**: 最近の更新 (`/recent`), タグ集計/検索 (`/tags`), 品質・メンテナンスダッシュボード (`/maintenance`), 著者ディレクトリ (`/authors`), AND/NOT 検索 (`/search`), システム設定 (`/settings`)
   - **静的エキスポート**: `Export-MarkdigWiki.ps1` による OKF メタデータカード同梱型 HTML 一括出力
   - **Markdown レンダリング**: .NET 4.6.2 ビルド版 `Markdig.dll` (GFM テーブル・コードブロック・タスクリスト・YamlFrontMatter 対応)
   - **図形・ダイアグラム**: `lib/mermaid.min.js` 同梱による 100% オフライン Mermaid ダイアグラム表示
@@ -62,13 +71,18 @@ SimpleWiki/
 ├── Export-MarkdigWiki.bat  <-- 静的 HTML エキスポートバッチ (UTF-8 No-BOM)
 ├── Export-GUI.ps1          <-- 静的 HTML エキスポート GUI (UTF-8 with BOM)
 ├── Export-GUI.bat          <-- GUI 起動用バッチ (UTF-8 No-BOM)
-├── config.json.example     <-- LLM RAG 設定ファイルテンプレート
-├── config.json             <-- ローカル LLM RAG 設定（自動生成・暗号化保存）
+├── config.json.example     <-- 設定ファイルテンプレート
+├── config.json             <-- ローカル設定（自動生成・暗号化保存）
 ├── templates/
 │   └── okf-template.md     <-- OKF 準拠ドキュメント新規作成テンプレート
 ├── lib/
 │   ├── Markdig.dll          <-- .NET Framework 4.6.2 ビルド版 Markdig.dll
 │   ├── System.Memory.dll    <-- .NET 4.8 依存アセンブリ
+│   ├── WikiMetadata.ps1     <-- OKF メタデータ抽出 & YAML 構文検証
+│   ├── WikiSearch.ps1       <-- 検索エンジン・WinRT 形態素解析・NOT構文・インデックスキャッシュ
+│   ├── WikiRag.ps1          <-- LLM RAG (Fast/Agentic) ＆ チャット API
+│   ├── WikiViews.ps1        <-- 各種 HTML ビュー ＆ UI レンダラー
+│   ├── WikiSecurity.ps1     <-- AES-256 / DPAPI 暗号化 ＆ パス検証
 │   └── mermaid.min.js       <-- オフライン用 Mermaid.js (MIT License)
 ├── markdown_sample/         <-- サンプルドキュメントフォルダ (OKF メタデータ記述例付き)
 │   ├── index.md             <-- トップページ
@@ -80,7 +94,7 @@ SimpleWiki/
 │   └── images/
 │       └── architecture.svg <-- サンプル SVG 画像
 ├── tests/
-│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全50件)
+│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全94件)
 └── README.md                <-- プロジェクト記録
 ```
 
@@ -117,9 +131,11 @@ SimpleWiki/
 - **`http://localhost:8080/tags`**: タグ目録 / タグクラウド
 - **`http://localhost:8080/maintenance`**: 風化ドキュメント (>365日)・下書き・非推奨の管理画面
 - **`http://localhost:8080/authors`**: 著者一覧ディレクトリ
-- **`http://localhost:8080/search?q=キーワード`**: 全文検索
+- **`http://localhost:8080/search?q=キーワード`**: 全文検索 (AND/NOT 検索対応)
+- **`http://localhost:8080/settings`**: システム設定 & インデックス管理画面
 - **`http://localhost:8080/api/index.json`**: AI エージェント / LLM 用機械可読 JSON インデックス
 - **`http://localhost:8080/api/chunks.json`**: RAG 用自動 H2 見出しセマンティック分割済み JSON チャンク API
+- **`http://localhost:8080/api/config`**: 設定情報取得・保存・インデックス再構築 API
 
 ---
 
@@ -155,20 +171,24 @@ SimpleWiki/
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\tests\Start-MarkdigWiki.Tests.ps1"
 ```
-- **検証結果**: 全 40 件の Pester 自動テストが **100% PASS**。
+- **検証結果**: 全 94 件の Pester 自動テストが **100% PASS**。
   - **1. スクリプト構文・AST検証**: 全 `.ps1` ファイルの構文解析・トークン検証に合格
-  - **2. Pester 単体・統合・セキュリティテスト (全 40 件)**:
+  - **2. Pester 単体・統合・セキュリティテスト (全 94 件)**:
     - Markdig アセンブリロード & GFM パイプライン構築
     - ディレクトリトラバーサル防止 (`403 Forbidden`)
     - XSS サニタイズ (404 パス、タイトル、検索フォーム、OKF 属性値)
     - OKF メタデータ解析・YAML パース例外処理・自動補完 (フォールバック)・カンマ区切りタグ対応
-    - OKF 動的ビュー生成 (`/recent`, `/tags`, `/maintenance`, `/authors`, `/search`)
+    - OKF 動的ビュー生成 (`/recent`, `/tags`, `/maintenance`, `/authors`, `/search`, `/settings`)
     - OKF 文脈検索エンジン重み付けスコアリング & AND 条件検索
+    - 検索クエリ NOT 構文（`-単語`, `NOT 単語`, `!単語`, `NOT "フレーズ"`）による除外検索
+    - 検索インデックスのディスクキャッシュ・ファイル削除/更新検知（ゾンビファイル防止）
+    - 設定保存時の 3世代ローテーションバックアップ (`.bak1`〜`.bak3`) ＆ アトミック保存
     - 全角スペース（`U+3000`）による検索単語分解対応
     - URL エンコードされた UTF-8 日本語クエリパラメータのデコード (`Get-QueryParams`)
     - クライアント接続切断時のソケット例外非破壊保護 (`Write-SafeHttpResponse`)
     - AI エージェント用 API JSON 出力 (`/api/index.json`)
     - RAG 用セマンティックチャンク自動分割 API 出力 (`/api/chunks.json`)
+    - Agentic RAG / Fast RAG AI チャット API (`/api/chat`)
     - 静的 HTML エキスポート (`Export-MarkdigWiki.ps1`) とトップバー/フッターメタデータカード統合
   - **3. E2E エキスポート検証**: 実フォルダでの全 HTML 相互リンク・CSS/JS 出力検証に成功
 
@@ -183,4 +203,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\te
   - `.NET System.*` アセンブリ: MIT License (by .NET Foundation)
 
 詳細なライセンス全文および著作権表示は [LICENSE.md](LICENSE.md) をご覧ください。商用・個人利用・社内展開を含め自由に再配布いただけます。
+
 

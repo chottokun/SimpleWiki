@@ -605,6 +605,112 @@ Describe 'Critical Edge Case and Security Tests' {
     }
 }
 
+Describe 'Search Query NOT Syntax Tests' {
+    BeforeAll {
+        . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -DotSourceOnly
+
+        $script:WikiIndex = @(
+            [PSCustomObject]@{
+                Title       = "REST API 仕様書"
+                Description = "FastAPI と Python による REST API 開発ガイド"
+                Author      = "Dev Team"
+                Domain      = "backend/api"
+                Tags        = @("API", "Python", "FastAPI")
+                LastUpdated = (Get-Date "2026-08-01")
+                Status      = "active"
+                HasYaml     = $true
+                RelPath     = "docs/api-python.md"
+                FullPath    = "C:\wiki\docs\api-python.md"
+                BodyText    = "Python FastAPI を使用した REST API の設計と実装仕様書です。"
+            },
+            [PSCustomObject]@{
+                Title       = "GraphQL API 仕様書"
+                Description = "Node.js と TypeScript による GraphQL 開発"
+                Author      = "Frontend Team"
+                Domain      = "backend/api"
+                Tags        = @("API", "TypeScript", "Node.js")
+                LastUpdated = (Get-Date "2026-08-02")
+                Status      = "active"
+                HasYaml     = $true
+                RelPath     = "docs/api-graphql.md"
+                FullPath    = "C:\wiki\docs\api-graphql.md"
+                BodyText    = "TypeScript で構築する GraphQL API サーバーの仕様です。"
+            },
+            [PSCustomObject]@{
+                Title       = "K-DAT バックアップ運用手順"
+                Description = "研究所専用バックアップツール K-DAT の設定"
+                Author      = "Infra Team"
+                Domain      = "infrastructure/backup"
+                Tags        = @("Backup", "Tool")
+                LastUpdated = (Get-Date "2026-08-03")
+                Status      = "active"
+                HasYaml     = $true
+                RelPath     = "docs/kdat-backup.md"
+                FullPath    = "C:\wiki\docs\kdat-backup.md"
+                BodyText    = "K-DAT を使用したデータバックアップ運用マニュアルです。"
+            }
+        )
+    }
+
+    It "TC-NOT-01: Excludes documents matching minus prefix -keyword" {
+        $res = @(Search-OkfDocs -Query "API -Python" -StatusFilter "active")
+        $res.Count | Should Be 1
+        $res[0].Meta.RelPath | Should Be "docs/api-graphql.md"
+    }
+
+    It "TC-NOT-02: Excludes documents matching NOT keyword syntax" {
+        $res = @(Search-OkfDocs -Query "API NOT Python" -StatusFilter "active")
+        $res.Count | Should Be 1
+        $res[0].Meta.RelPath | Should Be "docs/api-graphql.md"
+    }
+
+    It "TC-NOT-03: Excludes documents matching exclamation prefix !keyword" {
+        $res = @(Search-OkfDocs -Query "API !Python" -StatusFilter "active")
+        $res.Count | Should Be 1
+        $res[0].Meta.RelPath | Should Be "docs/api-graphql.md"
+    }
+
+    It "TC-NOT-04: Preserves in-word hyphens like K-DAT as positive search terms without exclusion" {
+        $res = @(Search-OkfDocs -Query "K-DAT" -StatusFilter "active")
+        $res.Count | Should Be 1
+        $res[0].Meta.RelPath | Should Be "docs/kdat-backup.md"
+    }
+
+    It "TC-NOT-05: Supports multiple NOT exclusions in a single query" {
+        $res = @(Search-OkfDocs -Query "API -Python -TypeScript" -StatusFilter "active")
+        $res.Count | Should Be 0
+    }
+
+    It "TC-NOT-06: Supports quoted phrase exclusion like NOT `"REST API`"" {
+        $res = @(Search-OkfDocs -Query "API NOT `"REST API`"" -StatusFilter "active")
+        $res.Count | Should Be 1
+        $res[0].Meta.RelPath | Should Be "docs/api-graphql.md"
+    }
+
+    It "TC-NOT-07: Supports NOT-only query to filter all documents" {
+        $res = @(Search-OkfDocs -Query "-TypeScript" -StatusFilter "active")
+        $res.Count | Should Be 2
+        $paths = @($res | ForEach-Object { $_.Meta.RelPath })
+        ($paths -contains "docs/api-graphql.md") | Should Be $false
+    }
+
+    It "TC-NOT-08: Agentic tool Invoke-ToolSearchOkf respects NOT syntax and excludes target" {
+        $toolRes = Invoke-ToolSearchOkf -Query "API -Python" -WikiDir $projectRoot
+        $toolRes | Should Not Be $null
+        $toolRes | Should Match "docs/api-graphql.md"
+        $toolRes | Should Not Match "docs/api-python.md"
+    }
+
+    It "TC-NOT-09: Supports consecutive space-less NOT syntax and multi-byte Japanese queries" {
+        $parsed = Split-SearchQueryTerms -Query "中毒 NOT鉛 NOT一酸化"
+        $parsed.IncludeKeywords.Count | Should Be 1
+        $parsed.IncludeKeywords[0] | Should Be "中毒"
+        $parsed.ExcludeKeywords.Count | Should Be 2
+        $parsed.ExcludeKeywords[0] | Should Be "鉛"
+        $parsed.ExcludeKeywords[1] | Should Be "一酸化"
+    }
+}
+
 Describe 'Export-GUI.ps1 GUI Component and Syntax Validation' {
     It 'Export-GUI.ps1 file exists and passes AST syntax parsing' {
         $guiScript = Join-Path $projectRoot "Export-GUI.ps1"
