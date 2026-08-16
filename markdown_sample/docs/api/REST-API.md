@@ -144,12 +144,24 @@ Wiki 内の `status: active` ドキュメントを自動文脈検索し、グラ
 }
 ```
 
+- **`stream`**: ストリーミング（Server-Sent Events: SSE）で応答を受け取るか（既定値: `true`。`false` 指定時は一括 JSON 応答）。
 - **`lang`**: 言語コード（`"ja"`, `"en"` 等。未指定時はクエリ・Cookie・設定から自動解決）。
 - **`includeCurrentPage`**: 現在開いているページのコンテキストを最優先でプロンプトに含めるか（既定値: `true`）。
 - **`currentRelPath`**: 現在開いているページの相対パス。
 
+### レスポンス構造例 (SSE ストリーミング `stream: true`):
+`Content-Type: text/event-stream; charset=utf-8` でトークンやログが順次送信されます。
+```http
+data: {"type":"thinking","content":"🔍 Tool Call: search_okf (query: '基幹DB 復旧', domain: '')"}
 
-### レスポンス構造例 (Agentic モード):
+data: {"type":"token","content":"『K-DAT』は"}
+
+data: {"type":"token","content":"データバックアップツールです。"}
+
+data: {"type":"done","mode":"agentic","answer":"『K-DAT』はデータバックアップツールです。基幹DBの復旧は...","thinkingLog":["..."],"sources":[{"title":"社内用語定義集","relPath":"glossary.md","relUri":"/glossary.md","lastUpdated":"2026-08-10","author":"ナレッジ管理チーム"}]}
+```
+
+### レスポンス構造例 (一括 JSON `stream: false` / フォールバック時):
 ```json
 {
   "mode": "agentic",

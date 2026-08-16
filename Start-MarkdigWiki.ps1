@@ -535,8 +535,188 @@ try {
                 $chatLang = if ($reqObj -and $reqObj.lang) { $reqObj.lang.ToString().ToLower().Trim() } else { $reqLang }
                 if (-not $script:I18n.ContainsKey($chatLang)) { $chatLang = "ja" }
 
+                $isStream = $true
+                if ($reqObj -and $reqObj.PSObject.Properties['stream'] -and $reqObj.stream -eq $false) {
+                    $isStream = $false
+                }
+
+                if ($isStream) {
+                    $response.StatusCode = 200
+                    $response.ContentType = "text/event-stream; charset=utf-8"
+                    $response.Headers["Cache-Control"] = "no-cache"
+                    $response.Headers["Connection"] = "keep-alive"
+                    $response.SendChunked = $true
+
+                    $sendSse = {
+                        param([string]$Type, [object]$Data)
+                        try {
+                            $eventObj = @{ type = $Type }
+                            if ($Data -is [string]) {
+                                $eventObj["content"] = $Data
+                            } elseif ($Data -is [hashtable]) {
+                                foreach ($k in $Data.Keys) { $eventObj[$k] = $Data[$k] }
+                            } elseif ($Data -is [PSCustomObject]) {
+                                foreach ($p in $Data.PSObject.Properties) { $eventObj[$p.Name] = $p.Value }
+                            }
+                            $jsonStr = $eventObj | ConvertTo-Json -Compress -Depth 5
+                            $sseBytes = [System.Text.Encoding]::UTF8.GetBytes("data: $jsonStr`n`n")
+                            $response.OutputStream.Write($sseBytes, 0, $sseBytes.Length)
+                            $response.OutputStream.Flush()
+                        } catch { }
+                    }
+
+                    if ($reqMode -eq "agentic") {
+                        $maxTurns = 5
+                        if ($config.rag -and $config.rag.maxAgentTurns) {
+                            $maxTurns = [int]$config.rag.maxAgentTurns
+                        }
+                        $maxDocChars = 2000
+                        if ($config.rag -and $config.rag.maxDocCharLength) {
+                            $maxDocChars = [int]$config.rag.maxDocCharLength
+                        }
+                        $customAgenticPrompt = if ($config.rag -and $config.rag.agenticSystemPrompt) { $config.rag.agenticSystemPrompt } else { "" }
+
+                        try {
+                            $agentRes = Invoke-AgenticRagChat -ApiUrl $config.rag.apiUrl -ApiKey $config.rag.apiKey -Model $config.rag.model -UserMessage $userMsg -History $processedHistory -WikiDir $wikiDir -MaxTurns $maxTurns -MaxDocChars $maxDocChars -TimeoutSec $timeoutSec -CurrentDoc $currDoc -Lang $chatLang -CustomAgenticPrompt $customAgenticPrompt -Stream -OnThinkingCallback {
+                                param($thinkLog)
+                                & $sendSse "thinking" $thinkLog
+                            } -OnChunkReceived {
+                                param($tokenChunk)
+                                & $sendSse "token" $tokenChunk
+                            }
+                            & $sendSse "done" @{
+                                mode        = "agentic"
+                                answer      = $agentRes.answer
+                                thinkingLog = $agentRes.thinkingLog
+                                sources     = $agentRes.sources
+                            }
+                        } catch {
+                            & $sendSse "error" @{ message = "Agentic RAG 実行中にエラーが発生しました: $_" }
+                        }
+                    } else {
+                        # Fast RAG Stream
+                        Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+                        $activeDocs = @($script:WikiIndex | Where-Object { $_.Status -in @("active", "stable") })
+                        $maxDocs = 3
+                        if ($config.rag -and $config.rag.maxContextDocs) {
+                            $maxDocs = [int]$config.rag.maxContextDocs
+                        }
+
+                        $searchQueryText = $userMsg
+                        if ($processedHistory.Count -gt 0) {
+                            $lastUserTurn = $processedHistory | Where-Object { $_.role -eq "user" } | Select-Object -Last 1
+                            if ($lastUserTurn) {
+                                $searchQueryText = $lastUserTurn.content + " " + $userMsg
+                            }
+                        }
+                        $keywords = Get-JapaneseWordsWinRT -Text $searchQueryText
+
+                        $docScores = [System.Collections.Generic.List[PSObject]]::new()
+                        foreach ($doc in $activeDocs) {
+                            $score = 0
+                            foreach ($kw in $keywords) {
+                                $kwRegex = [regex]::Escape($kw)
+                                if ($doc.Title -and $doc.Title -match $kwRegex) { $score += 10 }
+                                if ($doc.Tags) {
+                                    $tm = $doc.Tags | Where-Object { $_ -match $kwRegex }
+                                    if ($tm) { $score += 8 }
+                                }
+                                if ($doc.Description -and $doc.Description -match $kwRegex) { $score += 5 }
+                                if ($doc.BodyText -and $doc.BodyText -match $kwRegex) { $score += 2 }
+                            }
+                            if ($score -gt 0) {
+                                $docScores.Add([PSCustomObject]@{ Doc = $doc; Score = $score })
+                            }
+                        }
+
+                        $topScored = @($docScores | Sort-Object Score -Descending | Select-Object -First $maxDocs)
+                        $contextDocs = [System.Collections.Generic.List[PSObject]]::new()
+                        if ($currDoc) { $contextDocs.Add($currDoc) }
+
+                        if ($topScored.Count -gt 0) {
+                            foreach ($ts in $topScored) {
+                                if (-not $currDoc -or $ts.Doc.RelPath -ne $currDoc.RelPath) {
+                                    $contextDocs.Add($ts.Doc)
+                                }
+                            }
+                        } else {
+                            $takeCount = [Math]::Min($maxDocs, $activeDocs.Count)
+                            $fallbackDocs = @($activeDocs | Sort-Object LastUpdated -Descending | Select-Object -First $takeCount)
+                            foreach ($fd in $fallbackDocs) {
+                                if (-not $currDoc -or $fd.RelPath -ne $currDoc.RelPath) {
+                                    $contextDocs.Add($fd)
+                                }
+                            }
+                        }
+
+                        $contextStrBuilder = [System.Text.StringBuilder]::new()
+                        $sourcesList = [System.Collections.Generic.List[PSObject]]::new()
+                        $isChatEn = ($chatLang -eq "en")
+
+                        foreach ($cDoc in $contextDocs) {
+                            $relUri = "/" + [Uri]::EscapeUriString($cDoc.RelPath.Replace('\', '/'))
+                            $sourcesList.Add([PSCustomObject]@{
+                                title       = $cDoc.Title
+                                relPath     = $cDoc.RelPath
+                                relUri      = $relUri
+                                lastUpdated = $cDoc.LastUpdated.ToString("yyyy-MM-dd")
+                                author      = $cDoc.Author
+                            })
+
+                            $snippet = $cDoc.BodyText
+                            if ($snippet -and $snippet.Length -gt 800) {
+                                $snippet = $snippet.Substring(0, 800) + "..."
+                            }
+                            [void]$contextStrBuilder.AppendLine("---")
+                            if ($isChatEn) {
+                                [void]$contextStrBuilder.AppendLine("■ Document: $($cDoc.Title)")
+                                [void]$contextStrBuilder.AppendLine("・Domain: $($cDoc.Domain)")
+                                [void]$contextStrBuilder.AppendLine("・Author: $($cDoc.Author)")
+                                [void]$contextStrBuilder.AppendLine("・Last Updated: $($cDoc.LastUpdated.ToString('yyyy-MM-dd'))")
+                                [void]$contextStrBuilder.AppendLine("・Status: $($cDoc.Status) (active)")
+                                [void]$contextStrBuilder.AppendLine("Body:")
+                            } else {
+                                [void]$contextStrBuilder.AppendLine("■ ドキュメント: $($cDoc.Title)")
+                                [void]$contextStrBuilder.AppendLine("・ドメイン: $($cDoc.Domain)")
+                                [void]$contextStrBuilder.AppendLine("・著者: $($cDoc.Author)")
+                                [void]$contextStrBuilder.AppendLine("・最終更新日: $($cDoc.LastUpdated.ToString('yyyy-MM-dd'))")
+                                [void]$contextStrBuilder.AppendLine("・ステータス: $($cDoc.Status) (現行)")
+                                [void]$contextStrBuilder.AppendLine("本文:")
+                            }
+                            [void]$contextStrBuilder.AppendLine($snippet)
+                        }
+
+                        $baseSysPrompt = Get-LocalizedStr -Key "default_system_prompt" -Lang $chatLang
+                        if ($config.rag -and $config.rag.systemPrompt) {
+                            $baseSysPrompt = $config.rag.systemPrompt
+                        }
+                        $ctxHeader = if ($isChatEn) { "[Referenced Wiki Context]" } else { "[参照Wikiコンテキスト]" }
+                        $fullSysPrompt = $baseSysPrompt + [System.Environment]::NewLine + [System.Environment]::NewLine + $ctxHeader + [System.Environment]::NewLine + $contextStrBuilder.ToString()
+
+                        try {
+                            $answerText = Invoke-OpenAiChatCompletions -ApiUrl $config.rag.apiUrl -ApiKey $config.rag.apiKey -Model $config.rag.model -SystemPrompt $fullSysPrompt -UserMessage $userMsg -History $processedHistory -TimeoutSec $timeoutSec -Stream -OnChunkReceived {
+                                param($tokenChunk)
+                                & $sendSse "token" $tokenChunk
+                            }
+                            & $sendSse "done" @{
+                                mode    = "fast"
+                                answer  = $answerText
+                                sources = $sourcesList
+                            }
+                        } catch {
+                            & $sendSse "error" @{ message = "LLM との通信に失敗しました: $_" }
+                        }
+                    }
+
+                    try {
+                        $response.OutputStream.Close()
+                        $response.Close()
+                    } catch { }
+                    continue
+                }
+
                 if ($reqMode -eq "agentic") {
-                    # --- Agentic RAG Mode (ReAct 自律調査) ---
+                    # --- Agentic RAG Mode (非ストリーム) ---
                     $maxTurns = 5
                     if ($config.rag -and $config.rag.maxAgentTurns) {
                         $maxTurns = [int]$config.rag.maxAgentTurns
@@ -564,7 +744,7 @@ try {
                     continue
                 }
 
-                # --- Fast RAG Mode (1-Pass) ---
+                # --- Fast RAG Mode (非ストリーム) ---
                 # 1. OKF 文脈検索 (WinRT 形態素解析エンジン)
                 Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
                 $activeDocs = @($script:WikiIndex | Where-Object { $_.Status -in @("active", "stable") })

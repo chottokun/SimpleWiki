@@ -866,6 +866,13 @@ Describe 'OKF LLM RAG Security and Encryption Tests' {
         )
         { Invoke-OpenAiChatCompletions -ApiUrl 'http://invalid-endpoint-for-test-xyz' -ApiKey 'test-key' -Model 'test-model' -SystemPrompt 'System Prompt' -UserMessage '質問2' -History $history -TimeoutSec 1 } | Should Throw
     }
+
+    It 'Invoke-OpenAiChatCompletions accepts -Stream switch and -OnChunkReceived callback' {
+        $chunkList = [System.Collections.Generic.List[string]]::new()
+        {
+            Invoke-OpenAiChatCompletions -ApiUrl 'http://invalid-endpoint-for-test-xyz' -ApiKey 'test-key' -Model 'test-model' -SystemPrompt 'System Prompt' -UserMessage '質問' -Stream -OnChunkReceived { param($c) $chunkList.Add($c) } -TimeoutSec 1
+        } | Should Throw
+    }
 }
 
 Describe 'Agentic RAG and OKF Tools Tests' {
@@ -979,6 +986,14 @@ Describe 'Agentic RAG and OKF Tools Tests' {
 
     It "Invoke-AgenticRagChat fallback prompt instructs to present related knowledge when direct hits are scarce" {
         $res = Invoke-AgenticRagChat -ApiUrl "http://invalid-endpoint-xyz-999" -ApiKey "key" -Model "model" -UserMessage "未知のトピック" -WikiDir $projectRoot -MaxTurns 1 -TimeoutSec 1
+        $res | Should Not Be $null
+        $res.answer | Should Not BeNullOrEmpty
+    }
+
+    It "Invoke-AgenticRagChat supports -Stream, -OnThinkingCallback, and -OnChunkReceived parameters" {
+        $thinkList = [System.Collections.Generic.List[string]]::new()
+        $chunkList = [System.Collections.Generic.List[string]]::new()
+        $res = Invoke-AgenticRagChat -ApiUrl "http://invalid-endpoint-xyz-999" -ApiKey "key" -Model "model" -UserMessage "テスト質問" -WikiDir $projectRoot -MaxTurns 1 -TimeoutSec 1 -Stream -OnThinkingCallback { param($m) $thinkList.Add($m) } -OnChunkReceived { param($c) $chunkList.Add($c) }
         $res | Should Not Be $null
         $res.answer | Should Not BeNullOrEmpty
     }
@@ -1299,6 +1314,9 @@ Describe 'Directory Listing and Fallback Tests (Get-DirectoryListingHtml)' {
         $html | Should Match "checked"
         $html | Should Match "開いているページを含める"
         $html | Should Match "根拠ドキュメント \(Markdown\)"
+        $html | Should Match "text/event-stream"
+        $html | Should Match "getReader"
+        $html | Should Match "stream: true"
     }
 }
 

@@ -38,9 +38,10 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
     - `config.json` 保存時の **3世代ローテーションバックアップ (`.bak1` 〜 `.bak3`)** とアトミック安全書き込み。
     - 「今すぐインデックス再生成」ボタンによる即時リフレッシュ ＆ 非同期ローディング UI。
   - **🤖 2モード制 LLM RAG AI チャットアシスタント ＆ POST `/api/chat` API**:
+    - **🌊 SSE リアルタイムストリーミング表示 ＆ 非ストリーム自動フォールバック**: トークン単位でのスムーズな逐次出力。LLM API がストリーム非対応の場合でも自動で一括描画へフォールバック。
     - **⚡ Fast RAG (高速1-Pass)** / **🧠 Agentic RAG (ReAct自律調査)** の2モード選択トグル機能。
     - **4つの Agentic Tools**: `search_okf` (重み付け・NOT検索対応), `lookup_glossary` (用語定義抽出), `read_doc` (本文取得・非推奨警告), `get_linked_docs` (相対リンク追跡) による自律探索。
-    - **思考プロセス (`thinkingLog`) の可視化**: UI 上でのアコーディオン開閉による探索ステップ追跡。
+    - **思考プロセス (`thinkingLog`) のリアルタイム可視化**: 自律調査ステップを SSE イベントで逐次受信し、アコーディオン開閉で探索ステップを追跡。
     - さくら AI API / Ollama / LM Studio / OpenAI 等の各種 REST LLM エンドポイントへ対応。
     - **マルチターン対話履歴 (history) 管理 ＆ 安全文字数ガード**: `config.json` で可変調整（`maxHistoryTurns: 3`, `maxHistoryChars: 4000`, `maxAgentTurns: 5`, `maxDocCharLength: 2000`）。
     - **高度なチャット UI**: Markdown 表（`<table>`）、コードブロック（`<pre><code>`）、リストの完全描画、`📋 コピー` ボタン、`⛶ 拡大/縮小` トグル、`🧹 履歴クリア` ボタンを標準搭載。

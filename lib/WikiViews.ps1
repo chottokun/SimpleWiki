@@ -1024,77 +1024,97 @@ function Get-ChatWidgetHtml {
                 return parts.join("");
             }
 
-            function appendMsg(role, text, sources, thinkingLog) {
+            function createAssistantMsgBox() {
                 var div = document.createElement("div");
-                div.className = "chat-msg " + role;
-                if (role === "user") {
-                    div.textContent = text;
-                } else {
-                    var innerHtml = "";
-                    if (thinkingLog && thinkingLog.length > 0) {
-                        var thinkTitle = "$agentThinkJs".replace("{0}", thinkingLog.length);
-                        innerHtml += "<details class='chat-thinking'><summary>" + thinkTitle + "</summary><ul>";
-                        thinkingLog.forEach(function(item) {
-                            innerHtml += "<li>" + escapeHtml(item) + "</li>";
-                        });
-                        innerHtml += "</ul></details>";
-                    }
-                    innerHtml += renderMarkdown(text);
-                    div.innerHTML = innerHtml;
+                div.className = "chat-msg assistant";
+                div.innerHTML = "<details class='chat-thinking' style='display:none;'><summary></summary><ul></ul></details>" +
+                                "<div class='chat-content'></div>" +
+                                "<div class='chat-sources' style='display:none;'></div>" +
+                                "<div class='chat-msg-actions' style='display:none;'></div>";
+                msgs.appendChild(div);
+                msgs.scrollTop = msgs.scrollHeight;
+                return {
+                    root: div,
+                    thinking: div.querySelector(".chat-thinking"),
+                    thinkingSummary: div.querySelector(".chat-thinking summary"),
+                    thinkingUl: div.querySelector(".chat-thinking ul"),
+                    content: div.querySelector(".chat-content"),
+                    sources: div.querySelector(".chat-sources"),
+                    actions: div.querySelector(".chat-msg-actions")
+                };
+            }
+
+            function finalizeAssistantMsg(box, answerText, sources, thinkingLogs) {
+                if (thinkingLogs && thinkingLogs.length > 0) {
+                    box.thinking.style.display = "block";
+                    box.thinkingSummary.textContent = "$agentThinkJs".replace("{0}", thinkingLogs.length);
+                    box.thinkingUl.innerHTML = "";
+                    thinkingLogs.forEach(function(item) {
+                        var li = document.createElement("li");
+                        li.textContent = item;
+                        box.thinkingUl.appendChild(li);
+                    });
                 }
+                box.content.innerHTML = renderMarkdown(answerText);
                 if (sources && sources.length > 0) {
-                    var srcDiv = document.createElement("div");
-                    srcDiv.className = "chat-sources";
                     var srcHtml = "$sourceDocsJs<ul style='margin: 4px 0 0 16px; padding: 0;'>";
                     sources.forEach(function(s) {
                         var dateInfo = s.lastUpdated ? " (" + escapeHtml(s.lastUpdated) + ")" : "";
                         srcHtml += "<li>📄 <a href='" + escapeHtml(s.relUri) + "' target='_blank'>" + escapeHtml(s.title || s.relPath) + "</a>" + dateInfo + "</li>";
                     });
                     srcHtml += "</ul>";
-                    srcDiv.innerHTML = srcHtml;
-                    div.appendChild(srcDiv);
+                    box.sources.innerHTML = srcHtml;
+                    box.sources.style.display = "block";
                 } else {
-                    var srcDiv = document.createElement("div");
-                    srcDiv.className = "chat-sources";
-                    srcDiv.innerHTML = "$sourceEmptyJs";
-                    div.appendChild(srcDiv);
+                    box.sources.innerHTML = "$sourceEmptyJs";
+                    box.sources.style.display = "block";
                 }
-                if (role === "assistant" && text !== "🤔 思考中...") {
-                    var actionDiv = document.createElement("div");
-                    actionDiv.className = "chat-msg-actions";
-                    var copyBtn = document.createElement("button");
-                    copyBtn.className = "chat-copy-btn";
-                    copyBtn.innerHTML = "$copyBtnJs";
-                    copyBtn.addEventListener("click", function() {
-                        var performCopy = function() {
-                            copyBtn.innerHTML = "$copyDoneJs";
-                            setTimeout(function() { copyBtn.innerHTML = "$copyBtnJs"; }, 1500);
-                        };
-                        if (navigator.clipboard && navigator.clipboard.writeText) {
-                            navigator.clipboard.writeText(text).then(performCopy).catch(function() {
-                                var ta = document.createElement("textarea");
-                                ta.value = text;
-                                document.body.appendChild(ta);
-                                ta.select();
-                                document.execCommand("copy");
-                                document.body.removeChild(ta);
-                                performCopy();
-                            });
-                        } else {
+
+                var copyBtn = document.createElement("button");
+                copyBtn.className = "chat-copy-btn";
+                copyBtn.innerHTML = "$copyBtnJs";
+                copyBtn.addEventListener("click", function() {
+                    var performCopy = function() {
+                        copyBtn.innerHTML = "$copyDoneJs";
+                        setTimeout(function() { copyBtn.innerHTML = "$copyBtnJs"; }, 1500);
+                    };
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(answerText).then(performCopy).catch(function() {
                             var ta = document.createElement("textarea");
-                            ta.value = text;
+                            ta.value = answerText;
                             document.body.appendChild(ta);
                             ta.select();
                             document.execCommand("copy");
                             document.body.removeChild(ta);
                             performCopy();
-                        }
-                    });
-                    actionDiv.appendChild(copyBtn);
-                    div.appendChild(actionDiv);
-                }
-                msgs.appendChild(div);
+                        });
+                    } else {
+                        var ta = document.createElement("textarea");
+                        ta.value = answerText;
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand("copy");
+                        document.body.removeChild(ta);
+                        performCopy();
+                    }
+                });
+                box.actions.innerHTML = "";
+                box.actions.appendChild(copyBtn);
+                box.actions.style.display = "flex";
                 msgs.scrollTop = msgs.scrollHeight;
+            }
+
+            function appendMsg(role, text, sources, thinkingLog) {
+                var div = document.createElement("div");
+                div.className = "chat-msg " + role;
+                if (role === "user") {
+                    div.textContent = text;
+                    msgs.appendChild(div);
+                    msgs.scrollTop = msgs.scrollHeight;
+                } else {
+                    var box = createAssistantMsgBox();
+                    finalizeAssistantMsg(box, text, sources, thinkingLog);
+                }
             }
 
             function sendMsg() {
@@ -1109,24 +1129,88 @@ function Get-ChatWidgetHtml {
                 appendMsg("user", q);
                 input.value = "";
                 sendBtn.disabled = true;
-                appendMsg("assistant", mode === "agentic" ? "$thinkAgentJs" : "$thinkFastJs");
+
+                var assistantBox = createAssistantMsgBox();
+                assistantBox.content.textContent = (mode === "agentic" ? "$thinkAgentJs" : "$thinkFastJs");
+
+                var thinkingLogs = [];
+                var fullAnswer = "";
 
                 fetch("/api/chat", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ mode: mode, message: q, history: chatHistory, includeCurrentPage: includeCurrentPage, currentRelPath: currentPath, lang: "$Lang" })
-                }).then(function(res) { return res.json(); }).then(function(data) {
-                    msgs.removeChild(msgs.lastChild);
-                    if (data.error) {
-                        appendMsg("assistant", "$errorPrefixJs" + data.message);
+                    body: JSON.stringify({ mode: mode, message: q, history: chatHistory, includeCurrentPage: includeCurrentPage, currentRelPath: currentPath, lang: "$Lang", stream: true })
+                }).then(function(res) {
+                    var contentType = res.headers.get("content-type") || "";
+
+                    if (contentType.indexOf("text/event-stream") !== -1 && res.body && res.body.getReader) {
+                        // --- SSE ストリーム処理 ---
+                        var reader = res.body.getReader();
+                        var decoder = new TextDecoder("utf-8");
+                        var streamBuffer = "";
+                        var hasStartedToken = false;
+
+                        function readStream() {
+                            return reader.read().then(function(result) {
+                                if (result.done) {
+                                    return;
+                                }
+                                streamBuffer += decoder.decode(result.value, { stream: true });
+                                var lines = streamBuffer.split("\n\n");
+                                streamBuffer = lines.pop(); // 未完結のチャンクをバッファに残す
+
+                                for (var i = 0; i < lines.length; i++) {
+                                    var line = lines[i].trim();
+                                    if (line.indexOf("data: ") === 0) {
+                                        var jsonStr = line.substring(6).trim();
+                                        if (jsonStr === "[DONE]") continue;
+                                        try {
+                                            var ev = JSON.parse(jsonStr);
+                                            if (ev.type === "thinking") {
+                                                thinkingLogs.push(ev.content);
+                                                assistantBox.thinking.style.display = "block";
+                                                assistantBox.thinkingSummary.textContent = "$agentThinkJs".replace("{0}", thinkingLogs.length);
+                                                var li = document.createElement("li");
+                                                li.textContent = ev.content;
+                                                assistantBox.thinkingUl.appendChild(li);
+                                                msgs.scrollTop = msgs.scrollHeight;
+                                            } else if (ev.type === "token") {
+                                                if (!hasStartedToken) {
+                                                    hasStartedToken = true;
+                                                    assistantBox.content.innerHTML = "";
+                                                }
+                                                fullAnswer += ev.content;
+                                                assistantBox.content.innerHTML = renderMarkdown(fullAnswer);
+                                                msgs.scrollTop = msgs.scrollHeight;
+                                            } else if (ev.type === "done") {
+                                                var finalAnswerText = ev.answer || fullAnswer;
+                                                finalizeAssistantMsg(assistantBox, finalAnswerText, ev.sources, ev.thinkingLog || thinkingLogs);
+                                                chatHistory.push({ role: "user", content: q });
+                                                chatHistory.push({ role: "assistant", content: finalAnswerText });
+                                            } else if (ev.type === "error") {
+                                                assistantBox.content.innerHTML = "<span style='color:#cb2431;'>$errorPrefixJs" + escapeHtml(ev.message || "Unknown error") + "</span>";
+                                            }
+                                        } catch(e) { }
+                                    }
+                                }
+                                return readStream();
+                            });
+                        }
+                        return readStream();
                     } else {
-                        appendMsg("assistant", data.answer, data.sources, data.thinkingLog);
-                        chatHistory.push({ role: "user", content: q });
-                        chatHistory.push({ role: "assistant", content: data.answer });
+                        // --- 一括 JSON フォールバック処理 ---
+                        return res.json().then(function(data) {
+                            if (data.error) {
+                                assistantBox.content.innerHTML = "<span style='color:#cb2431;'>$errorPrefixJs" + escapeHtml(data.message || data.error) + "</span>";
+                            } else {
+                                finalizeAssistantMsg(assistantBox, data.answer, data.sources, data.thinkingLog);
+                                chatHistory.push({ role: "user", content: q });
+                                chatHistory.push({ role: "assistant", content: data.answer });
+                            }
+                        });
                     }
                 }).catch(function(err) {
-                    msgs.removeChild(msgs.lastChild);
-                    appendMsg("assistant", "$commErrorJs");
+                    assistantBox.content.innerHTML = "<span style='color:#cb2431;'>$commErrorJs</span>";
                 }).finally(function() {
                     sendBtn.disabled = false;
                 });

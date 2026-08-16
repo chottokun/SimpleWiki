@@ -210,7 +210,9 @@ function Invoke-OpenAiChatCompletions {
         [string]$SystemPrompt,
         [string]$UserMessage,
         [array]$History = @(),
-        [int]$TimeoutSec = 30
+        [int]$TimeoutSec = 30,
+        [switch]$Stream,
+        [scriptblock]$OnChunkReceived
     )
 
     $resolvedKey = Get-ResolvedSecret -SecretValue $ApiKey
@@ -237,30 +239,129 @@ function Invoke-OpenAiChatCompletions {
         temperature = 0.3
         messages    = $msgList
     }
+    if ($Stream) {
+        $payloadObj["stream"] = $true
+    }
     $jsonBody = $payloadObj | ConvertTo-Json -Depth 5
     $reqBytes = [System.Text.Encoding]::UTF8.GetBytes($jsonBody)
 
-    $webReq = [System.Net.HttpWebRequest]::Create($endpointUrl)
-    $webReq.Method = "POST"
-    $webReq.ContentType = "application/json; charset=utf-8"
-    $webReq.Timeout = $TimeoutSec * 1000
-    if (-not [string]::IsNullOrWhiteSpace($resolvedKey)) {
-        $webReq.Headers["Authorization"] = "Bearer $resolvedKey"
+    $executeRequest = {
+        param([bool]$UseStreamPayload)
+        
+        $currentPayload = @{
+            model       = $Model
+            temperature = 0.3
+            messages    = $msgList
+        }
+        if ($UseStreamPayload) {
+            $currentPayload["stream"] = $true
+        }
+        $currentJson = $currentPayload | ConvertTo-Json -Depth 5
+        $currentBytes = [System.Text.Encoding]::UTF8.GetBytes($currentJson)
+
+        $webReq = [System.Net.HttpWebRequest]::Create($endpointUrl)
+        $webReq.Method = "POST"
+        $webReq.ContentType = "application/json; charset=utf-8"
+        $webReq.Timeout = $TimeoutSec * 1000
+        if (-not [string]::IsNullOrWhiteSpace($resolvedKey)) {
+            $webReq.Headers["Authorization"] = "Bearer $resolvedKey"
+        }
+
+        $reqStream = $webReq.GetRequestStream()
+        $reqStream.Write($currentBytes, 0, $currentBytes.Length)
+        $reqStream.Close()
+
+        return $webReq.GetResponse()
     }
 
     try {
-        $reqStream = $webReq.GetRequestStream()
-        $reqStream.Write($reqBytes, 0, $reqBytes.Length)
-        $reqStream.Close()
+        $webRes = $null
+        $isStreamMode = [bool]$Stream
+        try {
+            $webRes = & $executeRequest $isStreamMode
+        } catch [System.Net.WebException] {
+            # ストリーム要求で失敗した場合、ストリーム非対応APIへのフォールバックとして非ストリームで再試行
+            if ($isStreamMode) {
+                try {
+                    $isStreamMode = $false
+                    $webRes = & $executeRequest $false
+                } catch {
+                    if ($_.Response) {
+                        $errStream = $_.Response.GetResponseStream()
+                        $errReader = New-Object System.IO.StreamReader($errStream, [System.Text.Encoding]::UTF8)
+                        $errBody = $errReader.ReadToEnd()
+                        throw "API エラー ($($_.Response.StatusCode)): $errBody"
+                    }
+                    throw $_
+                }
+            } else {
+                if ($_.Response) {
+                    $errStream = $_.Response.GetResponseStream()
+                    $errReader = New-Object System.IO.StreamReader($errStream, [System.Text.Encoding]::UTF8)
+                    $errBody = $errReader.ReadToEnd()
+                    throw "API エラー ($($_.Response.StatusCode)): $errBody"
+                }
+                throw $_
+            }
+        }
 
-        $webRes = $webReq.GetResponse()
         try {
             $resStream = $webRes.GetResponseStream()
             $reader = New-Object System.IO.StreamReader($resStream, [System.Text.Encoding]::UTF8)
+            $contentType = if ($webRes.ContentType) { $webRes.ContentType.ToLower() } else { "" }
+
+            # ストリームモードかつ SSE レスポンスの場合の処理
+            if ($isStreamMode -and -not $contentType.Contains("application/json")) {
+                $fullTextBuilder = [System.Text.StringBuilder]::new()
+                $firstLine = $true
+                $isActualSse = $false
+
+                while (($line = $reader.ReadLine()) -ne $null) {
+                    if ($firstLine) {
+                        $firstLine = $false
+                        # 最初の行が { で始まるなら通常の JSON レスポンスと判定してフォールバック
+                        if ($line.Trim().StartsWith("{")) {
+                            $rest = $reader.ReadToEnd()
+                            $allJson = $line + "`n" + $rest
+                            $parsed = try { $allJson | ConvertFrom-Json } catch { $null }
+                            if ($parsed -and $parsed.choices -and $parsed.choices.Count -gt 0) {
+                                $content = $parsed.choices[0].message.content
+                                if ($OnChunkReceived) { & $OnChunkReceived $content }
+                                return $content
+                            }
+                            throw "LLM から無効な JSON レスポンスが返却されました。"
+                        }
+                    }
+
+                    if ($line.StartsWith("data: ")) {
+                        $isActualSse = $true
+                        $payload = $line.Substring(6).Trim()
+                        if ($payload -eq "[DONE]") { break }
+                        $chunkObj = try { $payload | ConvertFrom-Json } catch { $null }
+                        if ($chunkObj -and $chunkObj.choices -and $chunkObj.choices.Count -gt 0) {
+                            $delta = $chunkObj.choices[0].delta
+                            if ($delta -and $delta.content) {
+                                [void]$fullTextBuilder.Append($delta.content)
+                                if ($OnChunkReceived) { & $OnChunkReceived $delta.content }
+                            }
+                        }
+                    }
+                }
+
+                if ($isActualSse) {
+                    return $fullTextBuilder.ToString()
+                }
+            }
+
+            # 通常の一括 JSON 処理 (非ストリーム、または非SSEフォールバック)
             $resJson = $reader.ReadToEnd()
             $parsed = $resJson | ConvertFrom-Json
             if ($parsed -and $parsed.choices -and $parsed.choices.Count -gt 0) {
-                return $parsed.choices[0].message.content
+                $content = $parsed.choices[0].message.content
+                if ($OnChunkReceived) {
+                    & $OnChunkReceived $content
+                }
+                return $content
             }
             throw "LLM から無効なレスポンスが返却されました。"
         } finally {
@@ -291,7 +392,10 @@ function Invoke-AgenticRagChat {
         [int]$TimeoutSec = 30,
         [PSCustomObject]$CurrentDoc = $null,
         [string]$Lang = "ja",
-        [string]$CustomAgenticPrompt = ""
+        [string]$CustomAgenticPrompt = "",
+        [switch]$Stream,
+        [scriptblock]$OnThinkingCallback,
+        [scriptblock]$OnChunkReceived
     )
 
     $targetDir = if (-not [string]::IsNullOrWhiteSpace($WikiDir)) { $WikiDir } else { $script:wikiDir }
@@ -300,6 +404,14 @@ function Invoke-AgenticRagChat {
     $thinkingLog = [System.Collections.Generic.List[string]]::new()
     $sourcesList = [System.Collections.Generic.List[PSObject]]::new()
     $visitedPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+    $logStep = {
+        param([string]$Message)
+        [void]$thinkingLog.Add($Message)
+        if ($OnThinkingCallback) {
+            try { & $OnThinkingCallback $Message } catch { }
+        }
+    }
 
     $isEn = ($Lang -eq "en")
 
@@ -477,7 +589,7 @@ function Invoke-AgenticRagChat {
                 $webRes.Close()
             }
         } catch {
-            [void]$thinkingLog.Add("⚠️ LLM API Tool Calling 通信エラー。Fast モードへフォールバックします。")
+            & $logStep "⚠️ LLM API Tool Calling 通信エラー。Fast モードへフォールバックします。"
             break
         }
 
@@ -501,7 +613,7 @@ function Invoke-AgenticRagChat {
                     "search_okf" {
                         $q = if ($argsObj.query) { $argsObj.query } else { "" }
                         $d = if ($argsObj.domain) { $argsObj.domain } else { "" }
-                        [void]$thinkingLog.Add("🔍 Tool Call: search_okf (query: '$q', domain: '$d')")
+                        & $logStep "🔍 Tool Call: search_okf (query: '$q', domain: '$d')"
                         $toolResult = Invoke-ToolSearchOkf -Query $q -Domain $d -WikiDir $targetDir
                         # 検索ヒット候補を visitedPaths にも記録
                         $rawHits = Search-OkfDocs -Query $q -DomainFilter $d -StatusFilter "active" -WikiDir $targetDir -MaxResults 5
@@ -515,12 +627,12 @@ function Invoke-AgenticRagChat {
                     }
                     "lookup_glossary" {
                         $t = if ($argsObj.term) { $argsObj.term } else { "" }
-                        [void]$thinkingLog.Add("📖 Tool Call: lookup_glossary (term: '$t')")
+                        & $logStep "📖 Tool Call: lookup_glossary (term: '$t')"
                         $toolResult = Invoke-ToolLookupGlossary -Term $t -WikiDir $targetDir
                     }
                     "read_doc" {
                         $p = if ($argsObj.relPath) { $argsObj.relPath } else { "" }
-                        [void]$thinkingLog.Add("📄 Tool Call: read_doc (relPath: '$p')")
+                        & $logStep "📄 Tool Call: read_doc (relPath: '$p')"
                         $toolResult = Invoke-ToolReadDoc -RelPath $p -WikiDir $targetDir -MaxChars $MaxDocChars
                         if ($p -and -not $visitedPaths.Contains($p)) {
                             [void]$visitedPaths.Add($p)
@@ -528,7 +640,7 @@ function Invoke-AgenticRagChat {
                     }
                     "get_linked_docs" {
                         $p = if ($argsObj.relPath) { $argsObj.relPath } else { "" }
-                        [void]$thinkingLog.Add("🔗 Tool Call: get_linked_docs (relPath: '$p')")
+                        & $logStep "🔗 Tool Call: get_linked_docs (relPath: '$p')"
                         $links = Invoke-ToolGetLinkedDocs -RelPath $p -WikiDir $targetDir
                         if ($links -and $links.Count -gt 0) {
                             $linkStrList = foreach ($l in $links) { "・[$($l.LinkText)]($($l.RelPath)) [Status: $($l.Status)]" }
@@ -553,6 +665,9 @@ function Invoke-AgenticRagChat {
             # ツール呼び出しを行わずに最終回答が返ってきた場合
             if ($resMsg.content) {
                 $finalAnswer = $resMsg.content
+                if ($OnChunkReceived) {
+                    & $OnChunkReceived $finalAnswer
+                }
                 break
             }
         }
@@ -576,7 +691,7 @@ function Invoke-AgenticRagChat {
 
     if ([string]::IsNullOrWhiteSpace($finalAnswer)) {
         $maxTurnsLog = if ($isEn) { "⏱️ Reached turn limit ($MaxTurns); generating summarized answer from gathered knowledge." } else { "⏱️ ターン上限 ($MaxTurns) に達したため、収集情報から要約回答を生成します。" }
-        [void]$thinkingLog.Add($maxTurnsLog)
+        & $logStep $maxTurnsLog
         $fallbackUserPrompt = if ($isEn) {
             "※Output your final conclusion as text based on the information gathered so far without making further tool calls. Even if there is no direct answer, clearly present related knowledge, specifications, and helpful information gathered from the explored documents in English."
         } else {
@@ -588,6 +703,9 @@ function Invoke-AgenticRagChat {
             model       = $Model
             temperature = 0.2
             messages    = $messages
+        }
+        if ($Stream) {
+            $payloadObj["stream"] = $true
         }
         $jsonBody = $payloadObj | ConvertTo-Json -Depth 5
         $reqBytes = [System.Text.Encoding]::UTF8.GetBytes($jsonBody)
@@ -609,10 +727,50 @@ function Invoke-AgenticRagChat {
             try {
                 $resStream = $webRes.GetResponseStream()
                 $reader = New-Object System.IO.StreamReader($resStream, [System.Text.Encoding]::UTF8)
-                $resJson = $reader.ReadToEnd()
-                $parsed = $resJson | ConvertFrom-Json
-                if ($parsed -and $parsed.choices -and $parsed.choices.Count -gt 0) {
-                    $finalAnswer = $parsed.choices[0].message.content
+                $contentType = if ($webRes.ContentType) { $webRes.ContentType.ToLower() } else { "" }
+
+                if ($Stream -and -not $contentType.Contains("application/json")) {
+                    $sb = [System.Text.StringBuilder]::new()
+                    $firstLine = $true
+                    $isActualSse = $false
+                    while (($line = $reader.ReadLine()) -ne $null) {
+                        if ($firstLine) {
+                            $firstLine = $false
+                            if ($line.Trim().StartsWith("{")) {
+                                $rest = $reader.ReadToEnd()
+                                $allJson = $line + "`n" + $rest
+                                $parsed = try { $allJson | ConvertFrom-Json } catch { $null }
+                                if ($parsed -and $parsed.choices -and $parsed.choices.Count -gt 0) {
+                                    $finalAnswer = $parsed.choices[0].message.content
+                                    if ($OnChunkReceived) { & $OnChunkReceived $finalAnswer }
+                                }
+                                break
+                            }
+                        }
+                        if ($line.StartsWith("data: ")) {
+                            $isActualSse = $true
+                            $payload = $line.Substring(6).Trim()
+                            if ($payload -eq "[DONE]") { break }
+                            $chunkObj = try { $payload | ConvertFrom-Json } catch { $null }
+                            if ($chunkObj -and $chunkObj.choices -and $chunkObj.choices.Count -gt 0) {
+                                $delta = $chunkObj.choices[0].delta
+                                if ($delta -and $delta.content) {
+                                    [void]$sb.Append($delta.content)
+                                    if ($OnChunkReceived) { & $OnChunkReceived $delta.content }
+                                }
+                            }
+                        }
+                    }
+                    if ($isActualSse) {
+                        $finalAnswer = $sb.ToString()
+                    }
+                } else {
+                    $resJson = $reader.ReadToEnd()
+                    $parsed = $resJson | ConvertFrom-Json
+                    if ($parsed -and $parsed.choices -and $parsed.choices.Count -gt 0) {
+                        $finalAnswer = $parsed.choices[0].message.content
+                        if ($OnChunkReceived) { & $OnChunkReceived $finalAnswer }
+                    }
                 }
             } finally {
                 $webRes.Close()
@@ -635,6 +793,7 @@ function Invoke-AgenticRagChat {
                     $finalAnswer = "Wiki 内を自律検索しましたが、質問に直接該当する明確な記載は見つかりませんでした。関連するガイド（`guides/環境構築.md` や `docs/詳細仕様.md` など）を参照してください。"
                 }
             }
+            if ($OnChunkReceived) { & $OnChunkReceived $finalAnswer }
         }
     }
 
