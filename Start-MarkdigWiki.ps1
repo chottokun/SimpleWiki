@@ -1694,7 +1694,8 @@ function Invoke-AgenticRagChat {
         [int]$MaxTurns = 5,
         [int]$MaxDocChars = 2000,
         [int]$TimeoutSec = 30,
-        [PSCustomObject]$CurrentDoc = $null
+        [PSCustomObject]$CurrentDoc = $null,
+        [string]$SystemPrompt = ""
     )
 
     $targetDir = if (-not [string]::IsNullOrWhiteSpace($WikiDir)) { $WikiDir } else { $script:wikiDir }
@@ -1764,7 +1765,13 @@ function Invoke-AgenticRagChat {
         }
     )
 
-    $sysPrompt = "あなたは社内Wikiのナレッジを自律調査して回答する Agentic RAG アシスタントです。`n" +
+    $baseRolePrompt = if (-not [string]::IsNullOrWhiteSpace($SystemPrompt)) {
+        $SystemPrompt
+    } else {
+        "あなたは社内Wikiのナレッジを自律調査して回答する Agentic RAG アシスタントです。"
+    }
+
+    $sysPrompt = $baseRolePrompt + "`n" +
         "【自律探索・キーワード限界突破ルール】`n" +
         "1. 質問に対する直接の単語一致・該当記述が見つからない・薄い場合でも『該当なし』で諦めないでください。`n" +
         "2. `search_okf` で得られた候補ドキュメント（上位 5 件）や `get_linked_docs` の関連リンクを積極的に `read_doc` で回遊・深掘りし、周辺知識や関連ガイドラインを探索してください。`n" +
@@ -2612,7 +2619,8 @@ try {
                     }
 
                     try {
-                        $agentRes = Invoke-AgenticRagChat -ApiUrl $config.rag.apiUrl -ApiKey $config.rag.apiKey -Model $config.rag.model -UserMessage $userMsg -History $processedHistory -WikiDir $wikiDir -MaxTurns $maxTurns -MaxDocChars $maxDocChars -TimeoutSec $timeoutSec -CurrentDoc $currDoc
+                        $customPrompt = if ($config.rag.agentSystemPrompt) { $config.rag.agentSystemPrompt } elseif ($config.rag.systemPrompt) { $config.rag.systemPrompt } else { "" }
+                        $agentRes = Invoke-AgenticRagChat -ApiUrl $config.rag.apiUrl -ApiKey $config.rag.apiKey -Model $config.rag.model -UserMessage $userMsg -History $processedHistory -WikiDir $wikiDir -MaxTurns $maxTurns -MaxDocChars $maxDocChars -TimeoutSec $timeoutSec -CurrentDoc $currDoc -SystemPrompt $customPrompt
                         $jsonRes = @{
                             mode        = "agentic"
                             answer      = $agentRes.answer

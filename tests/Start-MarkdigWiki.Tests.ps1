@@ -827,6 +827,12 @@ Describe "Agentic RAG & OKF Tools Tests" {
         $psContent | Should -Match "index\.md や README\.md 等の目次・概要ドキュメントを参照した際"
         $psContent | Should -Match "read_doc\(relPath\)"
     }
+
+    It "Invoke-AgenticRagChat supports custom SystemPrompt parameter" {
+        $res = Invoke-AgenticRagChat -ApiUrl "http://invalid-endpoint-xyz-999" -ApiKey "key" -Model "model" -UserMessage "質問" -WikiDir $projectRoot -MaxTurns 1 -TimeoutSec 1 -SystemPrompt "カスタムプロンプト"
+        $res | Should Not Be $null
+        $res.thinkingLog.Count | Should BeGreaterThan 0
+    }
 }
 
 Describe "Markdown Editor API & Generation Backup Tests" {
