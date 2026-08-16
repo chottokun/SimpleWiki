@@ -52,8 +52,11 @@ if (-not (Test-Path $markdigDll)) {
     exit 1
 }
 
+$isWin = ($env:OS -eq "Windows_NT") -or $IsWindows
 Get-ChildItem -Path $libDir -Filter "*.dll" | ForEach-Object {
-    Unblock-File -Path $_.FullName -ErrorAction SilentlyContinue
+    if ($isWin) {
+        Unblock-File -Path $_.FullName -ErrorAction SilentlyContinue
+    }
     Add-Type -Path $_.FullName
 }
 

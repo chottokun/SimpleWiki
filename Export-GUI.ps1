@@ -4,6 +4,18 @@
 #  文字コード: UTF-8 with BOM
 # ==============================================================================
 
+$isWin = ($env:OS -eq "Windows_NT") -or $IsWindows
+if (-not $isWin) {
+    Write-Warning "=========================================================="
+    Write-Warning "  GUI ツール (Export-GUI.ps1) は Windows 専用です。"
+    Write-Warning "  Linux / macOS 環境では動作しません。"
+    Write-Warning "  代わりに CUI スクリプト (Export-MarkdigWiki.ps1) をご利用ください。"
+    Write-Warning "  使用例:"
+    Write-Warning "  pwsh ./Export-MarkdigWiki.ps1 -RootFolder ./markdown_sample -OutputDir ./dist"
+    Write-Warning "=========================================================="
+    return
+}
+
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
