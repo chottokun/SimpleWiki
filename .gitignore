@@ -48,6 +48,11 @@ dotnet-uninstall-debian-packages.sh
 # Export output directory
 dist/
 
+# Search Index Cache
+.cache/
+**/.cache/
+*.tmp_test
+
 # LLM Configuration (Secret API Keys)
 config.json
 
@@ -136,3 +141,7 @@ tmp/*
 
 # Ignore CTRF report files
 crtf/*
+
+# logs
+logs/*
+!logs/.gitkeep

@@ -18,31 +18,9 @@ if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
     $targetConfig = [System.IO.Path]::GetFullPath($ConfigPath)
 }
 
-function Protect-StringAes {
-    param ([string]$PlainText)
-    $salt = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-OKF-RAG-2026-Salt")
-    $pass = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-Portable-Secret-Key-2026")
-    $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($pass, $salt, 1000)
-    $key = $derive.GetBytes(32)
-    $iv  = $derive.GetBytes(16)
 
-    $aes = [System.Security.Cryptography.Aes]::Create()
-    $aes.Key = $key
-    $aes.IV  = $iv
-    $encryptor = $aes.CreateEncryptor()
-
-    $plainBytes = [System.Text.Encoding]::UTF8.GetBytes($PlainText)
-    $encBytes   = $encryptor.TransformFinalBlock($plainBytes, 0, $plainBytes.Length)
-    return "ENC:" + [System.Convert]::ToBase64String($encBytes)
-}
-
-function Protect-StringDpapi {
-    param ([string]$PlainText)
-    Add-Type -AssemblyName System.Security
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes($PlainText)
-    $enc   = [System.Security.Cryptography.ProtectedData]::Protect($bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
-    return "DPAPI:" + [System.Convert]::ToBase64String($enc)
-}
+# --- モジュールのロード (lib/WikiSecurity.ps1) ---
+. (Join-Path $libDir "WikiSecurity.ps1")
 
 # 既存設定の読み込み、無ければ example から生成
 $configObj = $null
