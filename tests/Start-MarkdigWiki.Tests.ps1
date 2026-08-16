@@ -821,6 +821,12 @@ Describe "Agentic RAG & OKF Tools Tests" {
         $res | Should Not Be $null
         $res.answer | Should Not BeNullOrEmpty
     }
+
+    It "Start-MarkdigWiki.ps1 system prompt includes rules for traversing index.md and README.md links" {
+        $psContent = Get-Content -Path (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -Raw -Encoding UTF8
+        $psContent | Should -Match "index\.md や README\.md 等の目次・概要ドキュメントを参照した際"
+        $psContent | Should -Match "read_doc\(relPath\)"
+    }
 }
 
 Describe "Markdown Editor API & Generation Backup Tests" {
