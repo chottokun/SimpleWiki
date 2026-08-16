@@ -7,8 +7,14 @@
     "maxContextDocs": 3,
     "maxHistoryTurns": 3,
     "maxHistoryChars": 4000,
+    "maxAgentTurns": 5,
+    "maxDocCharLength": 2000,
     "timeoutSec": 30,
-    "systemPrompt": "あなたは社内Wikiのナレッジを元に回答するアシスタントです。提供されたコンテキスト情報のみに基づいて、正確かつ丁寧に回答してください。情報がない場合は『Wiki内に該当する情報が見つかりませんでした』と答えてください。"
+    "systemPrompt": "あなたはWikiのナレッジを元に回答するアシスタントです。提供されたコンテキスト情報のみに基づいて、正確かつ丁寧に回答してください。情報がない場合は『Wiki内に該当する情報が見つかりませんでした』と答えてください。",
+    "agenticSystemPrompt": "あなたはWikiのナレッジを自律調査して回答する Agentic RAG アシスタントです。目次(index.md)を見つけた場合は必ずリンク先の本文(read_doc)まで参照してください。"
+  },
+  "editor": {
+    "maxBackups": 3
   },
   "api": {
     "defaultLimit": 100,
@@ -20,4 +26,3 @@
     "cacheFolder": ".cache"
   }
 }
-
