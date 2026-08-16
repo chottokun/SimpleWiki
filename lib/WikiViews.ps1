@@ -563,8 +563,11 @@ function Get-SearchViewHtml {
     if ([string]::IsNullOrWhiteSpace($StatusFilter)) { $StatusFilter = "active" }
     $stFilterLower = $StatusFilter.ToLower().Trim()
 
-    $keywords = if (-not [string]::IsNullOrWhiteSpace($Query)) {
-        @($Query -split '\s+' | Where-Object { $_ -ne "" })
+    $parsedQuery = Split-SearchQueryTerms -Query $Query
+    $keywords = if ($parsedQuery.IncludeKeywords -and $parsedQuery.IncludeKeywords.Count -gt 0) {
+        @($parsedQuery.IncludeKeywords)
+    } elseif (-not [string]::IsNullOrWhiteSpace($parsedQuery.CleanQuery)) {
+        @($parsedQuery.CleanQuery -split '\s+' | Where-Object { $_ -ne "" })
     } else { @() }
 
     $results = Search-OkfDocs -Query $Query -StatusFilter $StatusFilter -DomainFilter $DomainFilter
@@ -693,10 +696,10 @@ function Get-ChatWidgetHtml {
             <label style="margin-left: auto; color: #24292e; font-weight: normal; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px;"><input type="checkbox" id="okfIncludeCurrentPage" checked> 📄 開いているページを含める</label>
         </div>
         <div id="okfChatMessages" class="chat-messages">
-            <div class="chat-msg assistant">こんにちは！Wiki内のナレッジを元にお答えします。質問を入力してください。</div>
+            <div class="chat-msg assistant">こんにちは！Wiki内のナレッジを元にお答えします。質問を入力してください。（例: 「REST APIの仕様について教えて」「Linux以外のサーバー手順は？」など、-キーワード や NOTキーワード で除外指定も可能です）</div>
         </div>
         <div class="chat-input-area">
-            <input type="text" id="okfChatInput" placeholder="Wikiに質問..." />
+            <input type="text" id="okfChatInput" placeholder="Wikiに質問... (-単語 で除外検索も可能)" />
             <button id="okfChatSendBtn">送信</button>
         </div>
     </div>

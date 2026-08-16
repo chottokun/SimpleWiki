@@ -20,13 +20,19 @@ function Invoke-ToolSearchOkf {
         $res = Search-OkfDocs -Query $Query -DomainFilter "" -StatusFilter "active" -WikiDir $targetDir -MaxResults 5
     }
 
-    # 2. クエリ全体で0件だった場合、日本語形態素単語分割でフォールバック検索
+    # 2. クエリ全体で0件だった場合、日本語形態素単語分割でフォールバック検索 (除外条件は保持)
     if ($res.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($Query)) {
-        $kwList = Get-JapaneseWordsWinRT -Text $Query
-        if ($kwList -and $kwList.Count -gt 0) {
-            $subQuery = $kwList -join " "
-            if ($subQuery -ne $Query) {
-                $res = Search-OkfDocs -Query $subQuery -DomainFilter "" -StatusFilter "active" -WikiDir $targetDir -MaxResults 5
+        $parsed = Split-SearchQueryTerms -Query $Query
+        if (-not [string]::IsNullOrWhiteSpace($parsed.CleanQuery)) {
+            $kwList = Get-JapaneseWordsWinRT -Text $parsed.CleanQuery
+            if ($kwList -and $kwList.Count -gt 0) {
+                $subQuery = ($kwList -join " ")
+                if ($parsed.ExcludeKeywords.Count -gt 0) {
+                    $subQuery += " " + (($parsed.ExcludeKeywords | ForEach-Object { "-$_" }) -join " ")
+                }
+                if ($subQuery -ne $Query) {
+                    $res = Search-OkfDocs -Query $subQuery -DomainFilter "" -StatusFilter "active" -WikiDir $targetDir -MaxResults 5
+                }
             }
         }
     }
@@ -302,7 +308,7 @@ function Invoke-AgenticRagChat {
                 parameters = @{
                     type = "object"
                     properties = @{
-                        query = @{ type = "string"; description = "検索キーワード (日本語キーワードをそのまま使用し、勝手に英語翻訳しないでください)" }
+                        query = @{ type = "string"; description = "検索キーワード (日本語キーワードをそのまま使用。除外したい単語がある場合は '-単語' や 'NOT 単語' が指定可能)" }
                         domain = @{ type = "string"; description = "絞り込みドメイン (原則は空文字列 '' を指定してWiki全域を検索してください)" }
                     }
                     required = @("query")
@@ -360,7 +366,8 @@ function Invoke-AgenticRagChat {
         "3. 直接の回答がない場合でも、『直接の記載はありませんが、関連する以下の仕様・手順が参考になります』として、収集した関連ナレッジや補足情報をユーザーに提示してください。`n" +
         "4. 検索キーワード (query) はユーザーが入力した日本語単語（例: 'エラー', '想定されるエラー'）をそのまま使用し、勝手に英語へ翻訳しないでください。`n" +
         "5. search_okf の domain パラメータは原則として空文字列 '' を指定し、Wiki 全域から広範にドキュメントを検索してください。`n" +
-        "6. 非推奨 (status: deprecated) の記述は避け、常に現行 (active) 情報のみを根拠にしてください。"
+        "6. 非推奨 (status: deprecated) の記述は避け、常に現行 (active) 情報のみを根拠にしてください。`n" +
+        "7. ユーザーが『〇〇以外』『〇〇を除いて』等の除外条件を求めている場合や、ノイズを除去したい場合は、`search_okf` の query に `-除外語` や `NOT 除外語`（例: 'サーバー -Windows', 'API NOT deprecated'）を活用してください。"
 
     if ($CurrentDoc -and $CurrentDoc.RelPath) {
         if (-not $visitedPaths.Contains($CurrentDoc.RelPath)) {

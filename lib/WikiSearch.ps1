@@ -295,6 +295,53 @@ function Get-HighlightText {
     return $sb.ToString()
 }
 
+# --- 検索クエリ解析ヘルパー (NOT構文・除外キーワード分離) ---
+function Split-SearchQueryTerms {
+    param (
+        [string]$Query = ""
+    )
+    $result = @{
+        IncludeKeywords = [System.Collections.Generic.List[string]]::new()
+        ExcludeKeywords = [System.Collections.Generic.List[string]]::new()
+        CleanQuery      = ""
+    }
+    if ([string]::IsNullOrWhiteSpace($Query)) { return $result }
+
+    # 全角スペースを半角スペースに正規化
+    $normalized = $Query.Trim().Replace([char]0x3000, " ")
+
+    # トークン分割:
+    # 1. NOT (大文字小文字不問, スペース有無不問): NOT term, NOTterm, NOT "phrase", NOT"phrase"
+    # 2. - or ! (行頭または空白直後): -term, !term, -"phrase", !"phrase"
+    # 3. "phrase" or regular term
+    $pattern = '(?i:(?<=\s|^)NOT\s*(?:"([^"]+)"|(\S+)))|(?:(?<=\s|^)[-\!](?:"([^"]+)"|(\S+)))|(?:"([^"]+)"|(\S+))'
+    $tokens = [regex]::Matches($normalized, $pattern)
+
+    $includeList = [System.Collections.Generic.List[string]]::new()
+    $excludeList = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($m in $tokens) {
+        if ($m.Groups[1].Success -or $m.Groups[2].Success) {
+            # NOT term / NOT "phrase" / NOTterm
+            $val = if ($m.Groups[1].Success) { $m.Groups[1].Value } else { $m.Groups[2].Value }
+            if (-not [string]::IsNullOrWhiteSpace($val)) { [void]$excludeList.Add($val.Trim()) }
+        } elseif ($m.Groups[3].Success -or $m.Groups[4].Success) {
+            # -term / !term / -"phrase" / !"phrase"
+            $val = if ($m.Groups[3].Success) { $m.Groups[3].Value } else { $m.Groups[4].Value }
+            if (-not [string]::IsNullOrWhiteSpace($val)) { [void]$excludeList.Add($val.Trim()) }
+        } else {
+            # Include term / "phrase"
+            $val = if ($m.Groups[5].Success) { $m.Groups[5].Value } else { $m.Groups[6].Value }
+            if (-not [string]::IsNullOrWhiteSpace($val) -and $val -notmatch '(?i)^NOT$') { [void]$includeList.Add($val.Trim()) }
+        }
+    }
+
+    $result.IncludeKeywords = $includeList
+    $result.ExcludeKeywords = $excludeList
+    $result.CleanQuery      = ($includeList -join " ").Trim()
+    return $result
+}
+
 # --- OKF スコアリングドキュメント検索共通関数 ---
 function Search-OkfDocs {
     param (
@@ -315,7 +362,9 @@ function Search-OkfDocs {
     if ([string]::IsNullOrWhiteSpace($StatusFilter)) { $StatusFilter = "active" }
     $stFilterLower = $StatusFilter.ToLower().Trim()
 
-    $cleanQuery = if ($Query) { $Query.Trim().Replace([char]0x3000, " ") } else { "" }
+    $parsedQuery     = Split-SearchQueryTerms -Query $Query
+    $cleanQuery      = $parsedQuery.CleanQuery
+    $excludeKeywords = $parsedQuery.ExcludeKeywords
 
     # キーワード抽出: WinRT 形態素解析を優先使用
     $keywords = @()
@@ -348,11 +397,27 @@ function Search-OkfDocs {
             if ($itemDomain -notlike "*$DomainFilter*") { continue }
         }
 
-        if ($keywords.Count -eq 0 -and [string]::IsNullOrWhiteSpace($cleanQuery) -and [string]::IsNullOrWhiteSpace($DomainFilter) -and $stFilterLower -eq "all") {
+        # 3. NOT 除外フィルタ (タイトル/概要/タグ/本文に対象が含まれる場合は除外)
+        if ($excludeKeywords.Count -gt 0) {
+            $hasExcluded = $false
+            foreach ($ex in $excludeKeywords) {
+                $exRegex = [regex]::Escape($ex)
+                if (($item.Title -and $item.Title -match "(?i)$exRegex") -or
+                    ($item.Description -and $item.Description -match "(?i)$exRegex") -or
+                    ($item.Tags -and ($item.Tags | Where-Object { $_ -match "(?i)$exRegex" })) -or
+                    ($item.BodyText -and $item.BodyText -match "(?i)$exRegex")) {
+                    $hasExcluded = $true
+                    break
+                }
+            }
+            if ($hasExcluded) { continue }
+        }
+
+        if ($keywords.Count -eq 0 -and [string]::IsNullOrWhiteSpace($cleanQuery) -and [string]::IsNullOrWhiteSpace($DomainFilter) -and $stFilterLower -eq "all" -and $excludeKeywords.Count -eq 0) {
             continue
         }
 
-        # 3. 重み付けスコアリング
+        # 4. 重み付けスコアリング
         $score = 0
         $matchedKwCount = 0
 
@@ -421,7 +486,7 @@ function Search-OkfDocs {
             $score = [Math]::Floor($score * 0.3)
         }
 
-        if ($score -gt 0 -or ($keywords.Count -eq 0 -and (-not [string]::IsNullOrWhiteSpace($DomainFilter) -or $stFilterLower -ne "all"))) {
+        if ($score -gt 0 -or ($keywords.Count -eq 0 -and (-not [string]::IsNullOrWhiteSpace($DomainFilter) -or $stFilterLower -ne "all" -or $excludeKeywords.Count -gt 0))) {
             # スニペット抽出 (キーワードマッチ行の前後の文脈・表を含む最大400文字)
             $snippet = ""
             if ($item.BodyText) {
