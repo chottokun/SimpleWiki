@@ -47,13 +47,18 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
     - **高度なチャット UI**: Markdown 表（`<table>`）、コードブロック（`<pre><code>`）、リストの完全描画、`📋 コピー` ボタン、`⛶ 拡大/縮小` トグル、`🧹 履歴クリア` ボタンを標準搭載。
   - **🔒 API Key 暗号化ユーティリティ (`Set-ApiKey.bat` / `Set-ApiKey.ps1`)**:
     - Windows DPAPI またはポータブル AES-256 暗号化（`ENC:...` / `DPAPI:...`）により、`config.json` 内の API キーを安全に保護。
+  - **🛑 安全なサーバー終了 ＆ UI シャットダウンボタン ＆ 非同期待機 (`/api/shutdown`)**:
+    - **ワンクリック UI 終了**: 画面右上の「⏻ 終了 / ⏻ Shutdown」ボタンおよび設定画面（`/settings`）の「🛑 サーバー制御」からサーバーを安全に停止。
+    - **誤操作防止 ＆ 全画面案内**: 停止前の確認ダイアログ（`confirm`）と停止完了後の全画面案内オーバーレイ（`#shutdownOverlay`）を表示。
+    - **Ctrl + C (SIGINT) 即時終了**: `BeginGetContext` による 200ms 非同期ポーリング待機および `[System.Console]::CancelKeyPress` ハンドラにより、バッチファイル (`.bat`) 起動時やコンソールからの `Ctrl + C` でスレッドをブロッキングさせず即座に正常停止。
   - **Google OKF (Open Knowledge Format) v0.2 思想の準拠**: YAML Front Matter からの文脈抽出・自動補完 (フォールバック)・Version / Reviewer / Contributors / Related メタデータカード描画
-  - **AI エージェント / LLM 用機械可読 API**: `/api/index.json` (メタデータ), `/api/chunks.json` (自動セマンティック分割チャンク), `/api/chat` (AI チャット), `/api/config` (設定管理)
+  - **AI エージェント / LLM 用機械可読 API**: `/api/index.json` (メタデータ), `/api/chunks.json` (自動セマンティック分割チャンク), `/api/chat` (AI チャット), `/api/config` (設定管理), `/api/shutdown` (サーバー停止)
   - **✏️ Web UI 内蔵 Markdown エディター ＆ 世代管理バックアップ・復元 ＆ OKF 構文検証**:
     - Web ブラウザ上からの Markdown インプレース直接編集・保存機能 (`/api/raw`, `/api/save`)。
     - `config.json` の `editor.maxBackups` (既定値 3) に基づく自動世代バックアップローテーション (`.bak1`, `.bak2`, ...)。
     - エディターモーダル上での過去世代ドロップダウンプレビュー選択 ＆ ワンクリックでのロールバック復元 UI。
     - 保存時の OKF (YAML Front Matter) 構文エラー自動検出 ＆ マイルドなアドバイス表示 (ソフトLint)。
+    - エディター内の各メッセージ（読込中・保存完了・バックアップ世代ラベル・構文警告）の 100% 多言語化 (i18n) バインド。
   - **動的ナビゲーション & ビュー**: 最近の更新 (`/recent`), タグ集計/検索 (`/tags`), 品質・メンテナンスダッシュボード (`/maintenance`), 著者ディレクトリ (`/authors`), AND/NOT 検索 (`/search`), システム設定 (`/settings`)
   - **静的エキスポート**: `Export-MarkdigWiki.ps1` による OKF v0.2 メタデータカード同梱型 HTML 一括出力（日英多言語対応）
   - **Markdown レンダリング**: .NET 4.6.2 ビルド版 `Markdig.dll` (GFM テーブル・コードブロック・タスクリスト・YamlFrontMatter 対応)
