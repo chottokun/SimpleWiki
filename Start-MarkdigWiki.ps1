@@ -297,6 +297,24 @@ try {
                         if ($rObj.PSObject.Properties["model"] -and -not [string]::IsNullOrWhiteSpace($rObj.model)) {
                             $cfgDict["rag"]["model"] = [string]$rObj.model
                         }
+                        if ($rObj.PSObject.Properties["userEmail"]) {
+                            $cfgDict["rag"]["userEmail"] = [string]$rObj.userEmail
+                        }
+
+                        # アクティベーションコードの検証 ＆ DPAPI への自動変換
+                        if ($rObj.PSObject.Properties["activationCode"] -and -not [string]::IsNullOrWhiteSpace($rObj.activationCode)) {
+                            $rawActCode = [string]$rObj.activationCode
+                            $targetEmail = if ($rObj.PSObject.Properties["userEmail"]) { [string]$rObj.userEmail } else { "" }
+                            $decryptedKey = Unprotect-ActivationCode -EncryptedText $rawActCode -Email $targetEmail
+
+                            if ([string]::IsNullOrWhiteSpace($decryptedKey)) {
+                                $validationError = "アクティベーションコードが無効です。この PC のマシン ID 用に発行されたコードであるか、メールアドレスが正しいかご確認ください。"
+                            } else {
+                                # DPAPI で暗号化してローカル保護
+                                $dpapiKey = Protect-StringDpapi -PlainText $decryptedKey
+                                $cfgDict["rag"]["apiKey"] = $dpapiKey
+                            }
+                        }
                     }
 
                     if ($null -ne $validationError) {

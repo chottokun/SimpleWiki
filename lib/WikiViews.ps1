@@ -1244,9 +1244,11 @@ function Get-SettingsViewHtml {
     $useCacheChecked   = if ($config.search -and $config.search.useCache -eq $true) { "checked" } else { "" }
     $cacheFolder       = if ($config.search -and -not [string]::IsNullOrWhiteSpace($config.search.cacheFolder)) { [System.Net.WebUtility]::HtmlEncode($config.search.cacheFolder) } else { ".cache" }
 
+    $localMachineId    = Get-MachineFingerprint
     $ragEnabledChecked = if ($config.rag -and $config.rag.enabled -eq $true) { "checked" } else { "" }
     $apiUrl            = if ($config.rag -and $config.rag.apiUrl) { [System.Net.WebUtility]::HtmlEncode($config.rag.apiUrl) } else { "http://localhost:11434/v1" }
     $model             = if ($config.rag -and $config.rag.model) { [System.Net.WebUtility]::HtmlEncode($config.rag.model) } else { "qwen2.5-coder-7b-instruct" }
+    $userEmail         = if ($config.rag -and $config.rag.userEmail) { [System.Net.WebUtility]::HtmlEncode($config.rag.userEmail) } else { "" }
 
     $cachedCount = if ($null -ne $script:WikiIndex) { $script:WikiIndex.Count } else { 0 }
     $notRunText  = Get-LocalizedStr -Key "settings_not_run" -Lang $Lang
@@ -1265,6 +1267,12 @@ function Get-SettingsViewHtml {
     $rebuildBtnLbl  = Get-LocalizedStr -Key "settings_rebuild_btn" -Lang $Lang
     $ragTitleLbl    = Get-LocalizedStr -Key "settings_rag_title" -Lang $Lang
     $ragEnableLbl   = Get-LocalizedStr -Key "settings_rag_enable" -Lang $Lang
+    $machineIdLbl   = Get-LocalizedStr -Key "settings_machine_id" -Lang $Lang
+    $copyMachineLbl = Get-LocalizedStr -Key "settings_copy_machine_id" -Lang $Lang
+    $copiedLbl      = Get-LocalizedStr -Key "settings_copied" -Lang $Lang
+    $actCodeLbl     = Get-LocalizedStr -Key "settings_act_code" -Lang $Lang
+    $actHolderLbl   = Get-LocalizedStr -Key "settings_act_code_holder" -Lang $Lang
+    $actDescLbl     = Get-LocalizedStr -Key "settings_act_desc" -Lang $Lang
     $apiUrlLbl      = Get-LocalizedStr -Key "settings_api_url" -Lang $Lang
     $modelLbl       = Get-LocalizedStr -Key "settings_model" -Lang $Lang
     $saveBtnLbl     = Get-LocalizedStr -Key "settings_save_btn" -Lang $Lang
@@ -1327,13 +1335,38 @@ function Get-SettingsViewHtml {
 
         <div class="okf-card">
             <div class="okf-card-header">$ragTitleLbl</div>
-            <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 12px;">
+            <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 14px;">
                 <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
                     <input type="checkbox" id="ragEnabled" name="ragEnabled" $ragEnabledChecked>
                     <span><strong>$ragEnableLbl</strong></span>
                 </label>
 
-                <div style="margin-left: 24px; display: flex; flex-direction: column; gap: 10px;">
+                <!-- マシン ID 表示 ＆ コピー -->
+                <div style="background: #f6f8fa; border: 1px solid #e1e4e8; border-radius: 6px; padding: 12px; margin-left: 24px;">
+                    <div style="font-size: 12px; font-weight: bold; color: #586069; margin-bottom: 6px;">$machineIdLbl</div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <code id="machineIdText" style="font-family: monospace; font-size: 14px; font-weight: bold; background: #fff; border: 1px solid #d1d5da; padding: 6px 12px; border-radius: 4px; color: #0366d6;">$localMachineId</code>
+                        <button type="button" onclick="copyMachineId(this)" style="padding: 6px 12px; font-size: 12px; background: #fff; border: 1px solid #d1d5da; border-radius: 4px; cursor: pointer; color: #24292e;">
+                            $copyMachineLbl
+                        </button>
+                    </div>
+                </div>
+
+                <!-- アクティベーションコード入力欄 -->
+                <div style="margin-left: 24px;">
+                    <label for="activationCode" style="font-size: 13px; font-weight: bold;">$actCodeLbl</label><br>
+                    <input type="text" id="activationCode" name="activationCode" placeholder="$actHolderLbl" style="width: 100%; max-width: 500px; padding: 7px 10px; font-family: monospace; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;">
+                    <div style="font-size: 12px; color: #586069; margin-top: 4px;">
+                        $actDescLbl
+                    </div>
+                </div>
+
+                <div style="margin-left: 24px;">
+                    <label for="userEmail" style="font-size: 13px; font-weight: bold;">メールアドレス (登録時に入力した場合のみ):</label><br>
+                    <input type="email" id="userEmail" name="userEmail" value="$userEmail" placeholder="user@example.com" style="width: 100%; max-width: 350px; padding: 6px 10px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;">
+                </div>
+
+                <div style="margin-left: 24px; display: flex; flex-direction: column; gap: 10px; margin-top: 4px;">
                     <div>
                         <label for="apiUrl" style="font-size: 13px; font-weight: bold;">$apiUrlLbl</label><br>
                         <input type="text" id="apiUrl" name="apiUrl" value="$apiUrl" style="width: 100%; max-width: 400px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;">
@@ -1367,6 +1400,16 @@ function Get-SettingsViewHtml {
 </div>
 
 <script>
+function copyMachineId(btn) {
+    var mid = document.getElementById('machineIdText').innerText.trim();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(mid).then(function() {
+            var orig = btn.innerText;
+            btn.innerText = '$copiedLbl';
+            setTimeout(function() { btn.innerText = orig; }, 2000);
+        });
+    }
+}
 var toastTimer = null;
 function showToast(msg, isError, duration) {
     var toast = document.getElementById('settingsToast');
@@ -1394,6 +1437,9 @@ function saveSettings(e) {
     saveBtn.disabled = true;
     saveBtn.innerText = '...';
 
+    var actCodeInput = document.getElementById('activationCode');
+    var userEmailInput = document.getElementById('userEmail');
+
     var payload = {
         search: {
             prebuildIndex: document.getElementById('prebuildIndex').checked,
@@ -1403,9 +1449,13 @@ function saveSettings(e) {
         rag: {
             enabled: document.getElementById('ragEnabled').checked,
             apiUrl: document.getElementById('apiUrl').value.trim(),
-            model: document.getElementById('model').value.trim()
+            model: document.getElementById('model').value.trim(),
+            userEmail: userEmailInput ? userEmailInput.value.trim() : ""
         }
     };
+    if (actCodeInput && actCodeInput.value.trim()) {
+        payload.rag.activationCode = actCodeInput.value.trim();
+    }
 
     fetch('/api/config', {
         method: 'POST',

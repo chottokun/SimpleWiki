@@ -69,13 +69,134 @@ function Unprotect-StringDpapi {
     }
 }
 
+function Get-MachineFingerprint {
+    try {
+        $uuid = $null
+        if ($IsWindows -or $env:OS -eq "Windows_NT") {
+            $csp = Get-CimInstance -ClassName Win32_ComputerSystemProduct -ErrorAction SilentlyContinue
+            if ($csp -and $csp.UUID -and $csp.UUID -ne "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF") {
+                $uuid = $csp.UUID.Trim()
+            }
+        }
+        if ([string]::IsNullOrWhiteSpace($uuid)) {
+            $rawId = "$($env:COMPUTERNAME):$($env:PROCESSOR_IDENTIFIER):$($env:USERDOMAIN)"
+            $sha = [System.Security.Cryptography.SHA256]::Create()
+            $hash = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($rawId))
+            $uuid = [System.BitConverter]::ToString($hash).Replace("-", "")
+        }
+
+        # SHA256 で正規化し、扱いやすい 16文字 (4x4 ハイフン区切り) にフォーマット
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        $hashBytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($uuid.ToUpperInvariant()))
+        $hex = [System.BitConverter]::ToString($hashBytes).Replace("-", "").Substring(0, 16)
+        return "$($hex.Substring(0,4))-$($hex.Substring(4,4))-$($hex.Substring(8,4))-$($hex.Substring(12,4))"
+    } catch {
+        return "DEFAULT-HOST-0000"
+    }
+}
+
+function Protect-ActivationCode {
+    param (
+        [Parameter(Mandatory = $true)][string]$ApiKey,
+        [Parameter(Mandatory = $true)][string]$MachineId,
+        [string]$Email = ""
+    )
+
+    $cleanMachine = $MachineId.Trim().ToUpperInvariant()
+    $cleanEmail = if ($Email) { $Email.Trim().ToLowerInvariant() } else { "" }
+    $seed = "$($cleanMachine):$($cleanEmail)"
+
+    $salt = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-Activation-Salt-2026")
+    $pass = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-ActKey-$($seed)")
+    $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($pass, $salt, 5000)
+    $key = $derive.GetBytes(32)
+    $iv  = $derive.GetBytes(16)
+
+    # APIキーの先頭に検証プレフィックス "SWACT:" を付与
+    $payload = "SWACT:" + $ApiKey
+    $plainBytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
+
+    $aes = [System.Security.Cryptography.Aes]::Create()
+    $aes.Key = $key
+    $aes.IV  = $iv
+    $encryptor = $aes.CreateEncryptor()
+
+    $encBytes = $encryptor.TransformFinalBlock($plainBytes, 0, $plainBytes.Length)
+    return "ENC:" + [System.Convert]::ToBase64String($encBytes)
+}
+
+function Unprotect-ActivationCode {
+    param (
+        [Parameter(Mandatory = $true)][string]$EncryptedText,
+        [string]$MachineId = "",
+        [string]$Email = ""
+    )
+
+    if ([string]::IsNullOrWhiteSpace($EncryptedText) -or -not $EncryptedText.StartsWith("ENC:")) { return "" }
+    $cipherText = $EncryptedText.Substring(4)
+    $cipherBytes = try { [System.Convert]::FromBase64String($cipherText) } catch { return "" }
+
+    # 1. まずマシンID ＋ メールアドレスでの復号を試行
+    $cleanMachine = if (-not [string]::IsNullOrWhiteSpace($MachineId)) { $MachineId.Trim().ToUpperInvariant() } else { Get-MachineFingerprint }
+    $cleanEmail = if ($Email) { $Email.Trim().ToLowerInvariant() } else { "" }
+    $seed = "$($cleanMachine):$($cleanEmail)"
+
+    $salt = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-Activation-Salt-2026")
+    $pass = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-ActKey-$($seed)")
+
+    try {
+        $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($pass, $salt, 5000)
+        $key = $derive.GetBytes(32)
+        $iv  = $derive.GetBytes(16)
+
+        $aes = [System.Security.Cryptography.Aes]::Create()
+        $aes.Key = $key
+        $aes.IV  = $iv
+        $decryptor = $aes.CreateDecryptor()
+        $decBytes = $decryptor.TransformFinalBlock($cipherBytes, 0, $cipherBytes.Length)
+        $decStr = [System.Text.Encoding]::UTF8.GetString($decBytes)
+        if ($decStr.StartsWith("SWACT:")) {
+            return $decStr.Substring(6)
+        }
+    } catch {
+        # マシンバインド復号が不一致
+    }
+
+    # 2. メールアドレスなしの同一マシンID試行（Email が指定されていた場合のフォールバック）
+    if (-not [string]::IsNullOrWhiteSpace($cleanEmail)) {
+        try {
+            $seedNoMail = "$($cleanMachine):"
+            $passNoMail = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-ActKey-$($seedNoMail)")
+            $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($passNoMail, $salt, 5000)
+            $key = $derive.GetBytes(32)
+            $iv  = $derive.GetBytes(16)
+
+            $aes = [System.Security.Cryptography.Aes]::Create()
+            $aes.Key = $key
+            $aes.IV  = $iv
+            $decryptor = $aes.CreateDecryptor()
+            $decBytes = $decryptor.TransformFinalBlock($cipherBytes, 0, $cipherBytes.Length)
+            $decStr = [System.Text.Encoding]::UTF8.GetString($decBytes)
+            if ($decStr.StartsWith("SWACT:")) {
+                return $decStr.Substring(6)
+            }
+        } catch {}
+    }
+
+    # 3. 後方互換性: 旧固定鍵での復号試行
+    return Unprotect-StringAes -EncryptedText $EncryptedText
+}
+
 # --- WinRT 日本語形態素解析 ＆ 単語抽出関数 ---
 
 function Get-ResolvedSecret {
-    param ([string]$SecretValue)
+    param (
+        [string]$SecretValue,
+        [string]$Email = ""
+    )
     if ([string]::IsNullOrWhiteSpace($SecretValue)) { return "" }
     if ($SecretValue.StartsWith("ENC:")) {
-        return Unprotect-StringAes -EncryptedText $SecretValue
+        return Unprotect-ActivationCode -EncryptedText $SecretValue -Email $Email
     } elseif ($SecretValue.StartsWith("DPAPI:")) {
         return Unprotect-StringDpapi -EncryptedText $SecretValue
     } elseif ($SecretValue.StartsWith("ENV:")) {
