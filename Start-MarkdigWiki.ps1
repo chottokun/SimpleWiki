@@ -125,9 +125,38 @@ $mimeTypes = @{
     ".js"   = "application/javascript; charset=utf-8"
 }
 
+$cancelHandler = $null
+try {
+    $cancelHandler = [System.ConsoleCancelEventHandler]{
+        param($sender, $e)
+        if ($listener -and $listener.IsListening) {
+            try { $listener.Stop() } catch {}
+        }
+    }
+    [System.Console]::add_CancelKeyPress($cancelHandler)
+} catch {
+    # 非コンソール環境やリダイレクト環境での add_CancelKeyPress 例外を安全に無視
+}
+
 try {
     while ($listener.IsListening) {
-        $context  = $listener.GetContext()
+        $asyncResult = $listener.BeginGetContext($null, $null)
+        while (-not $asyncResult.AsyncWaitHandle.WaitOne(200)) {
+            if (-not $listener.IsListening) { break }
+        }
+        if (-not $listener.IsListening) {
+            break
+        }
+
+        try {
+            $context = $listener.EndGetContext($asyncResult)
+        } catch [System.ObjectDisposedException], [System.Net.HttpListenerException] {
+            break
+        } catch {
+            if (-not $listener.IsListening) { break }
+            throw
+        }
+
         $request  = $context.Request
         $response = $context.Response
 
@@ -137,7 +166,15 @@ try {
             $config = Get-ConfigJson -TargetScriptDir $scriptDir
             $reqLang = Get-RequestLanguage -QueryParams $queryParams -Cookies $request.Cookies -Config $config
 
-            # 1. API エンドポイント (/api/config, /api/index.json, /api/chunks.json, /api/chat)
+            # 1. API エンドポイント (/api/shutdown, /api/config, /api/index.json, /api/chunks.json, /api/chat)
+            if ($rawPath -eq "/api/shutdown" -and $request.HttpMethod -eq "POST") {
+                $shutdownMsg = Get-LocalizedStr -Key "shutdown_done_desc" -Lang $reqLang
+                $jsonRes = @{ success = $true; message = $shutdownMsg } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+                $script:shutdownRequested = $true
+                continue
+            }
+
             if ($rawPath -eq "/api/config") {
                 $configPath = Join-Path $scriptDir "config.json"
                 if ($request.HttpMethod -eq "GET") {
@@ -331,9 +368,10 @@ try {
                     $bakPath = "$fullPath.bak$i"
                     if (Test-Path $bakPath -PathType Leaf) {
                         $item = Get-Item $bakPath
+                        $bakLabel = Get-LocalizedStr -Key "editor_gen_prefix" -Lang $reqLang -FormatArgs @($i)
                         $backups.Add(@{
                             version      = "bak$i"
-                            label        = "世代 $i (.bak$i)"
+                            label        = $bakLabel
                             lastModified = $item.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
                         })
                     }
@@ -432,7 +470,8 @@ try {
                 $yamlSyntax = Test-YamlFrontMatterSyntax -MdText $reqObj.markdown
                 $resData = @{ success = $true }
                 if (-not $yamlSyntax.isValid -and $yamlSyntax.warnings.Count -gt 0) {
-                    $resData["warning"] = "⚠️ YAML Front Matter に記述エラーが見つかりました:`n・" + ($yamlSyntax.warnings -join "`n・")
+                    $warnPrefix = Get-LocalizedStr -Key "editor_warning_yaml" -Lang $reqLang
+                    $resData["warning"] = "$warnPrefix`n・" + ($yamlSyntax.warnings -join "`n・")
                 }
 
                 $jsonRes = $resData | ConvertTo-Json
@@ -970,7 +1009,7 @@ try {
 <html lang="{18}">
 <head>
 <meta charset="UTF-8">
-<title>{0} - SimpleWiki OKF</title>
+<title>{0} - {20} OKF</title>
 <style>
     * { box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; color: #24292e; background-color: #fff; }
@@ -1008,6 +1047,8 @@ try {
     /* OKF Custom Components */
     .edit-doc-btn { background: #0366d6; color: #fff; border: none; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; margin-left: 10px; }
     .edit-doc-btn:hover { background: #0255b3; }
+    .shutdown-btn { background: rgba(220, 53, 69, 0.15); color: #f85149; border: 1px solid rgba(248, 81, 73, 0.4); padding: 4px 10px; font-size: 12px; font-weight: bold; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: all 0.2s ease; }
+    .shutdown-btn:hover { background: #da3633; color: #fff; border-color: #da3633; }
 
     /* Editor Modal Styles */
     .wiki-editor-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; justify-content: center; align-items: center; }
@@ -1050,7 +1091,7 @@ try {
 </head>
 <body>
     <header class="top-header">
-        <a href="/" class="brand">📖 SimpleWiki <span class="badge badge-active">OKF</span></a>
+        <a href="/" class="brand">{20} <span class="badge badge-active">OKF</span></a>
         <nav class="top-nav">
             <a href="/">{3}</a>
             <a href="/recent">{4}</a>
@@ -1068,6 +1109,7 @@ try {
                 <input type="text" name="q" placeholder="{10}" required>
                 <button type="submit">{11}</button>
             </form>
+            <button type="button" class="shutdown-btn" onclick="shutdownWikiServer()" title="{21}">{21}</button>
         </div>
     </header>
     <div class="layout-container">
@@ -1104,12 +1146,29 @@ try {
         </div>
     </div>
 
+    <!-- Server Shutdown Overlay -->
+    <div id="shutdownOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.85); z-index: 99999; justify-content: center; align-items: center; flex-direction: column; color: #fff; text-align: center;">
+        <div style="background: #1b1f23; border: 1px solid #444; border-radius: 12px; padding: 40px; max-width: 500px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+            <h2 style="margin: 0 0 16px 0; color: #f85149; font-size: 24px; border: none;">{23}</h2>
+            <p style="font-size: 15px; color: #d1d5da; margin-bottom: 0; line-height: 1.6;">{24}</p>
+        </div>
+    </div>
+
     <script src="/lib/mermaid.min.js"></script>
     <script>
+        function shutdownWikiServer() {
+            if (!confirm('{22}')) { return; }
+            try {
+                fetch('/api/shutdown', { method: 'POST' }).catch(function() {});
+            } catch(e) {}
+            var overlay = document.getElementById('shutdownOverlay');
+            if (overlay) { overlay.style.display = 'flex'; }
+        }
+
         function openWikiEditor(btn) {
             const relPath = btn.getAttribute("data-relpath");
             document.getElementById("wikiEditorPath").textContent = relPath;
-            document.getElementById("wikiEditorTextarea").value = "読み込み中...";
+            document.getElementById("wikiEditorTextarea").value = "{25}";
             document.getElementById("wikiEditorModal").style.display = "flex";
 
             const selectEl = document.getElementById("wikiEditorHistorySelect");
@@ -1122,11 +1181,11 @@ try {
                         const mdVal = (typeof data.markdown === "object" && data.markdown !== null) ? (data.markdown.value || "") : data.markdown;
                         document.getElementById("wikiEditorTextarea").value = mdVal;
                     } else {
-                        document.getElementById("wikiEditorTextarea").value = "エラー: 読み込みに失敗しました。";
+                        document.getElementById("wikiEditorTextarea").value = "{27}";
                     }
                 })
                 .catch(err => {
-                    document.getElementById("wikiEditorTextarea").value = "エラー: " + err;
+                    document.getElementById("wikiEditorTextarea").value = "{27} " + err;
                 });
 
             fetch("/api/backups?relPath=" + encodeURIComponent(relPath))
@@ -1147,7 +1206,7 @@ try {
         function loadWikiHistoryVersion(selectEl) {
             const relPath = document.getElementById("wikiEditorPath").textContent;
             const version = selectEl.value;
-            document.getElementById("wikiEditorTextarea").value = "履歴読込中...";
+            document.getElementById("wikiEditorTextarea").value = "{26}";
 
             let url = "/api/raw?relPath=" + encodeURIComponent(relPath);
             if (version) {
@@ -1161,11 +1220,11 @@ try {
                         const mdVal = (typeof data.markdown === "object" && data.markdown !== null) ? (data.markdown.value || "") : data.markdown;
                         document.getElementById("wikiEditorTextarea").value = mdVal;
                     } else {
-                        document.getElementById("wikiEditorTextarea").value = "エラー: 履歴の読み込みに失敗しました。";
+                        document.getElementById("wikiEditorTextarea").value = "{28}";
                     }
                 })
                 .catch(err => {
-                    document.getElementById("wikiEditorTextarea").value = "エラー: " + err;
+                    document.getElementById("wikiEditorTextarea").value = "{28} " + err;
                 });
         }
 
@@ -1191,9 +1250,9 @@ try {
             .then(data => {
                 if (data.success) {
                     if (data.warning) {
-                        alert("保存しました。\n\n" + data.warning);
+                        alert("{29}\n\n" + data.warning);
                     } else {
-                        alert("保存しました。");
+                        alert("{30}");
                     }
                     location.reload();
                 } else {
@@ -1253,6 +1312,19 @@ try {
                     $chatWidgetHtml = Get-ChatWidgetHtml -Lang $reqLang
                 }
 
+                $navBrand     = Get-LocalizedStr -Key "brand_title" -Lang $reqLang
+                $navShutdown  = Get-LocalizedStr -Key "shutdown_btn" -Lang $reqLang
+                $shutdownConfirmJs = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "shutdown_confirm" -Lang $reqLang))
+                $shutdownDoneTitleJs = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "shutdown_done_title" -Lang $reqLang))
+                $shutdownDoneDescJs = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "shutdown_done_desc" -Lang $reqLang))
+
+                $edLoadingJs       = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "editor_loading" -Lang $reqLang))
+                $edHistoryLoadingJs = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "editor_history_loading" -Lang $reqLang))
+                $edLoadErrorJs     = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "editor_load_error" -Lang $reqLang))
+                $edBackupLoadErrJs = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "editor_backup_load_err" -Lang $reqLang))
+                $edSavedWarningJs  = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "editor_saved_warning" -Lang $reqLang))
+                $edSavedJs         = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "editor_saved" -Lang $reqLang))
+
                 $navHome      = Get-LocalizedStr -Key "home" -Lang $reqLang
                 $navRecent    = Get-LocalizedStr -Key "recent_updates" -Lang $reqLang
                 $navTags      = Get-LocalizedStr -Key "tags" -Lang $reqLang
@@ -1280,7 +1352,7 @@ try {
                 }
                 $langOptionsStr = $langOptionsHtml -join ""
 
-                $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{13}", $edTitle).Replace("{14}", $edLatest).Replace("{15}", $edHolder).Replace("{16}", $edCancel).Replace("{17}", $edSave).Replace("{18}", $reqLang).Replace("{19}", $navSettings)
+                $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{13}", $edTitle).Replace("{14}", $edLatest).Replace("{15}", $edHolder).Replace("{16}", $edCancel).Replace("{17}", $edSave).Replace("{18}", $reqLang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $edLoadingJs).Replace("{26}", $edHistoryLoadingJs).Replace("{27}", $edLoadErrorJs).Replace("{28}", $edBackupLoadErrJs).Replace("{29}", $edSavedWarningJs).Replace("{30}", $edSavedJs)
 
                 if (-not [string]::IsNullOrWhiteSpace($chatWidgetHtml)) {
                     $fullHtml = $fullHtml.Replace("</body>", "$chatWidgetHtml`n</body>")
@@ -1308,11 +1380,21 @@ try {
         } finally {
             try { $response.Close() } catch {}
         }
+
+        if ($script:shutdownRequested) {
+            Write-Host "UIからのシャットダウン要求を受信しました。サーバーを終了します..." -ForegroundColor Yellow
+            break
+        }
     }
 } finally {
-    if ($listener.IsListening) {
-        $listener.Stop()
-        $listener.Close()
+    if ($null -ne $cancelHandler) {
+        try { [System.Console]::remove_CancelKeyPress($cancelHandler) } catch {}
+    }
+    if ($listener) {
+        if ($listener.IsListening) {
+            try { $listener.Stop() } catch {}
+        }
+        try { $listener.Close() } catch {}
     }
 }
 

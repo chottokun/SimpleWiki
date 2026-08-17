@@ -1261,6 +1261,10 @@ function Get-SettingsViewHtml {
     $modelLbl       = Get-LocalizedStr -Key "settings_model" -Lang $Lang
     $saveBtnLbl     = Get-LocalizedStr -Key "settings_save_btn" -Lang $Lang
 
+    $serverTitleLbl = Get-LocalizedStr -Key "settings_server_title" -Lang $Lang
+    $serverDescLbl  = Get-LocalizedStr -Key "settings_shutdown_desc" -Lang $Lang
+    $shutdownBtnLbl = Get-LocalizedStr -Key "settings_shutdown_btn" -Lang $Lang
+
     $savedSuccessJs = Get-LocalizedStr -Key "settings_saved_success" -Lang $Lang
     $savedErrorJs   = Get-LocalizedStr -Key "settings_saved_error" -Lang $Lang
     $commErrorJs    = Get-LocalizedStr -Key "settings_comm_error" -Lang $Lang
@@ -1340,6 +1344,18 @@ function Get-SettingsViewHtml {
             </button>
         </div>
     </form>
+
+    <div class="okf-card" style="margin-top: 30px; border-color: #f5c6cb;">
+        <div class="okf-card-header" style="color: #721c24;">$serverTitleLbl</div>
+        <div style="margin-top: 12px; font-size: 13px; color: #586069;">
+            $serverDescLbl
+        </div>
+        <div style="margin-top: 15px;">
+            <button type="button" onclick="shutdownWikiServer()" style="padding: 8px 18px; background: #dc3545; color: white; border: none; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer;">
+                $shutdownBtnLbl
+            </button>
+        </div>
+    </div>
 </div>
 
 <script>

@@ -1585,6 +1585,70 @@ Describe "Multi-Language (i18n) & Localization Tests" {
     }
 }
 
+Describe "UI Shutdown and Brand Title Customization Tests" {
+    It "Localizes brand_title correctly for ja and en" {
+        $brandJa = Get-LocalizedStr -Key "brand_title" -Lang "ja"
+        $brandJa | Should Match "SimpleWiki"
+
+        $brandEn = Get-LocalizedStr -Key "brand_title" -Lang "en"
+        $brandEn | Should Match "SimpleWiki"
+    }
+
+    It "Localizes all shutdown dictionary keys in ja and en" {
+        $keys = @("shutdown_btn", "shutdown_confirm", "shutdown_done_title", "shutdown_done_desc", "settings_server_title", "settings_shutdown_desc", "settings_shutdown_btn")
+        foreach ($k in $keys) {
+            $valJa = Get-LocalizedStr -Key $k -Lang "ja"
+            $valJa | Should Not Be $k
+            $valJa.Length | Should BeGreaterThan 0
+
+            $valEn = Get-LocalizedStr -Key $k -Lang "en"
+            $valEn | Should Not Be $k
+            $valEn.Length | Should BeGreaterThan 0
+        }
+    }
+
+    It "Get-SettingsViewHtml renders server control section and shutdown trigger" {
+        $htmlJa = Get-SettingsViewHtml -Lang "ja"
+        $htmlJa | Should Match "サーバー制御"
+        $htmlJa | Should Match "shutdownWikiServer\(\)"
+
+        $htmlEn = Get-SettingsViewHtml -Lang "en"
+        $htmlEn | Should Match "Server Control"
+        $htmlEn | Should Match "shutdownWikiServer\(\)"
+    }
+
+    It "Start-MarkdigWiki.ps1 includes /api/shutdown endpoint and brand_title placeholder" {
+        $scriptContent = [System.IO.File]::ReadAllText((Join-Path $projectRoot "Start-MarkdigWiki.ps1"), [System.Text.Encoding]::UTF8)
+        $scriptContent | Should Match '/api/shutdown'
+        $scriptContent | Should Match 'shutdown-btn'
+        $scriptContent | Should Match 'shutdownWikiServer'
+        $scriptContent | Should Match 'shutdownOverlay'
+    }
+
+    It "All i18n dictionary keys are completely synchronized between ja and en" {
+        $jaKeys = $script:I18n["ja"].Keys | Sort-Object
+        $enKeys = $script:I18n["en"].Keys | Sort-Object
+
+        $missingInEn = $jaKeys | Where-Object { -not $script:I18n["en"].ContainsKey($_) }
+        $missingInJa = $enKeys | Where-Object { -not $script:I18n["ja"].ContainsKey($_) }
+
+        $missingInEn.Count | Should Be 0
+        $missingInJa.Count | Should Be 0
+    }
+
+    It "Start-MarkdigWiki.ps1 binds all editor i18n variables into template and JS" {
+        $scriptContent = [System.IO.File]::ReadAllText((Join-Path $projectRoot "Start-MarkdigWiki.ps1"), [System.Text.Encoding]::UTF8)
+        $scriptContent | Should Match 'editor_gen_prefix'
+        $scriptContent | Should Match 'editor_warning_yaml'
+        $scriptContent | Should Match 'editor_loading'
+        $scriptContent | Should Match 'editor_history_loading'
+        $scriptContent | Should Match 'editor_load_error'
+        $scriptContent | Should Match 'editor_backup_load_err'
+        $scriptContent | Should Match 'editor_saved_warning'
+        $scriptContent | Should Match 'editor_saved'
+    }
+}
+
 
 
 Describe "Repository Code Quality, Syntax & Character Encoding Validation Tests" {

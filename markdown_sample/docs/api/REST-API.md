@@ -26,6 +26,7 @@ SimpleWiki が提供する AI エージェント（RAG / LLM）および外部�
 | `GET` | `/api/index.json` | Wiki ドキュメントの OKF メタデータ一覧を取得（ページネーション・フィルタ可） | `domain`, `tag`, `since`, `limit`, `offset`, `fields` | 不要 |
 | `GET` | `/api/chunks.json` | RAG 用自動 H2/H3 見出し分割済み JSON チャンク一覧を取得 | なし | 不要 |
 | `POST` | `/api/chat` | OKF 文脈検索 ＋ LLM RAG AI チャット応答を取得 | `{"message": "質問文"}` | 不要 (`config.json` 依存) |
+| `POST` | `/api/shutdown` | Wiki サーバープロセスを安全に終了 | なし | 不要 |
 | `GET` | `/*.md` | 指定相対パスの Raw Markdown 本文を取得 | なし | 不要 |
 
 ---
