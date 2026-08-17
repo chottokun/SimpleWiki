@@ -1318,16 +1318,16 @@ try {
 
                 $navBrand     = Get-LocalizedStr -Key "brand_title" -Lang $reqLang
                 $navShutdown  = Get-LocalizedStr -Key "shutdown_btn" -Lang $reqLang
-                $shutdownConfirmJs = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "shutdown_confirm" -Lang $reqLang))
-                $shutdownDoneTitleJs = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "shutdown_done_title" -Lang $reqLang))
-                $shutdownDoneDescJs = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "shutdown_done_desc" -Lang $reqLang))
+                $shutdownConfirmJs = ConvertTo-JsString (Get-LocalizedStr -Key "shutdown_confirm" -Lang $reqLang)
+                $shutdownDoneTitleJs = ConvertTo-JsString (Get-LocalizedStr -Key "shutdown_done_title" -Lang $reqLang)
+                $shutdownDoneDescJs = ConvertTo-JsString (Get-LocalizedStr -Key "shutdown_done_desc" -Lang $reqLang)
 
-                $edLoadingJs       = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "editor_loading" -Lang $reqLang))
-                $edHistoryLoadingJs = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "editor_history_loading" -Lang $reqLang))
-                $edLoadErrorJs     = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "editor_load_error" -Lang $reqLang))
-                $edBackupLoadErrJs = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "editor_backup_load_err" -Lang $reqLang))
-                $edSavedWarningJs  = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "editor_saved_warning" -Lang $reqLang))
-                $edSavedJs         = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "editor_saved" -Lang $reqLang))
+                $edLoadingJs       = ConvertTo-JsString (Get-LocalizedStr -Key "editor_loading" -Lang $reqLang)
+                $edHistoryLoadingJs = ConvertTo-JsString (Get-LocalizedStr -Key "editor_history_loading" -Lang $reqLang)
+                $edLoadErrorJs     = ConvertTo-JsString (Get-LocalizedStr -Key "editor_load_error" -Lang $reqLang)
+                $edBackupLoadErrJs = ConvertTo-JsString (Get-LocalizedStr -Key "editor_backup_load_err" -Lang $reqLang)
+                $edSavedWarningJs  = ConvertTo-JsString (Get-LocalizedStr -Key "editor_saved_warning" -Lang $reqLang)
+                $edSavedJs         = ConvertTo-JsString (Get-LocalizedStr -Key "editor_saved" -Lang $reqLang)
 
                 $navHome      = Get-LocalizedStr -Key "home" -Lang $reqLang
                 $navRecent    = Get-LocalizedStr -Key "recent_updates" -Lang $reqLang

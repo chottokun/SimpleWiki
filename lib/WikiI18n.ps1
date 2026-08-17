@@ -367,3 +367,14 @@ function Get-RequestLanguage {
     return "ja"
 }
 
+function ConvertTo-JsString {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$InputString = ""
+    )
+    if ([string]::IsNullOrEmpty($InputString)) { return "" }
+    return $InputString.Replace("\", "\\").Replace("`r`n", "\n").Replace("`n", "\n").Replace("`r", "\n").Replace('"', '\"').Replace("'", "\'")
+}
+
+
