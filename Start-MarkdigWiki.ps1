@@ -258,7 +258,7 @@ try {
                         }
                     }
 
-                    if (-not $cfgDict.ContainsKey("search")) {
+                    if (-not $cfgDict.Contains("search")) {
                         $cfgDict["search"] = [ordered]@{ prebuildIndex = $false; useCache = $false; cacheFolder = ".cache" }
                     }
 
@@ -276,7 +276,7 @@ try {
                         }
                         if ($sObj.PSObject.Properties["cacheFolder"]) {
                             $cFolder = [string]$sObj.cacheFolder
-                            if ([string]::IsNullOrWhiteSpace($cFolder) -or $cFolder -match '[\:\\/\.\.]') {
+                            if ([string]::IsNullOrWhiteSpace($cFolder) -or $cFolder -match '[\:\\/]' -or $cFolder -match '\.\.') {
                                 $validationError = "キャッシュフォルダ名が無効です。英数字・ハイフン・アンダースコア・ドット始まりのみ許可されています (ディレクトリトラバーサルは禁止)。"
                             } else {
                                 $cfgDict["search"]["cacheFolder"] = $cFolder
@@ -286,7 +286,7 @@ try {
 
                     # rag 設定の安全な更新
                     if ($null -eq $validationError -and $reqObj.PSObject.Properties["rag"]) {
-                        if (-not $cfgDict.ContainsKey("rag")) {
+                        if (-not $cfgDict.Contains("rag")) {
                             $cfgDict["rag"] = [ordered]@{ enabled = $false; apiUrl = "http://localhost:11434/v1"; model = "qwen2.5-coder-7b-instruct" }
                         }
                         $rObj = $reqObj.rag

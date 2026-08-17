@@ -1647,6 +1647,36 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
         $scriptContent | Should Match 'editor_saved_warning'
         $scriptContent | Should Match 'editor_saved'
     }
+
+    It "/api/config handles OrderedDictionary and saves config.json without errors" {
+        $port = 8094
+        $job = Start-Job -ScriptBlock {
+            param($p, $root)
+            & "C:\Project\PowershellScript\SimpleWiki\Start-MarkdigWiki.ps1" -RootFolder $root -Port $p
+        } -ArgumentList $port, (Join-Path $projectRoot "markdown_sample")
+
+        Start-Sleep -Seconds 2
+        try {
+            $payload = @{
+                search = @{
+                    prebuildIndex = $false
+                    useCache      = $true
+                    cacheFolder   = ".cache"
+                }
+                rag = @{
+                    enabled = $false
+                    apiUrl  = "http://localhost:11434/v1"
+                    model   = "qwen2.5-coder-7b-instruct"
+                }
+            } | ConvertTo-Json -Depth 5
+
+            $res = Invoke-RestMethod -Uri "http://localhost:$port/api/config" -Method Post -Body $payload -ContentType "application/json; charset=utf-8"
+            $res.success | Should Be $true
+        } finally {
+            Invoke-RestMethod -Uri "http://localhost:$port/api/shutdown" -Method Post -ErrorAction SilentlyContinue
+            Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 
