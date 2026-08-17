@@ -171,8 +171,12 @@ try {
                 $shutdownMsg = Get-LocalizedStr -Key "shutdown_done_desc" -Lang $reqLang
                 $jsonRes = @{ success = $true; message = $shutdownMsg } | ConvertTo-Json
                 Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
-                $script:shutdownRequested = $true
-                continue
+                try { $response.Close() } catch {}
+                Write-Host "UIからのシャットダウン要求を受信しました。サーバーを終了します..." -ForegroundColor Yellow
+                if ($listener.IsListening) {
+                    try { $listener.Stop() } catch {}
+                }
+                break
             }
 
             if ($rawPath -eq "/api/config") {
@@ -1380,11 +1384,6 @@ try {
         } finally {
             try { $response.Close() } catch {}
         }
-
-        if ($script:shutdownRequested) {
-            Write-Host "UIからのシャットダウン要求を受信しました。サーバーを終了します..." -ForegroundColor Yellow
-            break
-        }
     }
 } finally {
     if ($null -ne $cancelHandler) {
@@ -1397,4 +1396,6 @@ try {
         try { $listener.Close() } catch {}
     }
 }
+
+exit 0
 

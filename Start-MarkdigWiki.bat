@@ -5,3 +5,4 @@ if "%~1"=="" (
 ) else (
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Start-MarkdigWiki.ps1" -RootFolder "%~1"
 )
+exit /b %ERRORLEVEL%
