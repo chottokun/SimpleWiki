@@ -258,7 +258,7 @@ try {
                         }
                     }
 
-                    if (-not $cfgDict.ContainsKey("search")) {
+                    if (-not $cfgDict.Contains("search")) {
                         $cfgDict["search"] = [ordered]@{ prebuildIndex = $false; useCache = $false; cacheFolder = ".cache" }
                     }
 
@@ -276,7 +276,7 @@ try {
                         }
                         if ($sObj.PSObject.Properties["cacheFolder"]) {
                             $cFolder = [string]$sObj.cacheFolder
-                            if ([string]::IsNullOrWhiteSpace($cFolder) -or $cFolder -match '[\:\\/\.\.]') {
+                            if ([string]::IsNullOrWhiteSpace($cFolder) -or $cFolder -match '[\:\\/]' -or $cFolder -match '\.\.') {
                                 $validationError = "キャッシュフォルダ名が無効です。英数字・ハイフン・アンダースコア・ドット始まりのみ許可されています (ディレクトリトラバーサルは禁止)。"
                             } else {
                                 $cfgDict["search"]["cacheFolder"] = $cFolder
@@ -286,7 +286,7 @@ try {
 
                     # rag 設定の安全な更新
                     if ($null -eq $validationError -and $reqObj.PSObject.Properties["rag"]) {
-                        if (-not $cfgDict.ContainsKey("rag")) {
+                        if (-not $cfgDict.Contains("rag")) {
                             $cfgDict["rag"] = [ordered]@{ enabled = $false; apiUrl = "http://localhost:11434/v1"; model = "qwen2.5-coder-7b-instruct" }
                         }
                         $rObj = $reqObj.rag
@@ -1318,16 +1318,16 @@ try {
 
                 $navBrand     = Get-LocalizedStr -Key "brand_title" -Lang $reqLang
                 $navShutdown  = Get-LocalizedStr -Key "shutdown_btn" -Lang $reqLang
-                $shutdownConfirmJs = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "shutdown_confirm" -Lang $reqLang))
-                $shutdownDoneTitleJs = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "shutdown_done_title" -Lang $reqLang))
-                $shutdownDoneDescJs = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "shutdown_done_desc" -Lang $reqLang))
+                $shutdownConfirmJs = ConvertTo-JsString (Get-LocalizedStr -Key "shutdown_confirm" -Lang $reqLang)
+                $shutdownDoneTitleJs = ConvertTo-JsString (Get-LocalizedStr -Key "shutdown_done_title" -Lang $reqLang)
+                $shutdownDoneDescJs = ConvertTo-JsString (Get-LocalizedStr -Key "shutdown_done_desc" -Lang $reqLang)
 
-                $edLoadingJs       = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "editor_loading" -Lang $reqLang))
-                $edHistoryLoadingJs = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "editor_history_loading" -Lang $reqLang))
-                $edLoadErrorJs     = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "editor_load_error" -Lang $reqLang))
-                $edBackupLoadErrJs = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "editor_backup_load_err" -Lang $reqLang))
-                $edSavedWarningJs  = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "editor_saved_warning" -Lang $reqLang))
-                $edSavedJs         = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "editor_saved" -Lang $reqLang))
+                $edLoadingJs       = ConvertTo-JsString (Get-LocalizedStr -Key "editor_loading" -Lang $reqLang)
+                $edHistoryLoadingJs = ConvertTo-JsString (Get-LocalizedStr -Key "editor_history_loading" -Lang $reqLang)
+                $edLoadErrorJs     = ConvertTo-JsString (Get-LocalizedStr -Key "editor_load_error" -Lang $reqLang)
+                $edBackupLoadErrJs = ConvertTo-JsString (Get-LocalizedStr -Key "editor_backup_load_err" -Lang $reqLang)
+                $edSavedWarningJs  = ConvertTo-JsString (Get-LocalizedStr -Key "editor_saved_warning" -Lang $reqLang)
+                $edSavedJs         = ConvertTo-JsString (Get-LocalizedStr -Key "editor_saved" -Lang $reqLang)
 
                 $navHome      = Get-LocalizedStr -Key "home" -Lang $reqLang
                 $navRecent    = Get-LocalizedStr -Key "recent_updates" -Lang $reqLang

@@ -1265,12 +1265,12 @@ function Get-SettingsViewHtml {
     $serverDescLbl  = Get-LocalizedStr -Key "settings_shutdown_desc" -Lang $Lang
     $shutdownBtnLbl = Get-LocalizedStr -Key "settings_shutdown_btn" -Lang $Lang
 
-    $savedSuccessJs = Get-LocalizedStr -Key "settings_saved_success" -Lang $Lang
-    $savedErrorJs   = Get-LocalizedStr -Key "settings_saved_error" -Lang $Lang
-    $commErrorJs    = Get-LocalizedStr -Key "settings_comm_error" -Lang $Lang
-    $rebuildRunJs   = Get-LocalizedStr -Key "settings_rebuild_running" -Lang $Lang
-    $rebuildStartJs = Get-LocalizedStr -Key "settings_rebuild_start" -Lang $Lang
-    $rebuildFailJs  = Get-LocalizedStr -Key "settings_rebuild_failed" -Lang $Lang
+    $savedSuccessJs = ConvertTo-JsString (Get-LocalizedStr -Key "settings_saved_success" -Lang $Lang)
+    $savedErrorJs   = ConvertTo-JsString (Get-LocalizedStr -Key "settings_saved_error" -Lang $Lang)
+    $commErrorJs    = ConvertTo-JsString (Get-LocalizedStr -Key "settings_comm_error" -Lang $Lang)
+    $rebuildRunJs   = ConvertTo-JsString (Get-LocalizedStr -Key "settings_rebuild_running" -Lang $Lang)
+    $rebuildStartJs = ConvertTo-JsString (Get-LocalizedStr -Key "settings_rebuild_start" -Lang $Lang)
+    $rebuildFailJs  = ConvertTo-JsString (Get-LocalizedStr -Key "settings_rebuild_failed" -Lang $Lang)
 
     return @"
 <div class="settings-container">
