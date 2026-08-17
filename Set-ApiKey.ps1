@@ -12,12 +12,13 @@ param (
 )
 
 $scriptDir = [System.IO.Path]::GetFullPath($PSScriptRoot)
+$libDir    = Join-Path $scriptDir "lib"
+
 if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
     $targetConfig = Join-Path $scriptDir "config.json"
 } else {
     $targetConfig = [System.IO.Path]::GetFullPath($ConfigPath)
 }
-
 
 # --- モジュールのロード (lib/WikiSecurity.ps1) ---
 . (Join-Path $libDir "WikiSecurity.ps1")

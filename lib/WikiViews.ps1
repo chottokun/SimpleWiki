@@ -997,7 +997,10 @@ function Get-ChatWidgetHtml {
                         var idx = parseInt(parts[k].replace("___CODEBLOCK_", "").replace("___", ""), 10);
                         parts[k] = codeBlocks[idx];
                     } else if (parts[k].indexOf("<div class='chat-table-wrapper'>") === 0) {
-                        // Table Preserved
+                        // Restore code blocks inside table cells if any
+                        parts[k] = parts[k].replace(/___CODEBLOCK_(\d+)___/g, function(m, num) {
+                            return codeBlocks[parseInt(num, 10)] || m;
+                        });
                     } else {
                         var lines = parts[k].split('\n');
                         var res = [];
@@ -1021,7 +1024,12 @@ function Get-ChatWidgetHtml {
                         parts[k] = res.join("");
                     }
                 }
-                return parts.join("");
+                var finalHtml = parts.join("");
+                // Safety net: ensure any remaining placeholder is replaced
+                finalHtml = finalHtml.replace(/___CODEBLOCK_(\d+)___/g, function(m, num) {
+                    return codeBlocks[parseInt(num, 10)] || m;
+                });
+                return finalHtml;
             }
 
             function createAssistantMsgBox() {

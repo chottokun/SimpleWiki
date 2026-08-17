@@ -226,35 +226,33 @@ try {
                         continue
                     }
 
-                    # 既存設定の読み込み
-                    $existingConfig = Get-ConfigJson -TargetScriptDir $scriptDir
+                    # 既存設定の読み込み (RAW JSON をハッシュ/辞書形式に変換して保持)
                     $cfgDict = [ordered]@{}
-                    if ($null -ne $existingConfig) {
-                        if ($existingConfig.rag) {
-                            $cfgDict["rag"] = [ordered]@{
-                                enabled         = [bool]$existingConfig.rag.enabled
-                                apiUrl          = [string]$existingConfig.rag.apiUrl
-                                apiKey          = [string]$existingConfig.rag.apiKey
-                                model           = [string]$existingConfig.rag.model
-                                maxContextDocs  = if ($existingConfig.rag.maxContextDocs) { [int]$existingConfig.rag.maxContextDocs } else { 3 }
-                                maxHistoryTurns = if ($existingConfig.rag.maxHistoryTurns) { [int]$existingConfig.rag.maxHistoryTurns } else { 3 }
-                                maxHistoryChars = if ($existingConfig.rag.maxHistoryChars) { [int]$existingConfig.rag.maxHistoryChars } else { 4000 }
-                                timeoutSec      = if ($existingConfig.rag.timeoutSec) { [int]$existingConfig.rag.timeoutSec } else { 30 }
-                                systemPrompt    = [string]$existingConfig.rag.systemPrompt
+                    if (Test-Path $configPath) {
+                        try {
+                            $rawJson = Get-Content -Path $configPath -Raw -Encoding UTF8
+                            $parsedObj = $rawJson | ConvertFrom-Json
+                            # Convert PSCustomObject recursively to OrderedDictionary
+                            function Convert-PSObjectToOrdered ($obj) {
+                                if ($null -eq $obj) { return $null }
+                                if ($obj -is [System.Collections.IDictionary]) { return $obj }
+                                if ($obj -is [System.Array] -or $obj -is [System.Collections.IList]) {
+                                    $arr = @()
+                                    foreach ($item in $obj) { $arr += (Convert-PSObjectToOrdered $item) }
+                                    return $arr
+                                }
+                                if ($obj -is [PSCustomObject]) {
+                                    $dict = [ordered]@{}
+                                    foreach ($prop in $obj.PSObject.Properties) {
+                                        $dict[$prop.Name] = Convert-PSObjectToOrdered $prop.Value
+                                    }
+                                    return $dict
+                                }
+                                return $obj
                             }
-                        }
-                        if ($existingConfig.api) {
-                            $cfgDict["api"] = [ordered]@{
-                                defaultLimit = if ($existingConfig.api.defaultLimit) { [int]$existingConfig.api.defaultLimit } else { 100 }
-                                maxLimit     = if ($existingConfig.api.maxLimit) { [int]$existingConfig.api.maxLimit } else { 1000 }
-                            }
-                        }
-                        if ($existingConfig.search) {
-                            $cfgDict["search"] = [ordered]@{
-                                prebuildIndex = [bool]$existingConfig.search.prebuildIndex
-                                useCache      = [bool]$existingConfig.search.useCache
-                                cacheFolder   = [string]$existingConfig.search.cacheFolder
-                            }
+                            $cfgDict = Convert-PSObjectToOrdered $parsedObj
+                        } catch {
+                            $cfgDict = [ordered]@{}
                         }
                     }
 
@@ -308,7 +306,7 @@ try {
                     }
 
                     try {
-                        $jsonContent = $cfgDict | ConvertTo-Json -Depth 5
+                        $jsonContent = $cfgDict | ConvertTo-Json -Depth 10
                         $tmpConfigPath = "$configPath.tmp"
 
                         # 1. 一時ファイルに安全に書き出し (UTF-8)

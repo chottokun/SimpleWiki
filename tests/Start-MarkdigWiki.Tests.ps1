@@ -1649,6 +1649,18 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
     }
 
     It "/api/config handles OrderedDictionary and saves config.json without errors" {
+        $realConfig = Join-Path $projectRoot "config.json"
+        $backupOriginal = $null
+        if (Test-Path $realConfig) {
+            $backupOriginal = [System.IO.File]::ReadAllBytes($realConfig)
+        }
+        $bak1 = "$realConfig.bak1"
+        $bak2 = "$realConfig.bak2"
+        $bak3 = "$realConfig.bak3"
+        $bak1Data = if (Test-Path $bak1) { [System.IO.File]::ReadAllBytes($bak1) } else { $null }
+        $bak2Data = if (Test-Path $bak2) { [System.IO.File]::ReadAllBytes($bak2) } else { $null }
+        $bak3Data = if (Test-Path $bak3) { [System.IO.File]::ReadAllBytes($bak3) } else { $null }
+
         $port = 8094
         $job = Start-Job -ScriptBlock {
             param($p, $root)
@@ -1675,6 +1687,14 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
         } finally {
             Invoke-RestMethod -Uri "http://localhost:$port/api/shutdown" -Method Post -ErrorAction SilentlyContinue
             Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+
+            # 完全復元
+            if ($null -ne $backupOriginal) {
+                [System.IO.File]::WriteAllBytes($realConfig, $backupOriginal)
+            }
+            if ($null -ne $bak1Data) { [System.IO.File]::WriteAllBytes($bak1, $bak1Data) } else { Remove-Item $bak1 -Force -ErrorAction SilentlyContinue }
+            if ($null -ne $bak2Data) { [System.IO.File]::WriteAllBytes($bak2, $bak2Data) } else { Remove-Item $bak2 -Force -ErrorAction SilentlyContinue }
+            if ($null -ne $bak3Data) { [System.IO.File]::WriteAllBytes($bak3, $bak3Data) } else { Remove-Item $bak3 -Force -ErrorAction SilentlyContinue }
         }
     }
 }
