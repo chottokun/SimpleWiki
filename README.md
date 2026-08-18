@@ -45,10 +45,11 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
     - さくら AI API / Ollama / LM Studio / OpenAI 等の各種 REST LLM エンドポイントへ対応。
     - **マルチターン対話履歴 (history) 管理 ＆ 安全文字数ガード**: `config.json` で可変調整（`maxHistoryTurns: 3`, `maxHistoryChars: 4000`, `maxAgentTurns: 5`, `maxDocCharLength: 2000`）。
     - **高度なチャット UI**: Markdown 表（`<table>`）、コードブロック（`<pre><code>`）、リストの完全描画、`📋 コピー` ボタン、`⛶ 拡大/縮小` トグル、`🧹 履歴クリア` ボタンを標準搭載。
-  - **🔑 マシンバインド・アクティベーション ＆ 管理者用コード発行 CLI (`New-ActivationCode.bat` / `New-ActivationCode.ps1`)**:
+  - **🔑 マシンバインド・アクティベーション ＆ 管理者用コード発行 CLI ＆ 完全サーバーレス Web アプリ**:
     - **PC 固有ロック (Machine-Bound)**: ユーザー環境のマザーボード UUID（`Get-MachineFingerprint`）から生成された 16 文字のマシン ID およびメールアドレス（任意）に基づいて暗号化キーを派生し、他人の PC では復号できないアクティベーションコード（`ENC:...`）を発行。
-    - **従来ポータブル形式 (Legacy)**: どの PC でも動作する共通の配布用 `ENC:...` コードの発行にも対応（対話メニューまたは `-Legacy` オプション）。
-    - **設定 UI でのマシン ID 表示 ＆ ワンクリックコピー**: 設定画面（`/settings`）に自 PC のマシン ID とコピー用ボタンを配置。
+    - **完全サーバーレス Web アプリ (`docs/activation/index.html`)**: ブラウザ標準の Web Crypto API を活用し、外部通信・サーバー処理・npm 依存ゼロ（完全クライアントサイド完結）でコードを生成。GitHub Pages 対応。
+    - **管理者用 CLI ツール (`New-ActivationCode.bat` / `New-ActivationCode.ps1`)**: コマンドラインまたは対話形式で即座にマシン固有コード / 従来ポータブルコードを生成してクリップボードに自動コピー。
+    - **設定 UI でのマシン ID 表示 ＆ ワンクリックコピー**: 設定画面（`/settings`）に自 PC のマシン ID とコピー用ボタン、Web 発行ページへの直接リンクを配置。
     - **DPAPI 自動変換 ＆ ローカル保護**: ユーザーが設定画面でアクティベーションコード（`ENC:...`）を入力して保存すると、サーバー側で自 PC のマシン ID を検証後、Windows 固有の `DPAPI:...` 形式に自動変換して `config.json` に安全に保存。
   - **🔒 API Key 暗号化ユーティリティ (`Set-ApiKey.bat` / `Set-ApiKey.ps1`)**:
     - Windows DPAPI またはポータブル AES-256 暗号化（`ENC:...` / `DPAPI:...`）により、`config.json` 内の API キーを安全に保護。
@@ -175,6 +176,22 @@ SimpleWiki/
   ```powershell
   .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "C:\inetpub\wwwroot\wiki"
   ```
+
+---
+
+### 4. マシンバインド・アクティベーションコードの発行と適用
+
+SimpleWiki では、API キーを他人に漏洩させずに特定の PC 専用コードとして配布・アクティベーションする仕組みを備えています。
+
+```
+【発行手順】
+1. ユーザーが SimpleWiki の [システム設定 (⚙️)] を開き、表示されている「マシン ID」をコピーします。
+2. 管理者またはユーザー自身が「アクティベーション Web サイト」または「CLI ツール」でコードを発行します。
+   ・Web サイト: docs/activation/index.html (GitHub Pages: https://chottokun.github.io/SimpleWiki/activation/)
+   ・CLI ツール: .\New-ActivationCode.bat
+3. 発行された「ENC:xxxx...」コードを設定画面の [アクティベーションコード] 欄に貼り付けて保存します。
+4. サーバー側で自動的に Windows 固有の保護形式 (DPAPI) に変換され、この PC 専用として永続化されます。
+```
 
 ---
 
