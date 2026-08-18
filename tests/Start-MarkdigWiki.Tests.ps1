@@ -804,6 +804,64 @@ Describe 'OKF LLM RAG Security and Encryption Tests' {
         $decKey | Should Be $rawKey
     }
 
+    It 'Get-MachineFingerprint returns 16-char formatted machine identifier' {
+        $mid = Get-MachineFingerprint
+        $mid | Should Match '^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$'
+    }
+
+    It 'Generates and unlocks machine-bound activation codes correctly' {
+        $testApiKey = "sk-sakura-ai-secret-123456"
+        $mid = Get-MachineFingerprint
+        $email = "developer@example.com"
+
+        # 1. マシンID ＋ メールアドレスでの暗号化
+        $actCode = Protect-ActivationCode -ApiKey $testApiKey -MachineId $mid -Email $email
+        $actCode | Should Match "^ENC:"
+
+        # 2. 同一マシン ＋ 同一メールでの復号成功
+        $decrypted = Unprotect-ActivationCode -EncryptedText $actCode -MachineId $mid -Email $email
+        $decrypted | Should Be $testApiKey
+
+        # 3. 異なるマシンIDでの復号失敗
+        $diffMid = "AAAA-BBBB-CCCC-DDDD"
+        $failedDec = Unprotect-ActivationCode -EncryptedText $actCode -MachineId $diffMid -Email $email
+        $failedDec | Should Be ""
+
+        # 4. 異なるメールアドレスでの復号失敗
+        $diffEmail = "wrong.person@example.com"
+        $failedEmailDec = Unprotect-ActivationCode -EncryptedText $actCode -MachineId $mid -Email $diffEmail
+        $failedEmailDec | Should Be ""
+
+        # 5. 従来ポータブル ENC: 形式の復号互換性テスト (どのマシン・メールでも復号可能)
+        $legacyEnc = Protect-StringAes -PlainText $testApiKey
+        $decLegacy = Unprotect-ActivationCode -EncryptedText $legacyEnc -MachineId $mid -Email $email
+        $decLegacy | Should Be $testApiKey
+        $decLegacyDiffMid = Unprotect-ActivationCode -EncryptedText $legacyEnc -MachineId "DIFF-HOST-9999" -Email "other@example.com"
+        $decLegacyDiffMid | Should Be $testApiKey
+
+        # 6. Get-ResolvedSecret の透過的復号
+        $resolved = Get-ResolvedSecret -SecretValue $actCode -Email $email
+        $resolved | Should Be $testApiKey
+        $resolvedLegacy = Get-ResolvedSecret -SecretValue $legacyEnc
+        $resolvedLegacy | Should Be $testApiKey
+    }
+
+    It 'New-ActivationCode.ps1 CLI script supports both Machine-Bound and Legacy portable modes' {
+        $cliScript = Join-Path $projectRoot "New-ActivationCode.ps1"
+        (Test-Path $cliScript) | Should Be $true
+        $tokens = $null
+        $errs = $null
+        [System.Management.Automation.Language.Parser]::ParseFile($cliScript, [ref]$tokens, [ref]$errs)
+        $errs.Count | Should Be 0
+
+        # CLI による Legacy モード出力テスト
+        $testKey = "sk-test-cli-key-12345"
+        & $cliScript -ApiKey $testKey -Legacy | Out-Null
+        $legacyCode = Protect-StringAes -PlainText $testKey
+        $unprotected = Unprotect-ActivationCode -EncryptedText $legacyCode
+        $unprotected | Should Be $testKey
+    }
+
     It 'Encrypts and decrypts API key with Windows DPAPI (DPAPI: prefix)' {
         $rawKey = "sk-proj-dpapitest98765"
         $dpapiKey = Protect-StringDpapi -PlainText $rawKey
@@ -1684,6 +1742,41 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
 
             $res = Invoke-RestMethod -Uri "http://localhost:$port/api/config" -Method Post -Body $payload -ContentType "application/json; charset=utf-8"
             $res.success | Should Be $true
+
+            # Activation Code 結合テスト: 自PCマシンID向けアクティベーションコードの送信
+            $mid = Get-MachineFingerprint
+            $actCode = Protect-ActivationCode -ApiKey "sk-live-test-12345" -MachineId $mid
+            $actPayload = @{
+                rag = @{
+                    enabled        = $true
+                    activationCode = $actCode
+                }
+            } | ConvertTo-Json -Depth 5
+            $actRes = Invoke-RestMethod -Uri "http://localhost:$port/api/config" -Method Post -Body $actPayload -ContentType "application/json; charset=utf-8"
+            $actRes.success | Should Be $true
+
+            # 保存された config.json が DPAPI 形式になっていることを検証
+            $savedCfg = Get-Content -Path $realConfig -Raw -Encoding UTF8 | ConvertFrom-Json
+            $savedCfg.rag.apiKey | Should Match "^DPAPI:"
+            $resolvedKey = Get-ResolvedSecret -SecretValue $savedCfg.rag.apiKey
+            $resolvedKey | Should Be "sk-live-test-12345"
+
+            # 不正なマシンID用アクティベーションコード送信時のエラー拒絶テスト
+            $badActCode = Protect-ActivationCode -ApiKey "sk-other-key" -MachineId "OTHER-MACHINE-9999"
+            $badPayload = @{
+                rag = @{
+                    enabled        = $true
+                    activationCode = $badActCode
+                }
+            } | ConvertTo-Json -Depth 5
+
+            try {
+                Invoke-RestMethod -Uri "http://localhost:$port/api/config" -Method Post -Body $badPayload -ContentType "application/json; charset=utf-8"
+                throw "Expected HTTP 400 failure"
+            } catch {
+                # 400 Bad Request で弾かれることを検証
+                $_.Exception.Response.StatusCode.value__ | Should Be 400
+            }
         } finally {
             Invoke-RestMethod -Uri "http://localhost:$port/api/shutdown" -Method Post -ErrorAction SilentlyContinue
             Remove-Job -Job $job -Force -ErrorAction SilentlyContinue

@@ -45,6 +45,11 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
     - さくら AI API / Ollama / LM Studio / OpenAI 等の各種 REST LLM エンドポイントへ対応。
     - **マルチターン対話履歴 (history) 管理 ＆ 安全文字数ガード**: `config.json` で可変調整（`maxHistoryTurns: 3`, `maxHistoryChars: 4000`, `maxAgentTurns: 5`, `maxDocCharLength: 2000`）。
     - **高度なチャット UI**: Markdown 表（`<table>`）、コードブロック（`<pre><code>`）、リストの完全描画、`📋 コピー` ボタン、`⛶ 拡大/縮小` トグル、`🧹 履歴クリア` ボタンを標準搭載。
+  - **🔑 マシンバインド・アクティベーション ＆ 管理者用コード発行 CLI (`New-ActivationCode.bat` / `New-ActivationCode.ps1`)**:
+    - **PC 固有ロック (Machine-Bound)**: ユーザー環境のマザーボード UUID（`Get-MachineFingerprint`）から生成された 16 文字のマシン ID およびメールアドレス（任意）に基づいて暗号化キーを派生し、他人の PC では復号できないアクティベーションコード（`ENC:...`）を発行。
+    - **従来ポータブル形式 (Legacy)**: どの PC でも動作する共通の配布用 `ENC:...` コードの発行にも対応（対話メニューまたは `-Legacy` オプション）。
+    - **設定 UI でのマシン ID 表示 ＆ ワンクリックコピー**: 設定画面（`/settings`）に自 PC のマシン ID とコピー用ボタンを配置。
+    - **DPAPI 自動変換 ＆ ローカル保護**: ユーザーが設定画面でアクティベーションコード（`ENC:...`）を入力して保存すると、サーバー側で自 PC のマシン ID を検証後、Windows 固有の `DPAPI:...` 形式に自動変換して `config.json` に安全に保存。
   - **🔒 API Key 暗号化ユーティリティ (`Set-ApiKey.bat` / `Set-ApiKey.ps1`)**:
     - Windows DPAPI またはポータブル AES-256 暗号化（`ENC:...` / `DPAPI:...`）により、`config.json` 内の API キーを安全に保護。
   - **🛑 安全なサーバー終了 ＆ UI シャットダウンボタン ＆ 非同期待機 (`/api/shutdown`)**:
@@ -78,6 +83,8 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
 SimpleWiki/
 ├── Start-MarkdigWiki.ps1   <-- Web サーバー & RAG AI チャット起動スクリプト (UTF-8 with BOM)
 ├── Start-MarkdigWiki.bat   <-- Web サーバー起動バッチ (UTF-8 No-BOM)
+├── New-ActivationCode.ps1  <-- マシンバインド/ポータブル アクティベーションコード生成 CLI (UTF-8 with BOM)
+├── New-ActivationCode.bat  <-- アクティベーションコード生成バッチ (UTF-8 No-BOM)
 ├── Set-ApiKey.ps1          <-- LLM API キー暗号化・設定スクリプト (UTF-8 with BOM)
 ├── Set-ApiKey.bat          <-- API キー設定用 ExecutionPolicy Bypass バッチ (UTF-8 No-BOM)
 ├── Export-MarkdigWiki.ps1  <-- OKF 対応静的 HTML エキスポートスクリプト (UTF-8 with BOM)
@@ -97,7 +104,7 @@ SimpleWiki/
 │   ├── WikiSearch.ps1       <-- 検索エンジン・WinRT 形態素解析・NOT構文・インデックスキャッシュ
 │   ├── WikiRag.ps1          <-- LLM RAG (Fast/Agentic) ＆ チャット API
 │   ├── WikiViews.ps1        <-- 各種 HTML ビュー ＆ UI レンダラー
-│   ├── WikiSecurity.ps1     <-- AES-256 / DPAPI 暗号化 ＆ パス検証
+│   ├── WikiSecurity.ps1     <-- マシンID指紋・AES-256 / DPAPI 暗号化 ＆ パス検証
 │   └── mermaid.min.js       <-- オフライン用 Mermaid.js (MIT License)
 ├── markdown_sample/         <-- サンプルドキュメントフォルダ (OKF メタデータ記述例付き)
 │   ├── index.md             <-- トップページ
@@ -109,7 +116,7 @@ SimpleWiki/
 │   └── images/
 │       └── architecture.svg <-- サンプル SVG 画像
 ├── tests/
-│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全110件)
+│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全122件)
 └── README.md                <-- プロジェクト記録
 ```
 
@@ -186,9 +193,14 @@ SimpleWiki/
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\tests\Start-MarkdigWiki.Tests.ps1"
 ```
-- **検証結果**: 全 110 件の Pester 自動テストが **100% PASS**。
+- **検証結果**: 全 122 件の Pester 自動テストが **100% PASS**。
   - **1. スクリプト構文・AST検証**: 全 `.ps1` ファイルの構文解析・トークン検証に合格
-  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 110 件)**:
+  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 122 件)**:
+    - マシン固有 ID（`Get-MachineFingerprint`）生成・16文字フォーマット検証
+    - マシンバインド・アクティベーションコード暗号化／復号（同一マシン・同一メールでの復号成功）
+    - 異なるマシン ID／誤ったメールアドレスでの復号失敗（防犯性）検証
+    - 従来ポータブル `ENC:...` 形式の透過的復号・後方互換性テスト
+    - `/api/config` 経由でのアクティベーションコード送信 ➡ DPAPI 自動変換 ＆ 無効コード時の 400 Bad Request 拒絶検証
     - Markdig アセンブリロード & GFM パイプライン構築
     - 多言語化 (i18n) 辞書・言語判定（クエリ/Cookie/設定優先度）・外部辞書 `i18n.json` マージ
     - 英語・日本語での UI HTML ビュー生成（サイドバー・トップバー・フッター・各動的画面）
