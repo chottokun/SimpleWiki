@@ -115,8 +115,11 @@ SimpleWiki/
 │   │       └── REST-API.md   <-- REST API 仕様書 & AI Agent 連携ガイド
 │   └── images/
 │       └── architecture.svg <-- サンプル SVG 画像
+├── docs/
+│   └── activation/
+│       └── index.html       <-- 完全サーバーレス型 Web Crypto API アクティベーションコード生成 Web アプリ
 ├── tests/
-│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全122件)
+│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全123件)
 └── README.md                <-- プロジェクト記録
 ```
 
@@ -193,13 +196,14 @@ SimpleWiki/
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\tests\Start-MarkdigWiki.Tests.ps1"
 ```
-- **検証結果**: 全 122 件の Pester 自動テストが **100% PASS**。
+- **検証結果**: 全 123 件の Pester 自動テストが **100% PASS**。
   - **1. スクリプト構文・AST検証**: 全 `.ps1` ファイルの構文解析・トークン検証に合格
-  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 122 件)**:
+  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 123 件)**:
     - マシン固有 ID（`Get-MachineFingerprint`）生成・16文字フォーマット検証
     - マシンバインド・アクティベーションコード暗号化／復号（同一マシン・同一メールでの復号成功）
     - 異なるマシン ID／誤ったメールアドレスでの復号失敗（防犯性）検証
     - 従来ポータブル `ENC:...` 形式の透過的復号・後方互換性テスト
+    - 完全サーバーレス Web アプリ（`docs/activation/index.html`）の Web Crypto API 出力コードと PowerShell 間の 100% 復号互換性テスト
     - `/api/config` 経由でのアクティベーションコード送信 ➡ DPAPI 自動変換 ＆ 無効コード時の 400 Bad Request 拒絶検証
     - Markdig アセンブリロード & GFM パイプライン構築
     - 多言語化 (i18n) 辞書・言語判定（クエリ/Cookie/設定優先度）・外部辞書 `i18n.json` マージ

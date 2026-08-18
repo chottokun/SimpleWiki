@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SimpleWiki - Activation Code Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-gradient: radial-gradient(circle at 10% 20%, #0f172a 0%, #020617 90%);
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-primary: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.25);
+            --accent-green: #10b981;
+            --accent-green-glow: rgba(16, 185, 129, 0.25);
+            --input-bg: rgba(15, 23, 42, 0.6);
+            --input-border: rgba(255, 255, 255, 0.12);
+            --input-focus: #38bdf8;
+            --radius-lg: 18px;
+            --radius-md: 12px;
+            --radius-sm: 8px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', 'Noto Sans JP', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-gradient);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px 16px;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        /* 背景装飾ブラー */
+        .bg-glow-1 {
+            position: absolute;
+            top: -100px;
+            left: -100px;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(56, 189, 248, 0.15), transparent 70%);
+            pointer-events: none;
+        }
+        .bg-glow-2 {
+            position: absolute;
+            bottom: -150px;
+            right: -100px;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(16, 185, 129, 0.12), transparent 70%);
+            pointer-events: none;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 620px;
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-lg);
+            padding: 36px 32px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+            position: relative;
+            z-index: 1;
+            animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 28px;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            border-radius: 9999px;
+            color: var(--accent-primary);
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+        }
+
+        .title {
+            font-size: 26px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #ffffff 30%, #94a3b8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 6px;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+
+        /* モード切替タブ */
+        .tab-group {
+            display: flex;
+            background: rgba(15, 23, 42, 0.5);
+            padding: 4px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--input-border);
+            margin-bottom: 24px;
+            gap: 4px;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 10px 14px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+        }
+
+        .tab-btn.active {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-main);
+            margin-bottom: 8px;
+        }
+
+        .label-hint {
+            font-size: 11px;
+            font-weight: 400;
+            color: var(--text-muted);
+        }
+
+        .input-wrapper {
+            position: relative;
+        }
+
+        .form-input {
+            width: 100%;
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: var(--radius-md);
+            padding: 12px 16px;
+            color: #fff;
+            font-size: 14px;
+            font-family: 'JetBrains Mono', monospace;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        .form-input:focus {
+            border-color: var(--input-focus);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+            background: rgba(15, 23, 42, 0.8);
+        }
+
+        .form-input::placeholder {
+            color: #475569;
+            font-family: 'Outfit', 'Noto Sans JP', sans-serif;
+            font-size: 13px;
+        }
+
+        .input-toggle-btn {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 14px;
+            padding: 4px;
+        }
+
+        .input-toggle-btn:hover {
+            color: #fff;
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 14px 20px;
+            background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
+            border: none;
+            border-radius: var(--radius-md);
+            color: #fff;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 14px rgba(14, 165, 233, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 10px;
+            font-family: inherit;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(14, 165, 233, 0.45);
+        }
+
+        .submit-btn:active {
+            transform: translateY(0);
+        }
+
+        /* 生成結果カード */
+        .result-card {
+            margin-top: 28px;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: var(--radius-md);
+            padding: 20px;
+            animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            display: none;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .result-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--accent-green);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .result-box {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: var(--radius-sm);
+            padding: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            word-break: break-all;
+            color: #38bdf8;
+            margin-bottom: 14px;
+            max-height: 120px;
+            overflow-y: auto;
+            user-select: all;
+        }
+
+        .copy-btn {
+            width: 100%;
+            padding: 10px;
+            background: var(--accent-green);
+            border: none;
+            border-radius: var(--radius-sm);
+            color: #022c22;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            font-family: inherit;
+        }
+
+        .copy-btn:hover {
+            opacity: 0.9;
+        }
+
+        .guide-box {
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+
+        .guide-box ol {
+            margin-left: 18px;
+            margin-top: 4px;
+        }
+
+        .footer {
+            margin-top: 24px;
+            text-align: center;
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .footer a {
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        .footer a:hover {
+            color: var(--accent-primary);
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: #1e293b;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+            padding: 10px 20px;
+            border-radius: 9999px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            z-index: 100;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="bg-glow-1"></div>
+    <div class="bg-glow-2"></div>
+
+    <div class="container">
+        <div class="header">
+            <div class="badge">🛡️ Client-Side Serverless Tool</div>
+            <h1 class="title">SimpleWiki Activation</h1>
+            <p class="subtitle">マシン固有・ポータブル アクティベーションコード生成ツール</p>
+        </div>
+
+        <!-- 発行タイプ切替タブ -->
+        <div class="tab-group">
+            <button type="button" class="tab-btn active" id="tabBound" onclick="switchMode('bound')">🔒 マシン固有ロック形式 (推奨)</button>
+            <button type="button" class="tab-btn" id="tabLegacy" onclick="switchMode('legacy')">🌐 従来ポータブル形式</button>
+        </div>
+
+        <form id="actForm" onsubmit="handleGenerate(event)">
+            <!-- API Key -->
+            <div class="form-group">
+                <div class="form-label">
+                    <span>LLM API キー (sk-... 等)</span>
+                    <span class="label-hint">※ 外部送信されません</span>
+                </div>
+                <div class="input-wrapper">
+                    <input type="password" id="apiKey" class="form-input" placeholder="sk-..." required autocomplete="off">
+                    <button type="button" class="input-toggle-btn" onclick="togglePassword()">👁️</button>
+                </div>
+            </div>
+
+            <!-- Machine ID (マシン固有時のみ表示) -->
+            <div class="form-group" id="groupMachineId">
+                <div class="form-label">
+                    <span>ユーザーのマシン ID</span>
+                    <span class="label-hint">Wiki設定画面に表示</span>
+                </div>
+                <input type="text" id="machineId" class="form-input" placeholder="例: A3B1-9F22-C84D-71E0" maxlength="19" oninput="formatMachineId(this)">
+            </div>
+
+            <!-- Email (マシン固有時のみ表示・任意) -->
+            <div class="form-group" id="groupEmail">
+                <div class="form-label">
+                    <span>メールアドレス (任意)</span>
+                    <span class="label-hint">特定のユーザーに紐付ける場合</span>
+                </div>
+                <input type="email" id="userEmail" class="form-input" placeholder="user@example.com">
+            </div>
+
+            <button type="submit" class="submit-btn" id="btnSubmit">
+                <span>🚀 アクティベーションコードを生成</span>
+            </button>
+        </form>
+
+        <!-- 結果表示カード -->
+        <div class="result-card" id="resultCard">
+            <div class="result-header">
+                <div class="result-title">✨ 発行完了 (PowerShell 互換)</div>
+            </div>
+            <div class="result-box" id="resultCode"></div>
+            <button type="button" class="copy-btn" id="btnCopy" onclick="copyResult()">
+                📋 発行コードをコピー
+            </button>
+            <div class="guide-box">
+                <strong>📌 ユーザーへのご案内手順:</strong>
+                <ol>
+                    <li>発行コードをコピーしてユーザーに伝えます。</li>
+                    <li>ユーザーが SimpleWiki の <strong>[システム設定 (⚙️)]</strong> を開きます。</li>
+                    <li><strong>[アクティベーションコード]</strong> 欄に貼り付けて保存すると、自動でこの PC 専用の保護形式 (DPAPI) に変換されて機能が有効化されます。</li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>100% Client-Side Web Crypto API &bull; <a href="https://github.com/chottokun/SimpleWiki" target="_blank" rel="noopener">SimpleWiki Project</a></p>
+        </div>
+    </div>
+
+    <div class="toast" id="toast">✓ クリップボードにコピーしました</div>
+
+    <script>
+        var currentMode = 'bound';
+
+        function switchMode(mode) {
+            currentMode = mode;
+            var tabBound = document.getElementById('tabBound');
+            var tabLegacy = document.getElementById('tabLegacy');
+            var groupMachineId = document.getElementById('groupMachineId');
+            var groupEmail = document.getElementById('groupEmail');
+            var machineInput = document.getElementById('machineId');
+
+            if (mode === 'bound') {
+                tabBound.classList.add('active');
+                tabLegacy.classList.remove('active');
+                groupMachineId.style.display = 'block';
+                groupEmail.style.display = 'block';
+                machineInput.required = true;
+            } else {
+                tabLegacy.classList.add('active');
+                tabBound.classList.remove('active');
+                groupMachineId.style.display = 'none';
+                groupEmail.style.display = 'none';
+                machineInput.required = false;
+            }
+            document.getElementById('resultCard').style.display = 'none';
+        }
+
+        function togglePassword() {
+            var input = document.getElementById('apiKey');
+            input.type = input.type === 'password' ? 'text' : 'password';
+        }
+
+        function formatMachineId(input) {
+            var val = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+            var parts = [];
+            for (var i = 0; i < val.length && i < 16; i += 4) {
+                parts.push(val.substring(i, Math.min(i + 4, val.length)));
+            }
+            input.value = parts.join('-');
+        }
+
+        function showToast(msg) {
+            var toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.classList.add('show');
+            setTimeout(function() { toast.classList.remove('show'); }, 2500);
+        }
+
+        function copyResult() {
+            var code = document.getElementById('resultCode').innerText;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(code).then(function() {
+                    showToast('✓ 発行コードをクリップボードにコピーしました');
+                });
+            }
+        }
+
+        // ==============================================================================
+        //  Web Crypto API による暗号化 (PowerShell WikiSecurity.ps1 と 100% 互換)
+        // ==============================================================================
+
+        // Base64 ヘルパー
+        function arrayBufferToBase64(buffer) {
+            var binary = '';
+            var bytes = new Uint8Array(buffer);
+            var len = bytes.byteLength;
+            for (var i = 0; i < len; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return window.btoa(binary);
+        }
+
+        async function handleGenerate(e) {
+            e.preventDefault();
+            var btn = document.getElementById('btnSubmit');
+            btn.disabled = true;
+            btn.innerText = '⏳ 生成中...';
+
+            var apiKey = document.getElementById('apiKey').value.trim();
+            var machineId = document.getElementById('machineId').value.trim();
+            var email = document.getElementById('userEmail').value.trim();
+
+            try {
+                var encResult = "";
+                var enc = new TextEncoder();
+
+                if (currentMode === 'bound') {
+                    // マシン固有ロック形式
+                    var cleanMachine = machineId.toUpperCase();
+                    var cleanEmail = email.toLowerCase();
+                    var seed = cleanMachine + ":" + cleanEmail;
+
+                    var passBytes = enc.encode("SimpleWiki-ActKey-" + seed);
+                    var saltBytes = enc.encode("SimpleWiki-Activation-Salt-2026");
+
+                    // 1. PBKDF2 キー導出 (5,000 回, SHA-1 または SHA-256)
+                    // .NET Rfc2898DeriveBytes(byte[], byte[], int) 既定は HMAC-SHA1
+                    var baseKey = await crypto.subtle.importKey("raw", passBytes, "PBKDF2", false, ["deriveBits"]);
+                    var derivedBits = await crypto.subtle.deriveBits({
+                        name: "PBKDF2",
+                        salt: saltBytes,
+                        iterations: 5000,
+                        hash: "SHA-1"
+                    }, baseKey, 384); // 32 bytes (Key) + 16 bytes (IV) = 48 bytes = 384 bits
+
+                    var keyBytes = derivedBits.slice(0, 32);
+                    var ivBytes = derivedBits.slice(32, 48);
+
+                    var aesKey = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-CBC" }, false, ["encrypt"]);
+                    var plainBytes = enc.encode("SWACT:" + apiKey);
+
+                    var cipherBuffer = await crypto.subtle.encrypt({ name: "AES-CBC", iv: ivBytes }, aesKey, plainBytes);
+                    encResult = "ENC:" + arrayBufferToBase64(cipherBuffer);
+
+                } else {
+                    // 従来ポータブル形式 (Legacy)
+                    var passBytes = enc.encode("SimpleWiki-Portable-Secret-Key-2026");
+                    var saltBytes = enc.encode("SimpleWiki-OKF-RAG-2026-Salt");
+
+                    var baseKey = await crypto.subtle.importKey("raw", passBytes, "PBKDF2", false, ["deriveBits"]);
+                    var derivedBits = await crypto.subtle.deriveBits({
+                        name: "PBKDF2",
+                        salt: saltBytes,
+                        iterations: 1000,
+                        hash: "SHA-1"
+                    }, baseKey, 384);
+
+                    var keyBytes = derivedBits.slice(0, 32);
+                    var ivBytes = derivedBits.slice(32, 48);
+
+                    var aesKey = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-CBC" }, false, ["encrypt"]);
+                    var plainBytes = enc.encode(apiKey);
+
+                    var cipherBuffer = await crypto.subtle.encrypt({ name: "AES-CBC", iv: ivBytes }, aesKey, plainBytes);
+                    encResult = "ENC:" + arrayBufferToBase64(cipherBuffer);
+                }
+
+                document.getElementById('resultCode').innerText = encResult;
+                document.getElementById('resultCard').style.display = 'block';
+                showToast('✨ アクティベーションコードを生成しました');
+
+            } catch (err) {
+                alert("生成エラー: " + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<span>🚀 アクティベーションコードを生成</span>';
+            }
+        }
+    </script>
+</body>
+</html>
