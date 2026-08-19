@@ -49,7 +49,7 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
     - **PC 固有ロック (Machine-Bound)**: ユーザー環境のマザーボード UUID（`Get-MachineFingerprint`）から生成された 16 文字のマシン ID およびメールアドレス（任意）に基づいて暗号化キーを派生し、他人の PC では復号できないアクティベーションコード（`ENC:...`）を発行。
     - **完全サーバーレス Web アプリ (`docs/activation/index.html`)**: ブラウザ標準の Web Crypto API を活用し、外部通信・サーバー処理・npm 依存ゼロ（完全クライアントサイド完結）でコードを生成。GitHub Pages 対応。
     - **管理者用 CLI ツール (`New-ActivationCode.bat` / `New-ActivationCode.ps1`)**: コマンドラインまたは対話形式で即座にマシン固有コード / 従来ポータブルコードを生成してクリップボードに自動コピー。
-    - **設定 UI でのマシン ID 表示 ＆ ワンクリックコピー**: 設定画面（`/settings`）に自 PC のマシン ID とコピー用ボタン、Web 発行ページへの直接リンクを配置。
+    - **設定 UI でのマシン ID 表示 ＆ ワンクリックコピー**: 設定画面（`/settings`）に自 PC のマシン ID とコピー用ボタンを配置。マシン ID を管理者に申請して発行コードを受け取るだけのスムーズな運用を実現。
     - **DPAPI 自動変換 ＆ ローカル保護**: ユーザーが設定画面でアクティベーションコード（`ENC:...`）を入力して保存すると、サーバー側で自 PC のマシン ID を検証後、Windows 固有の `DPAPI:...` 形式に自動変換して `config.json` に安全に保存。
   - **🔒 API Key 暗号化ユーティリティ (`Set-ApiKey.bat` / `Set-ApiKey.ps1`)**:
     - Windows DPAPI またはポータブル AES-256 暗号化（`ENC:...` / `DPAPI:...`）により、`config.json` 内の API キーを安全に保護。
@@ -185,8 +185,8 @@ SimpleWiki では、API キーを他人に漏洩させずに特定の PC 専用�
 
 ```
 【発行手順】
-1. ユーザーが SimpleWiki の [システム設定 (⚙️)] を開き、表示されている「マシン ID」をコピーします。
-2. 管理者またはユーザー自身が「アクティベーション Web サイト」または「CLI ツール」でコードを発行します。
+1. ユーザーが SimpleWiki の [システム設定 (⚙️)] を開き、表示されている「マシン ID」をコピーして管理者に伝えます。
+2. 管理者が「アクティベーション Web サイト」または「CLI ツール」で対象マシン ID 用のコードを発行します。
    ・Web サイト: docs/activation/index.html (GitHub Pages: https://chottokun.github.io/SimpleWiki/activation/)
    ・CLI ツール: .\New-ActivationCode.bat
 3. 発行された「ENC:xxxx...」コードを設定画面の [アクティベーションコード] 欄に貼り付けて保存します。
