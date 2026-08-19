@@ -1273,7 +1273,6 @@ function Get-SettingsViewHtml {
     $actCodeLbl     = Get-LocalizedStr -Key "settings_act_code" -Lang $Lang
     $actHolderLbl   = Get-LocalizedStr -Key "settings_act_code_holder" -Lang $Lang
     $actDescLbl     = Get-LocalizedStr -Key "settings_act_desc" -Lang $Lang
-    $actSiteLinkLbl = Get-LocalizedStr -Key "settings_act_site_link" -Lang $Lang
     $apiUrlLbl      = Get-LocalizedStr -Key "settings_api_url" -Lang $Lang
     $modelLbl       = Get-LocalizedStr -Key "settings_model" -Lang $Lang
     $saveBtnLbl     = Get-LocalizedStr -Key "settings_save_btn" -Lang $Lang
@@ -1355,10 +1354,7 @@ function Get-SettingsViewHtml {
 
                 <!-- アクティベーションコード入力欄 -->
                 <div style="margin-left: 24px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; max-width: 500px;">
-                        <label for="activationCode" style="font-size: 13px; font-weight: bold;">$actCodeLbl</label>
-                        <a href="https://chottokun.github.io/SimpleWiki/activation/" target="_blank" rel="noopener" style="font-size: 12px; color: #0366d6; text-decoration: none; font-weight: bold;">$actSiteLinkLbl</a>
-                    </div>
+                    <label for="activationCode" style="font-size: 13px; font-weight: bold;">$actCodeLbl</label><br>
                     <input type="text" id="activationCode" name="activationCode" placeholder="$actHolderLbl" style="width: 100%; max-width: 500px; padding: 7px 10px; font-family: monospace; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;">
                     <div style="font-size: 12px; color: #586069; margin-top: 4px;">
                         $actDescLbl
