@@ -823,23 +823,7 @@ function Get-SearchViewHtml {
     $noResultsLbl    = Get-LocalizedStr -Key "search_no_results" -Lang $Lang
     $indexingSearchingJs = Get-LocalizedStr -Key "indexing_searching" -Lang $Lang
 
-    # インデックス構築中チェック
-    $indexStatus = Get-WikiIndexingStatus -TargetWikiDir $script:wikiDir -TargetScriptDir $scriptDir
-    $indexingWaitMsg = ""
-    if ($indexStatus.IsBuilding -or ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0)) {
-        $indexingWaitMsg = Get-LocalizedStr -Key "indexing_search_wait" -Lang $Lang
-    }
-
-    $resultsContent = if (-not [string]::IsNullOrWhiteSpace($indexingWaitMsg) -and $sortedResults.Count -eq 0) {
-        @"
-<div style="margin-top: 20px; padding: 16px 20px; background: #fff8e1; border: 1px solid #ffe082; border-radius: 6px; display: flex; align-items: center; gap: 12px;">
-    <span style="font-size: 24px;">⏳</span>
-    <div>
-        <div style="font-weight: 600; color: #f57f17; font-size: 15px;">$indexingWaitMsg</div>
-    </div>
-</div>
-"@
-    } elseif ($sortedResults.Count -gt 0) {
+    $resultsContent = if ($sortedResults.Count -gt 0) {
         $resultsHtmlList -join "`n"
     } else {
         "<p style='color: #666; margin-top: 20px;'>$noResultsLbl</p>"

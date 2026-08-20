@@ -1500,12 +1500,9 @@ Describe 'Index Cache and Settings View Tests' {
         $html | Should Match 'searchProgressText'
     }
 
-    It "Search view shows indexing_search_wait message when index is not yet built" {
+    It "Start-MarkdigWiki.ps1 includes /api/indexing-status endpoint" {
         $scriptContent = Get-Content -Path (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -Raw -Encoding UTF8
         $scriptContent | Should Match 'indexing-status'
-
-        $i18nContent = Get-Content -Path (Join-Path $projectRoot "lib\WikiI18n.ps1") -Raw -Encoding UTF8
-        $i18nContent | Should Match 'indexing_search_wait'
     }
 }
 
