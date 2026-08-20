@@ -237,7 +237,12 @@ function Get-WikiIndexingStatus {
     try {
         $statusFilePath = Get-WikiStatusPath -TargetWikiDir $targetDir -TargetScriptDir $baseScriptDir
         if (Test-Path $statusFilePath) {
-            $statusJson = [System.IO.File]::ReadAllText($statusFilePath, [System.Text.Encoding]::UTF8)
+            $fileStream = [System.IO.FileStream]::new($statusFilePath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+            $streamReader = [System.IO.StreamReader]::new($fileStream, [System.Text.Encoding]::UTF8)
+            $statusJson = $streamReader.ReadToEnd()
+            $streamReader.Close()
+            $fileStream.Close()
+
             if (-not [string]::IsNullOrWhiteSpace($statusJson)) {
                 $statusFromFile = $statusJson | ConvertFrom-Json
                 if ($statusFromFile) {
@@ -556,7 +561,10 @@ function Search-OkfDocs {
 
     if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
         if (-not (Load-WikiIndexCache -TargetWikiDir $targetDir)) {
-            Build-WikiIndex -TargetWikiDir $targetDir | Out-Null
+            $status = Get-WikiIndexingStatus -TargetWikiDir $targetDir
+            if (-not $status.IsBuilding) {
+                Build-WikiIndex -TargetWikiDir $targetDir | Out-Null
+            }
         }
     }
 
