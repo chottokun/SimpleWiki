@@ -1386,7 +1386,7 @@ try {
                             var current = st.Current || 0;
                             var total = st.Total || 0;
                             var pct = st.Percent || 0;
-                            msgEl.textContent = msgTemplate.replace("{0}", current).replace("{1}", total);
+                            msgEl.textContent = msgTemplate.replace("__INDEX_CURR__", current).replace("__INDEX_TOTAL__", total);
                             barEl.style.width = pct + "%";
                             pctEl.textContent = pct + "%";
 
@@ -1464,7 +1464,8 @@ try {
                 $langOptionsStr = $langOptionsHtml -join ""
 
                 $indexingCacheReason = Get-LocalizedStr -Key "indexing_cache_reason" -Lang $reqLang
-                $indexingInProgressJs = ConvertTo-JsString (Get-LocalizedStr -Key "indexing_in_progress" -Lang $reqLang)
+                $rawIndexingInProg   = Get-LocalizedStr -Key "indexing_in_progress" -Lang $reqLang -FormatArgs @("__INDEX_CURR__", "__INDEX_TOTAL__")
+                $indexingInProgressJs = ConvertTo-JsString $rawIndexingInProg
 
                 $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{13}", $edTitle).Replace("{14}", $edLatest).Replace("{15}", $edHolder).Replace("{16}", $edCancel).Replace("{17}", $edSave).Replace("{18}", $reqLang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $edLoadingJs).Replace("{26}", $edHistoryLoadingJs).Replace("{27}", $edLoadErrorJs).Replace("{28}", $edBackupLoadErrJs).Replace("{29}", $edSavedWarningJs).Replace("{30}", $edSavedJs).Replace("{31}", $indexingCacheReason).Replace("{32}", $indexingInProgressJs)
 

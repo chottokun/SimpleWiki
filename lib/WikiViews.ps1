@@ -1309,7 +1309,8 @@ function Get-SettingsViewHtml {
     $clearAllConfJs = ConvertTo-JsString (Get-LocalizedStr -Key "settings_clear_all_confirm" -Lang $Lang)
     $clearAllRunJs  = ConvertTo-JsString (Get-LocalizedStr -Key "settings_clear_all_running" -Lang $Lang)
     $clearAllFailJs = ConvertTo-JsString (Get-LocalizedStr -Key "settings_clear_all_failed" -Lang $Lang)
-    $indexingInProgJs = ConvertTo-JsString (Get-LocalizedStr -Key "indexing_in_progress" -Lang $Lang)
+    $rawIndexingInProg = Get-LocalizedStr -Key "indexing_in_progress" -Lang $Lang -FormatArgs @("__INDEX_CURR__", "__INDEX_TOTAL__")
+    $indexingInProgJs = ConvertTo-JsString $rawIndexingInProg
 
     return @"
 <div class="settings-container">
@@ -1523,7 +1524,7 @@ function rebuildIndexNow() {
         .then(function(r) { return r.json(); })
         .then(function(st) {
             if (st && st.IsBuilding && st.Total > 0) {
-                var txt = '$indexingInProgJs'.replace('{0}', st.Current).replace('{1}', st.Total);
+                var txt = '$indexingInProgJs'.replace('__INDEX_CURR__', st.Current).replace('__INDEX_TOTAL__', st.Total);
                 showToast(txt, false, 0);
             }
         })
