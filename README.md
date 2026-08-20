@@ -213,9 +213,9 @@ SimpleWiki では、API キーを他人に漏洩させずに特定の PC 専用�
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\tests\Start-MarkdigWiki.Tests.ps1"
 ```
-- **検証結果**: 全 127 件の Pester 自動テストが **100% PASS**。
+- **検証結果**: 全 128 件の Pester 自動テストが **100% PASS**。
   - **1. スクリプト構文・AST検証**: 全 `.ps1` ファイルの構文解析・トークン検証に合格
-  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 127 件)**:
+  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 128 件)**:
     - マシン固有 ID（`Get-MachineFingerprint`）生成・16文字フォーマット検証
     - マシンバインド・アクティベーションコード暗号化／復号（同一マシン・同一メールでの復号成功）
     - 異なるマシン ID／誤ったメールアドレスでの復号失敗（防犯性）検証

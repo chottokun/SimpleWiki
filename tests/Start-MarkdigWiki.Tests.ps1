@@ -1493,6 +1493,13 @@ Describe 'Index Cache and Settings View Tests' {
         $html | Should Match 'searchProgressBanner'
         $html | Should Match 'searchProgressText'
     }
+
+    It "Start-MarkdigWiki.ps1 includes globalIndexingBanner and cache reason explanation" {
+        $scriptContent = Get-Content -Path (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -Raw -Encoding UTF8
+        $scriptContent | Should Match 'globalIndexingBanner'
+        $scriptContent | Should Match 'indexing_cache_reason'
+        $scriptContent | Should Match 'globalIndexingMsg'
+    }
 }
 
 Describe "Multi-Language (i18n) & Localization Tests" {
@@ -1748,6 +1755,8 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
         $scriptContent | Should Match 'editor_backup_load_err'
         $scriptContent | Should Match 'editor_saved_warning'
         $scriptContent | Should Match 'editor_saved'
+        $scriptContent | Should Match 'indexing_cache_reason'
+        $scriptContent | Should Match 'indexing_in_progress'
     }
 
     It "/api/config handles OrderedDictionary and saves config.json without errors" {
