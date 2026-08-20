@@ -119,6 +119,7 @@ $script:I18n = @{
         "indexing_in_progress"      = "⏳ インデックスを構築しています... ({0}/{1} 件)"
         "indexing_cache_reason"     = "キャッシュがないか無効なため、インデックスを構築中です。"
         "indexing_searching"        = "🔍 検索中..."
+        "indexing_search_wait"      = "初回インデックスを構築中です。しばらくお待ちください。"
         "indexing_console_msg"      = "インデックス構築中: [{0}/{1} 件] ({2}%)"
         "indexing_completed"        = "✅ インデックス構築が完了しました ({0} 件)"
         "settings_act_code"         = "アクティベーションコード (ENC:xxxx):"
@@ -263,6 +264,7 @@ $script:I18n = @{
         "indexing_in_progress"      = "⏳ Building search index... ({0}/{1} files)"
         "indexing_cache_reason"     = "Building search index because cache is missing or invalid."
         "indexing_searching"        = "🔍 Searching..."
+        "indexing_search_wait"      = "The search index is being built for the first time. Please wait a moment."
         "indexing_console_msg"      = "Building index: [{0}/{1} files] ({2}%)"
         "indexing_completed"        = "✅ Index building completed ({0} files)"
         "settings_act_code"         = "Activation Code (ENC:xxxx):"
@@ -335,9 +337,9 @@ function Get-LocalizedStr {
         $text = $script:I18n["ja"][$Key]
     }
 
-    if ($FormatArgs -and $FormatArgs.Length -gt 0) {
+    if ($null -ne $FormatArgs -and $FormatArgs.Count -gt 0) {
         try {
-            $text = [string]::Format($text, $FormatArgs)
+            $text = [string]::Format([System.Globalization.CultureInfo]::InvariantCulture, $text, [object[]]$FormatArgs)
         } catch {}
     }
     return $text

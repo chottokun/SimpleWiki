@@ -108,14 +108,6 @@ if ($initCfg.search -and $initCfg.search.prebuildIndex -eq $true) {
         # キャッシュが有効で既に最新が存在する場合は同期読み込み、それ以外は非同期ジョブで構築
         if (-not (Load-WikiIndexCache -TargetWikiDir $wikiDir -TargetScriptDir $scriptDir)) {
             Write-Host "インデックスをバックグラウンドで事前生成中..." -ForegroundColor Cyan
-            $initStatus = [PSCustomObject]@{
-                IsBuilding = $true
-                Total      = 0
-                Current    = 0
-                Percent    = 0
-                LastScan   = [DateTime]::MinValue
-            }
-            Save-WikiIndexingStatusFile -StatusObj $initStatus -TargetWikiDir $wikiDir -TargetScriptDir $scriptDir
             $bgIndexingJob = Start-Job -ScriptBlock {
                 param($targetDir, $baseScriptDir)
                 $searchLib = Join-Path $baseScriptDir "lib\WikiSearch.ps1"
@@ -1189,23 +1181,6 @@ try {
         </div>
     </header>
 
-    <!-- Global Indexing Progress Banner -->
-    <div id="globalIndexingBanner" style="display:none; background: #e8f4fd; border-bottom: 1px solid #c8e1ff; padding: 10px 24px; font-size: 13px; color: #0366d6;">
-        <div style="max-width: 1200px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <span class="indexing-spinner" style="display:inline-block; width:14px; height:14px; border:2px solid #0366d6; border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite;"></span>
-                <span id="globalIndexingMsg" style="font-weight: 600;"></span>
-                <span style="font-size: 12px; color: #586069;">({31})</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 10px; min-width: 180px;">
-                <div style="flex: 1; height: 6px; background: #d1e5f9; border-radius: 3px; overflow: hidden;">
-                    <div id="globalIndexingBar" style="width: 0%; height: 100%; background: #0366d6; transition: width 0.3s;"></div>
-                </div>
-                <span id="globalIndexingPct" style="font-size: 12px; font-weight: bold; min-width: 35px; text-align: right;">0%</span>
-            </div>
-        </div>
-    </div>
-
     <div class="layout-container">
         <nav class="sidebar">
             <h2>{12}</h2>
@@ -1411,54 +1386,6 @@ try {
                 });
             });
 
-            // -- Global Indexing Status Check & Polling --
-            (function() {
-                var banner = document.getElementById("globalIndexingBanner");
-                var msgEl  = document.getElementById("globalIndexingMsg");
-                var barEl  = document.getElementById("globalIndexingBar");
-                var pctEl  = document.getElementById("globalIndexingPct");
-                if (!banner || !msgEl || !barEl || !pctEl) return;
-
-                var polling = null;
-                function checkStatus() {
-                    fetch("/api/indexing-status")
-                    .then(function(r) { return r.json(); })
-                    .then(function(st) {
-                        if (st && st.IsBuilding) {
-                            banner.style.display = "block";
-                            var msgTemplate = "{32}";
-                            var current = st.Current || 0;
-                            var total = st.Total || 0;
-                            var pct = st.Percent || 0;
-                            var formattedMsg = msgTemplate ? msgTemplate.replace("__INDEX_CURR__", current).replace("__INDEX_TOTAL__", total) : ("⏳ " + current + " / " + total);
-                            msgEl.textContent = formattedMsg;
-                            barEl.style.width = pct + "%";
-                            pctEl.textContent = pct + "%";
-
-                            if (!polling) {
-                                polling = setInterval(checkStatus, 500);
-                            }
-                        } else {
-                            if (polling) {
-                                clearInterval(polling);
-                                polling = null;
-                                barEl.style.width = "100%";
-                                pctEl.textContent = "100%";
-                                setTimeout(function() {
-                                    banner.style.display = "none";
-                                }, 1500);
-                            }
-                        }
-                    })
-                    .catch(function(e) {});
-                }
-                checkStatus();
-                // 起動直後のスキャン開始ラグ（ジョブ起動待ち）を確実に拾うためポーリングを開始
-                if (!polling) {
-                    polling = setInterval(checkStatus, 500);
-                }
-            })();
-            // -- End Global Indexing Status Check --
         });
     </script>
 </body>
@@ -1510,11 +1437,8 @@ try {
                 }
                 $langOptionsStr = $langOptionsHtml -join ""
 
-                $indexingCacheReason = Get-LocalizedStr -Key "indexing_cache_reason" -Lang $reqLang
-                $rawIndexingInProg   = Get-LocalizedStr -Key "indexing_in_progress" -Lang $reqLang -FormatArgs @("__INDEX_CURR__", "__INDEX_TOTAL__")
-                $indexingInProgressJs = ConvertTo-JsString $rawIndexingInProg
 
-                $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{13}", $edTitle).Replace("{14}", $edLatest).Replace("{15}", $edHolder).Replace("{16}", $edCancel).Replace("{17}", $edSave).Replace("{18}", $reqLang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $edLoadingJs).Replace("{26}", $edHistoryLoadingJs).Replace("{27}", $edLoadErrorJs).Replace("{28}", $edBackupLoadErrJs).Replace("{29}", $edSavedWarningJs).Replace("{30}", $edSavedJs).Replace("{31}", $indexingCacheReason).Replace("{32}", $indexingInProgressJs)
+                $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{13}", $edTitle).Replace("{14}", $edLatest).Replace("{15}", $edHolder).Replace("{16}", $edCancel).Replace("{17}", $edSave).Replace("{18}", $reqLang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $edLoadingJs).Replace("{26}", $edHistoryLoadingJs).Replace("{27}", $edLoadErrorJs).Replace("{28}", $edBackupLoadErrJs).Replace("{29}", $edSavedWarningJs).Replace("{30}", $edSavedJs)
 
                 if (-not [string]::IsNullOrWhiteSpace($chatWidgetHtml)) {
                     $fullHtml = $fullHtml.Replace("</body>", "$chatWidgetHtml`n</body>")

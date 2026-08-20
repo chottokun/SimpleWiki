@@ -1500,11 +1500,12 @@ Describe 'Index Cache and Settings View Tests' {
         $html | Should Match 'searchProgressText'
     }
 
-    It "Start-MarkdigWiki.ps1 includes globalIndexingBanner and cache reason explanation" {
+    It "Search view shows indexing_search_wait message when index is not yet built" {
         $scriptContent = Get-Content -Path (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -Raw -Encoding UTF8
-        $scriptContent | Should Match 'globalIndexingBanner'
-        $scriptContent | Should Match 'indexing_cache_reason'
-        $scriptContent | Should Match 'globalIndexingMsg'
+        $scriptContent | Should Match 'indexing-status'
+
+        $i18nContent = Get-Content -Path (Join-Path $projectRoot "lib\WikiI18n.ps1") -Raw -Encoding UTF8
+        $i18nContent | Should Match 'indexing_search_wait'
     }
 }
 
