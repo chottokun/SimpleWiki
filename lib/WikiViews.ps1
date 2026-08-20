@@ -853,7 +853,7 @@ function Get-SearchViewHtml {
             <button type="submit" id="searchSubmitBtn" style="padding: 6px 16px; font-size: 14px; background: #0366d6; color: #fff; border: none; border-radius: 4px; cursor: pointer;">🔍 $searchBtnLbl</button>
         </div>
     </form>
-    <div id="searchProgressBanner" style="display:none; margin-top: 12px; padding: 8px 12px; background: #e8f4fd; border: 1px solid #c8e1ff; border-radius: 4px; color: #0366d6; font-size: 13px; display: none; align-items: center; gap: 8px;">
+    <div id="searchProgressBanner" style="display: none; margin-top: 12px; padding: 8px 12px; background: #e8f4fd; border: 1px solid #c8e1ff; border-radius: 4px; color: #0366d6; font-size: 13px; align-items: center; gap: 8px;">
         <span class="indexing-spinner" style="display:inline-block; width:14px; height:14px; border:2px solid #0366d6; border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite;"></span>
         <span id="searchProgressText">$indexingSearchingJs</span>
     </div>

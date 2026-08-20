@@ -1388,6 +1388,21 @@ try {
                 mermaid.initialize({ startOnLoad: true, theme: "default" });
             }
 
+            // -- Global Search Form Loading Spinner --
+            document.querySelectorAll('form[action="/search"]').forEach(function(f) {
+                f.addEventListener('submit', function() {
+                    var btn = f.querySelector('button[type="submit"]');
+                    if (btn) {
+                        btn.disabled = true;
+                        btn.innerHTML = '<span style="display:inline-block; width:12px; height:12px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite; vertical-align:middle; margin-right:4px;"></span> ' + (btn.textContent || '');
+                    }
+                    var banner = document.getElementById('searchProgressBanner');
+                    if (banner) {
+                        banner.style.display = 'flex';
+                    }
+                });
+            });
+
             // -- Global Indexing Status Check & Polling --
             (function() {
                 var banner = document.getElementById("globalIndexingBanner");
