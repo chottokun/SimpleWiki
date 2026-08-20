@@ -1372,12 +1372,13 @@ try {
             }
 
             // -- Global Search Form Loading Spinner --
+            var searchLoadingTxt = "{31}";
             document.querySelectorAll('form[action="/search"]').forEach(function(f) {
                 f.addEventListener('submit', function() {
                     var btn = f.querySelector('button[type="submit"]');
                     if (btn) {
                         btn.disabled = true;
-                        btn.innerHTML = '<span style="display:inline-block; width:12px; height:12px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite; vertical-align:middle; margin-right:4px;"></span> ' + (btn.textContent || '');
+                        btn.innerHTML = '<span style="display:inline-block; width:12px; height:12px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite; vertical-align:middle; margin-right:6px;"></span> ' + (searchLoadingTxt || btn.textContent || '');
                     }
                     var banner = document.getElementById('searchProgressBanner');
                     if (banner) {
@@ -1438,7 +1439,9 @@ try {
                 $langOptionsStr = $langOptionsHtml -join ""
 
 
-                $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{13}", $edTitle).Replace("{14}", $edLatest).Replace("{15}", $edHolder).Replace("{16}", $edCancel).Replace("{17}", $edSave).Replace("{18}", $reqLang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $edLoadingJs).Replace("{26}", $edHistoryLoadingJs).Replace("{27}", $edLoadErrorJs).Replace("{28}", $edBackupLoadErrJs).Replace("{29}", $edSavedWarningJs).Replace("{30}", $edSavedJs)
+                $searchLoadingTxtJs = ConvertTo-JsString (Get-LocalizedStr -Key "indexing_searching" -Lang $reqLang)
+
+                $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{13}", $edTitle).Replace("{14}", $edLatest).Replace("{15}", $edHolder).Replace("{16}", $edCancel).Replace("{17}", $edSave).Replace("{18}", $reqLang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $edLoadingJs).Replace("{26}", $edHistoryLoadingJs).Replace("{27}", $edLoadErrorJs).Replace("{28}", $edBackupLoadErrJs).Replace("{29}", $edSavedWarningJs).Replace("{30}", $edSavedJs).Replace("{31}", $searchLoadingTxtJs)
 
                 if (-not [string]::IsNullOrWhiteSpace($chatWidgetHtml)) {
                     $fullHtml = $fullHtml.Replace("</body>", "$chatWidgetHtml`n</body>")
