@@ -11,15 +11,55 @@ function Get-SidebarHtml {
     )
 
     if ($null -eq $script:SidebarCachedHtml -or [string]::IsNullOrEmpty($script:SidebarCachedHtml)) {
-        if ($null -eq $script:SidebarMdFiles -or $script:SidebarMdFiles.Count -eq 0) {
-            $script:SidebarMdFiles = Get-ChildItem -Path $wikiDir -Recurse -Filter "*.md" |
-                Where-Object { $_.FullName -notmatch '[\\/]\.(git|lib|tests|dist)[\\/]' } |
-                Sort-Object FullName
-        }
+        if ($null -ne $script:WikiIndex -and $script:WikiIndex.Count -gt 0) {
+            # インデックス構築済みの場合はインデックスデータから高速にツリー生成（ファイルIO不要）
+            $treeNode = [PSCustomObject]@{
+                Files      = [System.Collections.Generic.List[PSObject]]::new()
+                SubFolders = [ordered]@{}
+            }
+            foreach ($item in $script:WikiIndex) {
+                $rel = $item.RelPath
+                $parts = $rel -split '[\\/]'
+                $curr = $treeNode
+                for ($i = 0; $i -lt $parts.Length - 1; $i++) {
+                    $fn = $parts[$i]
+                    if (-not $curr.SubFolders.Contains($fn)) {
+                        $curr.SubFolders[$fn] = [PSCustomObject]@{
+                            Files      = [System.Collections.Generic.List[PSObject]]::new()
+                            SubFolders = [ordered]@{}
+                        }
+                    }
+                    $curr = $curr.SubFolders[$fn]
+                }
+                $fileMock = [PSCustomObject]@{
+                    FullName = (Join-Path $wikiDir $rel)
+                    BaseName = [System.IO.Path]::GetFileNameWithoutExtension($rel)
+                }
+                $curr.Files.Add($fileMock)
+            }
+            $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath "" -wikiDir $wikiDir
+            $script:SidebarCachedHtml = $treeHtml
+        } elseif ($null -eq $script:SidebarMdFiles -or $script:SidebarMdFiles.Count -eq 0) {
+            # インデックス構築中は直下のトップレベルフォルダ/ファイルのみを軽量取得
+            $topItems = @(Get-ChildItem -Path $wikiDir -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -notmatch '^\.(git|lib|tests|dist|\.cache)$' })
+            $mdFiles = @($topItems | Where-Object { $_.Extension -eq ".md" } | Sort-Object Name)
+            $subDirs = @($topItems | Where-Object { $_.PSIsContainer } | Sort-Object Name)
 
-        $treeNode = Build-ServerFileTreeNode -allMdFiles $script:SidebarMdFiles -wikiDir $wikiDir
-        $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath "" -wikiDir $wikiDir
-        $script:SidebarCachedHtml = $treeHtml
+            $treeNode = [PSCustomObject]@{
+                Files      = [System.Collections.Generic.List[PSObject]]::new()
+                SubFolders = [ordered]@{}
+            }
+            foreach ($f in $mdFiles) { $treeNode.Files.Add($f) }
+            foreach ($d in $subDirs) {
+                $treeNode.SubFolders[$d.Name] = [PSCustomObject]@{
+                    Files      = [System.Collections.Generic.List[PSObject]]::new()
+                    SubFolders = [ordered]@{}
+                }
+            }
+            $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath "" -wikiDir $wikiDir
+            $script:SidebarCachedHtml = $treeHtml
+        }
     }
 
     $clearCacheText = Get-LocalizedStr -Key "sidebar_clear_cache" -Lang $Lang
