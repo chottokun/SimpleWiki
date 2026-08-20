@@ -179,9 +179,23 @@ try {
                 break
             }
 
+            if ($rawPath -eq "/api/indexing-status" -and $request.HttpMethod -eq "GET") {
+                $statusObj = Get-WikiIndexingStatus
+                $jsonRes = $statusObj | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+                continue
+            }
+
             if ($rawPath -eq "/api/config") {
                 $configPath = Join-Path $scriptDir "config.json"
                 if ($request.HttpMethod -eq "GET") {
+                    if ($queryParams.ContainsKey("action") -and $queryParams["action"] -eq "indexing_status") {
+                        $statusObj = Get-WikiIndexingStatus
+                        $jsonRes = $statusObj | ConvertTo-Json
+                        Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+                        continue
+                    }
+
                     $currCfg = Get-ConfigJson -TargetScriptDir $scriptDir
                     $safeCfg = [ordered]@{
                         search = if ($currCfg.search) { $currCfg.search } else { @{ prebuildIndex = $false; useCache = $false; cacheFolder = ".cache" } }
@@ -210,6 +224,19 @@ try {
                             Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
                         } catch {
                             $jsonRes = @{ success = $false; message = "インデックス再構築中にエラーが発生しました: $_" } | ConvertTo-Json
+                            Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 500
+                        }
+                        continue
+                    }
+
+                    # ローカルキャッシュ全消去アクション
+                    if ($queryParams.ContainsKey("action") -and $queryParams["action"] -eq "clear_all_caches") {
+                        try {
+                            $clearRes = Clear-AllWikiCaches -TargetScriptDir $scriptDir
+                            $jsonRes = @{ success = $true; deletedFiles = $clearRes.deletedFiles; message = "ローカルキャッシュを全消去しました ($($clearRes.deletedFiles) 件のファイルを削除)" } | ConvertTo-Json
+                            Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+                        } catch {
+                            $jsonRes = @{ success = $false; message = "ローカルキャッシュ消去中にエラーが発生しました: $_" } | ConvertTo-Json
                             Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 500
                         }
                         continue
