@@ -332,7 +332,7 @@ function Build-WikiIndex {
             $script:IndexingStatus.Current = $idx
             $script:IndexingStatus.Percent = $pct
 
-            if ($idx % 50 -eq 0 -or $idx -eq $totalFiles) {
+            if ($idx % 10 -eq 0 -or $idx -eq $totalFiles) {
                 Save-WikiIndexingStatusFile -StatusObj $script:IndexingStatus -TargetWikiDir $targetDir -TargetScriptDir $baseScriptDir
             }
 

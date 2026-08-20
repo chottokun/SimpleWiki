@@ -476,7 +476,11 @@ function Get-RecentViewHtml {
         [string]$Lang = "ja"
     )
 
-    Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+    if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
+        if (-not (Load-WikiIndexCache -TargetWikiDir $wikiDir)) {
+            Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+        }
+    }
     $sorted = $script:WikiIndex | Sort-Object LastUpdated -Descending
 
     $titleLbl   = Get-LocalizedStr -Key "recent_updates_title" -Lang $Lang
@@ -518,7 +522,11 @@ function Get-TagsViewHtml {
         [string]$Lang = "ja"
     )
 
-    Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+    if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
+        if (-not (Load-WikiIndexCache -TargetWikiDir $wikiDir)) {
+            Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+        }
+    }
 
     if ([string]::IsNullOrWhiteSpace($SelectedTag)) {
         $tagListTitle = Get-LocalizedStr -Key "tag_list_title" -Lang $Lang
@@ -573,7 +581,11 @@ function Get-MaintenanceViewHtml {
         [string]$Lang = "ja"
     )
 
-    Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+    if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
+        if (-not (Load-WikiIndexCache -TargetWikiDir $wikiDir)) {
+            Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+        }
+    }
     $now = Get-Date
 
     $staleDocs      = @($script:WikiIndex | Where-Object { $_.Status -eq "active" -and ($now - $_.LastUpdated).TotalDays -ge 365 })
@@ -627,7 +639,11 @@ function Get-AuthorsViewHtml {
         [string]$Lang = "ja"
     )
 
-    Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+    if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
+        if (-not (Load-WikiIndexCache -TargetWikiDir $wikiDir)) {
+            Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+        }
+    }
 
     if ([string]::IsNullOrWhiteSpace($SelectedAuthor)) {
         $authorListTitle = Get-LocalizedStr -Key "author_list_title" -Lang $Lang

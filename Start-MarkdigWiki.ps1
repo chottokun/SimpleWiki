@@ -1154,6 +1154,7 @@ try {
     .muted { color: #6a737d; font-size: 12px; }
     .search-item { border-bottom: 1px solid #e1e4e8; padding: 12px 0; }
     .search-item h3 { border: none; margin: 0 0 6px 0; font-size: 16px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -1406,7 +1407,8 @@ try {
                             var current = st.Current || 0;
                             var total = st.Total || 0;
                             var pct = st.Percent || 0;
-                            msgEl.textContent = msgTemplate.replace("__INDEX_CURR__", current).replace("__INDEX_TOTAL__", total);
+                            var formattedMsg = msgTemplate ? msgTemplate.replace("__INDEX_CURR__", current).replace("__INDEX_TOTAL__", total) : ("⏳ " + current + " / " + total);
+                            msgEl.textContent = formattedMsg;
                             barEl.style.width = pct + "%";
                             pctEl.textContent = pct + "%";
 
@@ -1425,11 +1427,13 @@ try {
                             }
                         }
                     })
-                    .catch(function() {
+                    .catch(function(e) {
                         if (polling) { clearInterval(polling); polling = null; }
                     });
                 }
                 checkStatus();
+                // 起動直後のスキャン開始ラグを考慮して1秒後にも再試行
+                setTimeout(checkStatus, 1000);
             })();
             // -- End Global Indexing Status Check --
         });
