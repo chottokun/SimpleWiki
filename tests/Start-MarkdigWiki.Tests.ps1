@@ -1488,6 +1488,12 @@ Describe 'Index Cache and Settings View Tests' {
         ($status.PSObject.Properties.Name -contains "Percent") | Should Be $true
     }
 
+    It "Get-WikiStatusPath returns valid cross-process status file path" {
+        $statusPath = Get-WikiStatusPath -TargetWikiDir $testProjectRoot -TargetScriptDir $testProjectRoot
+        $statusPath | Should Not BeNullOrEmpty
+        $statusPath | Should Match '\.index-status-[a-f0-9]+\.json$'
+    }
+
     It "Get-SearchViewHtml contains searchProgressBanner and loading indicator" {
         $html = Get-SearchViewHtml -Query "test"
         $html | Should Match 'searchProgressBanner'

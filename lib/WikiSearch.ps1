@@ -35,6 +35,34 @@ function Get-WikiCachePath {
     return Join-Path $cacheDir ".index-cache-$dirHash.json"
 }
 
+function Get-WikiStatusPath {
+    param (
+        [string]$TargetWikiDir = $script:wikiDir,
+        [string]$TargetScriptDir = $scriptDir
+    )
+    $baseScriptDir = if (-not [string]::IsNullOrWhiteSpace($TargetScriptDir)) { $TargetScriptDir } elseif (-not [string]::IsNullOrWhiteSpace($scriptDir)) { $scriptDir } elseif (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) { $PSScriptRoot } else { $PWD.Path }
+    $config = Get-ConfigJson -TargetScriptDir $baseScriptDir
+    $cacheSubFolder = if ($config.search -and -not [string]::IsNullOrWhiteSpace($config.search.cacheFolder)) { $config.search.cacheFolder } else { ".cache" }
+    $cacheDir = Join-Path $baseScriptDir $cacheSubFolder
+
+    $targetDir = if (-not [string]::IsNullOrWhiteSpace($TargetWikiDir)) {
+        try {
+            (Resolve-Path -LiteralPath $TargetWikiDir -ErrorAction Stop).Path
+        } catch {
+            [System.IO.Path]::GetFullPath($TargetWikiDir)
+        }
+    } else {
+        $baseScriptDir
+    }
+
+    $normPath  = $targetDir.TrimEnd('\', '/').ToLowerInvariant()
+    $md5       = [System.Security.Cryptography.MD5]::Create()
+    $hashBytes = $md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($normPath))
+    $dirHash   = ($hashBytes | ForEach-Object { "{0:x2}" -f $_ }) -join ""
+
+    return Join-Path $cacheDir ".index-status-$dirHash.json"
+}
+
 function Clear-AllWikiCaches {
     param (
         [string]$TargetScriptDir = $scriptDir
@@ -198,6 +226,34 @@ if ($null -eq $script:IndexingStatus) {
 }
 
 function Get-WikiIndexingStatus {
+    param (
+        [string]$TargetWikiDir = $script:wikiDir,
+        [string]$TargetScriptDir = $scriptDir
+    )
+    $baseScriptDir = if (-not [string]::IsNullOrWhiteSpace($TargetScriptDir)) { $TargetScriptDir } elseif (-not [string]::IsNullOrWhiteSpace($scriptDir)) { $scriptDir } else { $PWD.Path }
+    $targetDir = if (-not [string]::IsNullOrWhiteSpace($TargetWikiDir)) { $TargetWikiDir } else { $baseScriptDir }
+
+    # バックグラウンドプロセスからのステータスファイルが存在すればそれを優先して読み取り
+    try {
+        $statusFilePath = Get-WikiStatusPath -TargetWikiDir $targetDir -TargetScriptDir $baseScriptDir
+        if (Test-Path $statusFilePath) {
+            $statusJson = [System.IO.File]::ReadAllText($statusFilePath, [System.Text.Encoding]::UTF8)
+            if (-not [string]::IsNullOrWhiteSpace($statusJson)) {
+                $statusFromFile = $statusJson | ConvertFrom-Json
+                if ($statusFromFile) {
+                    $script:IndexingStatus = [PSCustomObject]@{
+                        IsBuilding = [bool]$statusFromFile.IsBuilding
+                        Total      = [int]$statusFromFile.Total
+                        Current    = [int]$statusFromFile.Current
+                        Percent    = [int]$statusFromFile.Percent
+                        LastScan   = $script:IndexingStatus.LastScan
+                    }
+                    return $script:IndexingStatus
+                }
+            }
+        }
+    } catch {}
+
     if ($null -eq $script:IndexingStatus) {
         return [PSCustomObject]@{
             IsBuilding = $false
@@ -208,6 +264,23 @@ function Get-WikiIndexingStatus {
         }
     }
     return $script:IndexingStatus
+}
+
+function Save-WikiIndexingStatusFile {
+    param (
+        [PSCustomObject]$StatusObj,
+        [string]$TargetWikiDir = $script:wikiDir,
+        [string]$TargetScriptDir = $scriptDir
+    )
+    try {
+        $baseScriptDir = if (-not [string]::IsNullOrWhiteSpace($TargetScriptDir)) { $TargetScriptDir } elseif (-not [string]::IsNullOrWhiteSpace($scriptDir)) { $scriptDir } else { $PWD.Path }
+        $targetDir = if (-not [string]::IsNullOrWhiteSpace($TargetWikiDir)) { $TargetWikiDir } else { $baseScriptDir }
+        $statusFilePath = Get-WikiStatusPath -TargetWikiDir $targetDir -TargetScriptDir $baseScriptDir
+        $statusDir = [System.IO.Path]::GetDirectoryName($statusFilePath)
+        if (-not (Test-Path $statusDir)) { New-Item -ItemType Directory -Path $statusDir -Force | Out-Null }
+        $json = $StatusObj | ConvertTo-Json
+        [System.IO.File]::WriteAllText($statusFilePath, $json, [System.Text.Encoding]::UTF8)
+    } catch {}
 }
 
 function Build-WikiIndex {
@@ -242,6 +315,7 @@ function Build-WikiIndex {
         Percent    = 0
         LastScan   = $script:WikiIndexLastScan
     }
+    Save-WikiIndexingStatusFile -StatusObj $script:IndexingStatus -TargetWikiDir $targetDir -TargetScriptDir $baseScriptDir
 
     $showProgress = ($totalFiles -ge 5 -and [Environment]::UserInteractive)
 
@@ -257,6 +331,10 @@ function Build-WikiIndex {
             $pct = if ($totalFiles -gt 0) { [math]::Floor(($idx / $totalFiles) * 100) } else { 100 }
             $script:IndexingStatus.Current = $idx
             $script:IndexingStatus.Percent = $pct
+
+            if ($idx % 50 -eq 0 -or $idx -eq $totalFiles) {
+                Save-WikiIndexingStatusFile -StatusObj $script:IndexingStatus -TargetWikiDir $targetDir -TargetScriptDir $baseScriptDir
+            }
 
             if ($showProgress -and ($idx % 5 -eq 0 -or $idx -eq $totalFiles)) {
                 try {
@@ -283,6 +361,7 @@ function Build-WikiIndex {
             Percent    = 100
             LastScan   = $script:WikiIndexLastScan
         }
+        Save-WikiIndexingStatusFile -StatusObj $script:IndexingStatus -TargetWikiDir $targetDir -TargetScriptDir $baseScriptDir
     }
 }
 
@@ -476,7 +555,9 @@ function Search-OkfDocs {
     if ([string]::IsNullOrWhiteSpace($targetDir)) { $targetDir = $scriptDir }
 
     if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
-        Build-WikiIndex -TargetWikiDir $targetDir | Out-Null
+        if (-not (Load-WikiIndexCache -TargetWikiDir $targetDir)) {
+            Build-WikiIndex -TargetWikiDir $targetDir | Out-Null
+        }
     }
 
     if ([string]::IsNullOrWhiteSpace($StatusFilter)) { $StatusFilter = "active" }

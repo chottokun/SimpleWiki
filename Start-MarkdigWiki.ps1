@@ -100,13 +100,25 @@ Write-Host "  URL: $prefix" -ForegroundColor Cyan
 Write-Host "  ※ 終了するにはこのウィンドウで [Ctrl + C] を押してください" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Green
 
-# 起動時インデックス事前生成 (ノンブロッキング配慮 & エラーハンドリング)
+# 起動時インデックス事前生成 (ノンブロッキング・バックグラウンド実行)
 $initCfg = Get-ConfigJson -TargetScriptDir $scriptDir
+$bgIndexingJob = $null
 if ($initCfg.search -and $initCfg.search.prebuildIndex -eq $true) {
     try {
-        Write-Host "インデックスを事前生成中..." -ForegroundColor Cyan
-        $prebuilt = Build-WikiIndex -TargetWikiDir $wikiDir
-        Write-Host "インデックス事前生成完了 ($($prebuilt.Count) 件のドキュメント)" -ForegroundColor Green
+        # キャッシュが有効で既に最新が存在する場合は同期読み込み、それ以外は非同期ジョブで構築
+        if (-not (Load-WikiIndexCache -TargetWikiDir $wikiDir -TargetScriptDir $scriptDir)) {
+            Write-Host "インデックスをバックグラウンドで事前生成中..." -ForegroundColor Cyan
+            $bgIndexingJob = Start-Job -ScriptBlock {
+                param($targetDir, $baseScriptDir)
+                $searchLib = Join-Path $baseScriptDir "lib\WikiSearch.ps1"
+                $i18nLib   = Join-Path $baseScriptDir "lib\WikiI18n.ps1"
+                if (Test-Path $i18nLib) { . $i18nLib }
+                if (Test-Path $searchLib) { . $searchLib }
+                Build-WikiIndex -TargetWikiDir $targetDir -TargetScriptDir $baseScriptDir | Out-Null
+            } -ArgumentList $wikiDir, $scriptDir
+        } else {
+            Write-Host "インデックスキャッシュを読み込みました ($($script:WikiIndex.Count) 件)" -ForegroundColor Green
+        }
     } catch {
         Write-Warning "起動時のインデックス事前生成中にエラーが発生しましたが、サーバー起動を継続します: $_"
     }
@@ -129,6 +141,10 @@ $cancelHandler = $null
 try {
     $cancelHandler = [System.ConsoleCancelEventHandler]{
         param($sender, $e)
+        if ($bgIndexingJob) {
+            try { Stop-Job -Job $bgIndexingJob -ErrorAction SilentlyContinue } catch {}
+            try { Remove-Job -Job $bgIndexingJob -Force -ErrorAction SilentlyContinue } catch {}
+        }
         if ($listener -and $listener.IsListening) {
             try { $listener.Stop() } catch {}
         }
@@ -173,6 +189,10 @@ try {
                 Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
                 try { $response.Close() } catch {}
                 Write-Host "UIからのシャットダウン要求を受信しました。サーバーを終了します..." -ForegroundColor Yellow
+                if ($bgIndexingJob) {
+                    try { Stop-Job -Job $bgIndexingJob -ErrorAction SilentlyContinue } catch {}
+                    try { Remove-Job -Job $bgIndexingJob -Force -ErrorAction SilentlyContinue } catch {}
+                }
                 if ($listener.IsListening) {
                     try { $listener.Stop() } catch {}
                 }
@@ -180,7 +200,7 @@ try {
             }
 
             if ($rawPath -eq "/api/indexing-status" -and $request.HttpMethod -eq "GET") {
-                $statusObj = Get-WikiIndexingStatus
+                $statusObj = Get-WikiIndexingStatus -TargetWikiDir $wikiDir -TargetScriptDir $scriptDir
                 $jsonRes = $statusObj | ConvertTo-Json
                 Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
                 continue
@@ -190,7 +210,7 @@ try {
                 $configPath = Join-Path $scriptDir "config.json"
                 if ($request.HttpMethod -eq "GET") {
                     if ($queryParams.ContainsKey("action") -and $queryParams["action"] -eq "indexing_status") {
-                        $statusObj = Get-WikiIndexingStatus
+                        $statusObj = Get-WikiIndexingStatus -TargetWikiDir $wikiDir -TargetScriptDir $scriptDir
                         $jsonRes = $statusObj | ConvertTo-Json
                         Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
                         continue
