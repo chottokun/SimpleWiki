@@ -108,6 +108,14 @@ if ($initCfg.search -and $initCfg.search.prebuildIndex -eq $true) {
         # キャッシュが有効で既に最新が存在する場合は同期読み込み、それ以外は非同期ジョブで構築
         if (-not (Load-WikiIndexCache -TargetWikiDir $wikiDir -TargetScriptDir $scriptDir)) {
             Write-Host "インデックスをバックグラウンドで事前生成中..." -ForegroundColor Cyan
+            $initStatus = [PSCustomObject]@{
+                IsBuilding = $true
+                Total      = 0
+                Current    = 0
+                Percent    = 0
+                LastScan   = [DateTime]::MinValue
+            }
+            Save-WikiIndexingStatusFile -StatusObj $initStatus -TargetWikiDir $wikiDir -TargetScriptDir $scriptDir
             $bgIndexingJob = Start-Job -ScriptBlock {
                 param($targetDir, $baseScriptDir)
                 $searchLib = Join-Path $baseScriptDir "lib\WikiSearch.ps1"
@@ -1442,13 +1450,13 @@ try {
                             }
                         }
                     })
-                    .catch(function(e) {
-                        if (polling) { clearInterval(polling); polling = null; }
-                    });
+                    .catch(function(e) {});
                 }
                 checkStatus();
-                // 起動直後のスキャン開始ラグを考慮して1秒後にも再試行
-                setTimeout(checkStatus, 1000);
+                // 起動直後のスキャン開始ラグ（ジョブ起動待ち）を確実に拾うためポーリングを開始
+                if (!polling) {
+                    polling = setInterval(checkStatus, 500);
+                }
             })();
             // -- End Global Indexing Status Check --
         });
