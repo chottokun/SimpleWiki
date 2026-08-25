@@ -1078,20 +1078,7 @@ Describe 'Markdown Editor API and Generation Backup Tests' {
     }
 
     It "Get-ConfigJson parses editor config with custom or default maxBackups" {
-        # Create temp config.json
-        $tempConfig = Join-Path $projectRoot "config.json.tmp_test"
-        $configObj = @{
-            editor = @{
-                maxBackups = 5
-            }
-        }
-        $configObj | ConvertTo-Json | Out-File -FilePath $tempConfig -Encoding UTF8 -NoNewline
-
-        # Test Get-ConfigJson
-        $parsed = Get-ConfigJson -TargetScriptDir $projectRoot
-        # Since we use Get-ConfigJson which expects config.json in the specified folder,
-        # let's temporarily overwrite/rename config.json if it exists, or write config.json in a dedicated temp folder.
-        $tempDir = Join-Path $projectRoot "temp_test_editor_dir"
+        $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestEditorDir"
         if (Test-Path $tempDir) { Remove-Item -Path $tempDir -Recurse -Force }
         $null = New-Item -ItemType Directory -Path $tempDir
 
@@ -1101,7 +1088,7 @@ Describe 'Markdown Editor API and Generation Backup Tests' {
         $parsed = Get-ConfigJson -TargetScriptDir $tempDir
         $parsed.editor.maxBackups | Should Be 5
 
-        Remove-Item -Path $tempDir -Recurse -Force
+        Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     It "Backup rotation rotates backups correctly up to maxBackups" {
@@ -1380,6 +1367,43 @@ Describe 'Directory Listing and Fallback Tests (Get-DirectoryListingHtml)' {
         } | Should Not Throw
     }
 
+    It "Render-ServerFolderTreeHtml pins index.md and README.md to the top of folder listings" {
+        $node = [PSCustomObject]@{
+            Files = [System.Collections.Generic.List[PSObject]]@(
+                [PSCustomObject]@{ FullName = "C:\wiki\zoo.md"; BaseName = "zoo" },
+                [PSCustomObject]@{ FullName = "C:\wiki\about.md"; BaseName = "about" },
+                [PSCustomObject]@{ FullName = "C:\wiki\index.md"; BaseName = "index" },
+                [PSCustomObject]@{ FullName = "C:\wiki\README.md"; BaseName = "README" }
+            )
+            SubFolders = [ordered]@{}
+        }
+        $treeHtml = Render-ServerFolderTreeHtml -node $node -currentRelPath "" -wikiDir "C:\wiki"
+        $idxPos = $treeHtml.IndexOf("index")
+        $readmePos = $treeHtml.IndexOf("README")
+        $aboutPos = $treeHtml.IndexOf("about")
+        $zooPos = $treeHtml.IndexOf("zoo")
+
+        ($idxPos -lt $readmePos) | Should Be $true
+        ($readmePos -lt $aboutPos) | Should Be $true
+        ($aboutPos -lt $zooPos) | Should Be $true
+    }
+
+    It "Render-ServerFolderTreeHtml safely sorts folders without index.md or empty files" {
+        $node = [PSCustomObject]@{
+            Files = [System.Collections.Generic.List[PSObject]]@(
+                [PSCustomObject]@{ FullName = "C:\wiki\zeta.md"; BaseName = "zeta" },
+                [PSCustomObject]@{ FullName = "C:\wiki\alpha.md"; BaseName = "alpha" }
+            )
+            SubFolders = [ordered]@{}
+        }
+        {
+            $treeHtml = Render-ServerFolderTreeHtml -node $node -currentRelPath "" -wikiDir "C:\wiki"
+            $alphaPos = $treeHtml.IndexOf("alpha")
+            $zetaPos = $treeHtml.IndexOf("zeta")
+            ($alphaPos -lt $zetaPos) | Should Be $true
+        } | Should Not Throw
+    }
+
     It "Get-ChatWidgetHtml に開いているページを含めるデフォルトONのチェックボックスが含まれる" {
         $html = Get-ChatWidgetHtml
         $html | Should Match "okfIncludeCurrentPage"
@@ -1399,27 +1423,37 @@ Describe 'Index Cache and Settings View Tests' {
         $testSampleDir = Join-Path $testProjectRoot "markdown_sample"
     }
 
-    It "Get-WikiCachePath produces valid cross-platform cache file path" {
+    It "Get-WikiCachePath produces valid cross-platform cache file path under scriptDir with folder hash" {
         $cachePath = Get-WikiCachePath -TargetWikiDir $testSampleDir
         $cachePath | Should Not BeNullOrEmpty
         $cachePath | Should Match "\.cache"
-        $cachePath | Should Match "\.index-cache\.json"
+        $cachePath | Should Match "\.index-cache-[a-f0-9]{8,}\.json"
+        # キャッシュの親ディレクトリがスクリプト配置元 ($scriptDir / $projectRoot) 配下であることを検証
+        $cachePath.StartsWith($projectRoot, [System.StringComparison]::OrdinalIgnoreCase) | Should Be $true
+    }
+
+    It "Get-WikiCachePath isolates cache files for different target directories" {
+        $dirA = "C:\Test\WikiA"
+        $dirB = "C:\Test\WikiB"
+        $cacheA = Get-WikiCachePath -TargetWikiDir $dirA
+        $cacheB = Get-WikiCachePath -TargetWikiDir $dirB
+        $cacheA | Should Not Be $cacheB
     }
 
     It "Save-WikiIndexCache and Load-WikiIndexCache cycle works when useCache is enabled" {
         $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestCacheDir"
-        if (Test-Path $tempDir) { Remove-Item -Path $tempDir -Recurse -Force }
+        $tempScriptDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestCacheScriptDir"
+        if (Test-Path $tempDir) { Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue }
+        if (Test-Path $tempScriptDir) { Remove-Item -Path $tempScriptDir -Recurse -Force -ErrorAction SilentlyContinue }
         $null = New-Item -ItemType Directory -Path $tempDir
+        $null = New-Item -ItemType Directory -Path $tempScriptDir
 
         # テスト用 Markdown ファイルを作成
         $testMd = Join-Path $tempDir "test1.md"
         "---`ntitle: Test 1`n---`n# Test 1 Content" | Out-File -FilePath $testMd -Encoding UTF8
 
         try {
-            $cfgFile = Join-Path $testProjectRoot "config.json"
-            $cfgBackup = "$cfgFile.bak_test"
-            if (Test-Path $cfgFile) { Copy-Item -Path $cfgFile -Destination $cfgBackup -Force }
-
+            $cfgFile = Join-Path $tempScriptDir "config.json"
             @{
                 search = @{
                     prebuildIndex = $true
@@ -1429,13 +1463,13 @@ Describe 'Index Cache and Settings View Tests' {
             } | ConvertTo-Json | Out-File -FilePath $cfgFile -Encoding UTF8
 
             # インデックス構築とキャッシュ保存
-            Build-WikiIndex -TargetWikiDir $tempDir -ForceRefresh | Out-Null
-            $saved = Save-WikiIndexCache -TargetWikiDir $tempDir
+            Build-WikiIndex -TargetWikiDir $tempDir -TargetScriptDir $tempScriptDir -ForceRefresh | Out-Null
+            $saved = Save-WikiIndexCache -TargetWikiDir $tempDir -TargetScriptDir $tempScriptDir
             $saved | Should Be $true
 
             # メモリ内インデックスをクリアしてディスクから再読み込み
             $script:WikiIndex = @()
-            $loaded = Load-WikiIndexCache -TargetWikiDir $tempDir
+            $loaded = Load-WikiIndexCache -TargetWikiDir $tempDir -TargetScriptDir $tempScriptDir
             $loaded | Should Be $true
             $script:WikiIndex.Count | Should Be 1
             $script:WikiIndex[0].Title | Should Be "Test 1"
@@ -1443,25 +1477,69 @@ Describe 'Index Cache and Settings View Tests' {
             # ファイル削除時にキャッシュが無効化されることの検証 (ゾンビファイル防止)
             Remove-Item -Path $testMd -Force
             $script:WikiIndex = @()
-            $loadedAfterDelete = Load-WikiIndexCache -TargetWikiDir $tempDir
+            $loadedAfterDelete = Load-WikiIndexCache -TargetWikiDir $tempDir -TargetScriptDir $tempScriptDir
             $loadedAfterDelete | Should Be $false
         } finally {
-            if (Test-Path $cfgBackup) {
-                Move-Item -Path $cfgBackup -Destination $cfgFile -Force
-            } else {
-                Remove-Item -Path $cfgFile -Force -ErrorAction SilentlyContinue
-            }
             Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path $tempScriptDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 
-    It "Get-SettingsViewHtml renders settings form and current cache state" {
+    It "Clear-AllWikiCaches removes all index-cache files and resets in-memory cache" {
+        $cacheDir = Join-Path $testProjectRoot ".cache"
+        if (-not (Test-Path $cacheDir)) { New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null }
+        
+        $dummy1 = Join-Path $cacheDir ".index-cache-test111.json"
+        $dummy2 = Join-Path $cacheDir ".index-cache-test222.json"
+        "test1" | Out-File -FilePath $dummy1 -Encoding UTF8
+        "test2" | Out-File -FilePath $dummy2 -Encoding UTF8
+
+        $script:WikiIndex = @([PSCustomObject]@{ Title = "MemoryCache" })
+        $script:SidebarCachedHtml = "<div>CachedSidebar</div>"
+
+        $clearResult = Clear-AllWikiCaches -TargetScriptDir $testProjectRoot
+        ($clearResult.deletedFiles -ge 2) | Should Be $true
+        (Test-Path $dummy1) | Should Be $false
+        (Test-Path $dummy2) | Should Be $false
+        $script:WikiIndex.Count | Should Be 0
+        $script:SidebarCachedHtml | Should Be $null
+    }
+
+    It "Get-SettingsViewHtml renders settings form, cache folder, and clear all cache button" {
         $html = Get-SettingsViewHtml
         $html | Should Not BeNullOrEmpty
         $html | Should Match "システム設定"
         $html | Should Match "prebuildIndex"
         $html | Should Match "useCache"
         $html | Should Match "cacheFolder"
+        $html | Should Match "clearAllCachesNow"
+        $html | Should Match "clearAllCacheBtn"
+    }
+
+    It "Get-WikiIndexingStatus tracks index build progress correctly" {
+        $status = Get-WikiIndexingStatus
+        $status | Should Not BeNullOrEmpty
+        ($status.PSObject.Properties.Name -contains "IsBuilding") | Should Be $true
+        ($status.PSObject.Properties.Name -contains "Total") | Should Be $true
+        ($status.PSObject.Properties.Name -contains "Current") | Should Be $true
+        ($status.PSObject.Properties.Name -contains "Percent") | Should Be $true
+    }
+
+    It "Get-WikiStatusPath returns valid cross-process status file path" {
+        $statusPath = Get-WikiStatusPath -TargetWikiDir $testProjectRoot -TargetScriptDir $testProjectRoot
+        $statusPath | Should Not BeNullOrEmpty
+        $statusPath | Should Match '\.index-status-[a-f0-9]+\.json$'
+    }
+
+    It "Get-SearchViewHtml contains searchProgressBanner and loading indicator" {
+        $html = Get-SearchViewHtml -Query "test"
+        $html | Should Match 'searchProgressBanner'
+        $html | Should Match 'searchProgressText'
+    }
+
+    It "Start-MarkdigWiki.ps1 includes /api/indexing-status endpoint" {
+        $scriptContent = Get-Content -Path (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -Raw -Encoding UTF8
+        $scriptContent | Should Match 'indexing-status'
     }
 }
 
@@ -1718,26 +1796,30 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
         $scriptContent | Should Match 'editor_backup_load_err'
         $scriptContent | Should Match 'editor_saved_warning'
         $scriptContent | Should Match 'editor_saved'
+        $scriptContent | Should Match 'indexing_searching'
     }
 
     It "/api/config handles OrderedDictionary and saves config.json without errors" {
-        $realConfig = Join-Path $projectRoot "config.json"
-        $backupOriginal = $null
-        if (Test-Path $realConfig) {
-            $backupOriginal = [System.IO.File]::ReadAllBytes($realConfig)
-        }
-        $bak1 = "$realConfig.bak1"
-        $bak2 = "$realConfig.bak2"
-        $bak3 = "$realConfig.bak3"
-        $bak1Data = if (Test-Path $bak1) { [System.IO.File]::ReadAllBytes($bak1) } else { $null }
-        $bak2Data = if (Test-Path $bak2) { [System.IO.File]::ReadAllBytes($bak2) } else { $null }
-        $bak3Data = if (Test-Path $bak3) { [System.IO.File]::ReadAllBytes($bak3) } else { $null }
+        $tempIsolatedDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestServerIsolated"
+        if (Test-Path $tempIsolatedDir) { Remove-Item -Path $tempIsolatedDir -Recurse -Force -ErrorAction SilentlyContinue }
+        $null = New-Item -ItemType Directory -Path $tempIsolatedDir
+
+        # サーバー起動に必要な最小構成（スクリプト、lib、sample、config）を一時ディレクトリにコピー
+        Copy-Item -Path (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -Destination $tempIsolatedDir -Force
+        Copy-Item -Path (Join-Path $projectRoot "lib") -Destination (Join-Path $tempIsolatedDir "lib") -Recurse -Force
+        Copy-Item -Path (Join-Path $projectRoot "markdown_sample") -Destination (Join-Path $tempIsolatedDir "markdown_sample") -Recurse -Force
+
+        $isolatedConfig = Join-Path $tempIsolatedDir "config.json"
+        @{
+            search = @{ prebuildIndex = $false; useCache = $false; cacheFolder = ".cache" }
+            rag    = @{ enabled = $false; apiUrl = "http://localhost:11434/v1"; model = "test-model" }
+        } | ConvertTo-Json -Depth 5 | Out-File -FilePath $isolatedConfig -Encoding UTF8
 
         $port = 8094
         $job = Start-Job -ScriptBlock {
-            param($p, $root)
-            & "C:\Project\PowershellScript\SimpleWiki\Start-MarkdigWiki.ps1" -RootFolder $root -Port $p
-        } -ArgumentList $port, (Join-Path $projectRoot "markdown_sample")
+            param($p, $root, $serverScript)
+            & $serverScript -RootFolder $root -Port $p
+        } -ArgumentList $port, (Join-Path $tempIsolatedDir "markdown_sample"), (Join-Path $tempIsolatedDir "Start-MarkdigWiki.ps1")
 
         Start-Sleep -Seconds 2
         try {
@@ -1769,8 +1851,8 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
             $actRes = Invoke-RestMethod -Uri "http://localhost:$port/api/config" -Method Post -Body $actPayload -ContentType "application/json; charset=utf-8"
             $actRes.success | Should Be $true
 
-            # 保存された config.json が DPAPI 形式になっていることを検証
-            $savedCfg = Get-Content -Path $realConfig -Raw -Encoding UTF8 | ConvertFrom-Json
+            # 保存された隔離環境の config.json が DPAPI 形式になっていることを検証
+            $savedCfg = Get-Content -Path $isolatedConfig -Raw -Encoding UTF8 | ConvertFrom-Json
             $savedCfg.rag.apiKey | Should Match "^DPAPI:"
             $resolvedKey = Get-ResolvedSecret -SecretValue $savedCfg.rag.apiKey
             $resolvedKey | Should Be "sk-live-test-12345"
@@ -1794,14 +1876,7 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
         } finally {
             Invoke-RestMethod -Uri "http://localhost:$port/api/shutdown" -Method Post -ErrorAction SilentlyContinue
             Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
-
-            # 完全復元
-            if ($null -ne $backupOriginal) {
-                [System.IO.File]::WriteAllBytes($realConfig, $backupOriginal)
-            }
-            if ($null -ne $bak1Data) { [System.IO.File]::WriteAllBytes($bak1, $bak1Data) } else { Remove-Item $bak1 -Force -ErrorAction SilentlyContinue }
-            if ($null -ne $bak2Data) { [System.IO.File]::WriteAllBytes($bak2, $bak2Data) } else { Remove-Item $bak2 -Force -ErrorAction SilentlyContinue }
-            if ($null -ne $bak3Data) { [System.IO.File]::WriteAllBytes($bak3, $bak3Data) } else { Remove-Item $bak3 -Force -ErrorAction SilentlyContinue }
+            Remove-Item -Path $tempIsolatedDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 }

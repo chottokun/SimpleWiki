@@ -1,15 +1,22 @@
 ---
+type: "Table Showcase"
 title: "HTML埋め込み表（複雑なテーブル）サンプル"
 description: "Markdown内にHTML形式の <table> タグを埋め込んで表現する、セル結合（colspan/rowspan）、ステータスバッジ、複数行リストを含む高度な表のサンプル集です。"
-author: "SimpleWiki 開発チーム"
+author: "human:simplewiki-team"
 domain: "サンプル/レイアウト"
 tags:
   - HTML表
   - 複雑な表
   - Markdown
   - スタイリング
-last_updated: 2026-08-12
-status: active
+status: stable
+last_updated: 2026-08-25
+generated:
+  by: "human:simplewiki-team"
+  at: "2026-08-25T00:00:00Z"
+verified:
+  - by: "human:ui-lead"
+    at: "2026-08-25T00:00:00Z"
 ---
 
 # 📊 HTML埋め込み表（複雑なテーブル）サンプル
@@ -165,3 +172,11 @@ Markdown 形式の表では表現が難しい「セルの縦横結合（`rowspan
     </tr>
   </tbody>
 </table>
+
+---
+
+## 🔗 関連ページへの移動
+- [詳細仕様書を見る](詳細仕様.md)
+- [REST API 仕様書を見る](api/REST-API.md)
+- [ドキュメント一覧に戻る](index.md)
+- [トップポータルに戻る](../index.md)

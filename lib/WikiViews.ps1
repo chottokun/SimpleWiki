@@ -11,15 +11,55 @@ function Get-SidebarHtml {
     )
 
     if ($null -eq $script:SidebarCachedHtml -or [string]::IsNullOrEmpty($script:SidebarCachedHtml)) {
-        if ($null -eq $script:SidebarMdFiles -or $script:SidebarMdFiles.Count -eq 0) {
-            $script:SidebarMdFiles = Get-ChildItem -Path $wikiDir -Recurse -Filter "*.md" |
-                Where-Object { $_.FullName -notmatch '[\\/]\.(git|lib|tests|dist)[\\/]' } |
-                Sort-Object FullName
-        }
+        if ($null -ne $script:WikiIndex -and $script:WikiIndex.Count -gt 0) {
+            # インデックス構築済みの場合はインデックスデータから高速にツリー生成（ファイルIO不要）
+            $treeNode = [PSCustomObject]@{
+                Files      = [System.Collections.Generic.List[PSObject]]::new()
+                SubFolders = [ordered]@{}
+            }
+            foreach ($item in $script:WikiIndex) {
+                $rel = $item.RelPath
+                $parts = $rel -split '[\\/]'
+                $curr = $treeNode
+                for ($i = 0; $i -lt $parts.Length - 1; $i++) {
+                    $fn = $parts[$i]
+                    if (-not $curr.SubFolders.Contains($fn)) {
+                        $curr.SubFolders[$fn] = [PSCustomObject]@{
+                            Files      = [System.Collections.Generic.List[PSObject]]::new()
+                            SubFolders = [ordered]@{}
+                        }
+                    }
+                    $curr = $curr.SubFolders[$fn]
+                }
+                $fileMock = [PSCustomObject]@{
+                    FullName = (Join-Path $wikiDir $rel)
+                    BaseName = [System.IO.Path]::GetFileNameWithoutExtension($rel)
+                }
+                $curr.Files.Add($fileMock)
+            }
+            $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath "" -wikiDir $wikiDir
+            $script:SidebarCachedHtml = $treeHtml
+        } elseif ($null -eq $script:SidebarMdFiles -or $script:SidebarMdFiles.Count -eq 0) {
+            # インデックス構築中は直下のトップレベルフォルダ/ファイルのみを軽量取得
+            $topItems = @(Get-ChildItem -Path $wikiDir -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -notmatch '^\.(git|lib|tests|dist|\.cache)$' })
+            $mdFiles = @($topItems | Where-Object { $_.Extension -eq ".md" } | Sort-Object Name)
+            $subDirs = @($topItems | Where-Object { $_.PSIsContainer } | Sort-Object Name)
 
-        $treeNode = Build-ServerFileTreeNode -allMdFiles $script:SidebarMdFiles -wikiDir $wikiDir
-        $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath "" -wikiDir $wikiDir
-        $script:SidebarCachedHtml = $treeHtml
+            $treeNode = [PSCustomObject]@{
+                Files      = [System.Collections.Generic.List[PSObject]]::new()
+                SubFolders = [ordered]@{}
+            }
+            foreach ($f in $mdFiles) { $treeNode.Files.Add($f) }
+            foreach ($d in $subDirs) {
+                $treeNode.SubFolders[$d.Name] = [PSCustomObject]@{
+                    Files      = [System.Collections.Generic.List[PSObject]]::new()
+                    SubFolders = [ordered]@{}
+                }
+            }
+            $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath "" -wikiDir $wikiDir
+            $script:SidebarCachedHtml = $treeHtml
+        }
     }
 
     $clearCacheText = Get-LocalizedStr -Key "sidebar_clear_cache" -Lang $Lang
@@ -476,7 +516,11 @@ function Get-RecentViewHtml {
         [string]$Lang = "ja"
     )
 
-    Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+    if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
+        if (-not (Load-WikiIndexCache -TargetWikiDir $wikiDir)) {
+            Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+        }
+    }
     $sorted = $script:WikiIndex | Sort-Object LastUpdated -Descending
 
     $titleLbl   = Get-LocalizedStr -Key "recent_updates_title" -Lang $Lang
@@ -518,7 +562,11 @@ function Get-TagsViewHtml {
         [string]$Lang = "ja"
     )
 
-    Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+    if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
+        if (-not (Load-WikiIndexCache -TargetWikiDir $wikiDir)) {
+            Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+        }
+    }
 
     if ([string]::IsNullOrWhiteSpace($SelectedTag)) {
         $tagListTitle = Get-LocalizedStr -Key "tag_list_title" -Lang $Lang
@@ -573,7 +621,11 @@ function Get-MaintenanceViewHtml {
         [string]$Lang = "ja"
     )
 
-    Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+    if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
+        if (-not (Load-WikiIndexCache -TargetWikiDir $wikiDir)) {
+            Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+        }
+    }
     $now = Get-Date
 
     $staleDocs      = @($script:WikiIndex | Where-Object { $_.Status -eq "active" -and ($now - $_.LastUpdated).TotalDays -ge 365 })
@@ -627,7 +679,11 @@ function Get-AuthorsViewHtml {
         [string]$Lang = "ja"
     )
 
-    Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+    if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
+        if (-not (Load-WikiIndexCache -TargetWikiDir $wikiDir)) {
+            Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
+        }
+    }
 
     if ([string]::IsNullOrWhiteSpace($SelectedAuthor)) {
         $authorListTitle = Get-LocalizedStr -Key "author_list_title" -Lang $Lang
@@ -765,6 +821,7 @@ function Get-SearchViewHtml {
     $domainHolderLbl = Get-LocalizedStr -Key "search_domain_placeholder" -Lang $Lang
     $searchBtnLbl    = Get-LocalizedStr -Key "search_btn" -Lang $Lang
     $noResultsLbl    = Get-LocalizedStr -Key "search_no_results" -Lang $Lang
+    $indexingSearchingJs = Get-LocalizedStr -Key "indexing_searching" -Lang $Lang
 
     $resultsContent = if ($sortedResults.Count -gt 0) {
         $resultsHtmlList -join "`n"
@@ -793,10 +850,27 @@ function Get-SearchViewHtml {
             <input type="text" name="domain" value="$encDomain" placeholder="$domainHolderLbl" style="padding: 6px 10px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; width: 140px;">
         </div>
         <div>
-            <button type="submit" style="padding: 6px 16px; font-size: 14px; background: #0366d6; color: #fff; border: none; border-radius: 4px; cursor: pointer;">🔍 $searchBtnLbl</button>
+            <button type="submit" id="searchSubmitBtn" style="padding: 6px 16px; font-size: 14px; background: #0366d6; color: #fff; border: none; border-radius: 4px; cursor: pointer;">🔍 $searchBtnLbl</button>
         </div>
     </form>
+    <div id="searchProgressBanner" style="display: none; margin-top: 12px; padding: 8px 12px; background: #e8f4fd; border: 1px solid #c8e1ff; border-radius: 4px; color: #0366d6; font-size: 13px; align-items: center; gap: 8px;">
+        <span class="indexing-spinner" style="display:inline-block; width:14px; height:14px; border:2px solid #0366d6; border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite;"></span>
+        <span id="searchProgressText">$indexingSearchingJs</span>
+    </div>
 </div>
+<script>
+(function() {
+    var form = document.querySelector('form[action="/search"]');
+    if (form) {
+        form.addEventListener('submit', function() {
+            var btn = document.getElementById('searchSubmitBtn');
+            var banner = document.getElementById('searchProgressBanner');
+            if (btn) { btn.disabled = true; }
+            if (banner) { banner.style.display = 'flex'; }
+        });
+    }
+})();
+</script>
 <div class="search-results">
     $resultsContent
 </div>
@@ -1280,13 +1354,19 @@ function Get-SettingsViewHtml {
     $serverTitleLbl = Get-LocalizedStr -Key "settings_server_title" -Lang $Lang
     $serverDescLbl  = Get-LocalizedStr -Key "settings_shutdown_desc" -Lang $Lang
     $shutdownBtnLbl = Get-LocalizedStr -Key "settings_shutdown_btn" -Lang $Lang
-
     $savedSuccessJs = ConvertTo-JsString (Get-LocalizedStr -Key "settings_saved_success" -Lang $Lang)
     $savedErrorJs   = ConvertTo-JsString (Get-LocalizedStr -Key "settings_saved_error" -Lang $Lang)
     $commErrorJs    = ConvertTo-JsString (Get-LocalizedStr -Key "settings_comm_error" -Lang $Lang)
     $rebuildRunJs   = ConvertTo-JsString (Get-LocalizedStr -Key "settings_rebuild_running" -Lang $Lang)
     $rebuildStartJs = ConvertTo-JsString (Get-LocalizedStr -Key "settings_rebuild_start" -Lang $Lang)
     $rebuildFailJs  = ConvertTo-JsString (Get-LocalizedStr -Key "settings_rebuild_failed" -Lang $Lang)
+    $clearAllBtnLbl = Get-LocalizedStr -Key "settings_clear_all_cache" -Lang $Lang
+    $clearAllDesc   = Get-LocalizedStr -Key "settings_clear_all_desc" -Lang $Lang
+    $clearAllConfJs = ConvertTo-JsString (Get-LocalizedStr -Key "settings_clear_all_confirm" -Lang $Lang)
+    $clearAllRunJs  = ConvertTo-JsString (Get-LocalizedStr -Key "settings_clear_all_running" -Lang $Lang)
+    $clearAllFailJs = ConvertTo-JsString (Get-LocalizedStr -Key "settings_clear_all_failed" -Lang $Lang)
+    $rawIndexingInProg = Get-LocalizedStr -Key "indexing_in_progress" -Lang $Lang -FormatArgs @("__INDEX_CURR__", "__INDEX_TOTAL__")
+    $indexingInProgJs = ConvertTo-JsString $rawIndexingInProg
 
     return @"
 <div class="settings-container">
@@ -1323,13 +1403,21 @@ function Get-SettingsViewHtml {
                 </div>
             </div>
 
-            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eaecef; font-size: 13px; color: #586069; display: flex; justify-content: space-between; align-items: center;">
+            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eaecef; font-size: 13px; color: #586069; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                 <div>
                     <strong>$cachedStatLbl</strong>
                 </div>
-                <button type="button" id="rebuildBtn" onclick="rebuildIndexNow()" style="padding: 6px 12px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
-                    $rebuildBtnLbl
-                </button>
+                <div style="display: flex; gap: 8px;">
+                    <button type="button" id="clearAllCacheBtn" onclick="clearAllCachesNow()" style="padding: 6px 12px; background: #fff; color: #d73a49; border: 1px solid #d1d5da; border-radius: 4px; cursor: pointer; font-weight: bold; display: inline-flex; align-items: center; gap: 4px;">
+                        $clearAllBtnLbl
+                    </button>
+                    <button type="button" id="rebuildBtn" onclick="rebuildIndexNow()" style="padding: 6px 12px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
+                        $rebuildBtnLbl
+                    </button>
+                </div>
+            </div>
+            <div style="font-size: 12px; color: #6a737d; margin-top: 8px;">
+                $clearAllDesc
             </div>
         </div>
 
@@ -1487,9 +1575,22 @@ function rebuildIndexNow() {
     }
     showToast('$rebuildStartJs', false, 0);
 
+    var pollTimer = setInterval(function() {
+        fetch('/api/indexing-status')
+        .then(function(r) { return r.json(); })
+        .then(function(st) {
+            if (st && st.IsBuilding && st.Total > 0) {
+                var txt = '$indexingInProgJs'.replace('__INDEX_CURR__', st.Current).replace('__INDEX_TOTAL__', st.Total);
+                showToast(txt, false, 0);
+            }
+        })
+        .catch(function() {});
+    }, 400);
+
     fetch('/api/config?action=rebuild_index', { method: 'POST' })
     .then(function(res) { return res.json(); })
     .then(function(data) {
+        clearInterval(pollTimer);
         if (rebuildBtn) {
             rebuildBtn.disabled = false;
             rebuildBtn.innerText = '$rebuildBtnLbl';
@@ -1502,9 +1603,44 @@ function rebuildIndexNow() {
         }
     })
     .catch(function(err) {
+        clearInterval(pollTimer);
         if (rebuildBtn) {
             rebuildBtn.disabled = false;
             rebuildBtn.innerText = '$rebuildBtnLbl';
+        }
+        showToast('$commErrorJs', true, 5000);
+    });
+}
+
+function clearAllCachesNow() {
+    if (!confirm('$clearAllConfJs')) {
+        return;
+    }
+    var clearBtn = document.getElementById('clearAllCacheBtn');
+    if (clearBtn) {
+        clearBtn.disabled = true;
+        clearBtn.innerText = '$clearAllRunJs';
+    }
+    showToast('$clearAllRunJs', false, 0);
+
+    fetch('/api/config?action=clear_all_caches', { method: 'POST' })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        if (clearBtn) {
+            clearBtn.disabled = false;
+            clearBtn.innerText = '$clearAllBtnLbl';
+        }
+        if (data.success) {
+            showToast('✅ ' + data.message, false, 3000);
+            setTimeout(function() { location.reload(); }, 1200);
+        } else {
+            showToast('$clearAllFailJs' + (data.message || ''), true, 5000);
+        }
+    })
+    .catch(function(err) {
+        if (clearBtn) {
+            clearBtn.disabled = false;
+            clearBtn.innerText = '$clearAllBtnLbl';
         }
         showToast('$commErrorJs', true, 5000);
     });

@@ -1,7 +1,8 @@
 ---
+type: "API Reference"
 title: "REST API 仕様書 ＆ AI Agent / RAG 連携ガイド"
 description: "AI エージェントおよび RAG パイプライン向け機械可読 JSON API エンドポイント (/api/index.json, /api/chunks.json, /api/chat) の詳細仕様書です。"
-author: "API 開発チーム"
+author: "human:api-team"
 domain: "仕様/API"
 tags:
   - API
@@ -9,8 +10,14 @@ tags:
   - JSON
   - LLM
   - Mermaid
-last_updated: 2026-08-10
-status: active
+status: stable
+last_updated: 2026-08-25
+generated:
+  by: "human:api-team"
+  at: "2026-08-25T00:00:00Z"
+verified:
+  - by: "human:lead-architect"
+    at: "2026-08-25T00:00:00Z"
 ---
 
 # REST API 仕様書 ＆ AI Agent / RAG 連携ガイド
@@ -63,7 +70,7 @@ sequenceDiagram
 
 ## 1. 全文書メタデータインデックス API (`/api/index.json`)
 
-ドキュメント数が大規模に増加した場合に備過剰なデータ転送や LLM コンテキストの圧迫を防ぐため、**エンベロープ（Envelope）レスポンス**、**ページネーション**、**フィルタリング**、および **`config.json` によるデフォルト上限制限** を提供しています。
+ドキュメント数が大規模に増加した場合に備え過剰なデータ転送や LLM コンテキストの圧迫を防ぐため、**エンベロープ（Envelope）レスポンス**、**ページネーション**、**フィルタリング**、および **`config.json` によるデフォルト上限制限** を提供しています。
 
 ### クエリパラメータ:
 | パラメータ | 型 | 説明 | 例 |
@@ -87,11 +94,11 @@ sequenceDiagram
     {
       "Title": "REST API 仕様書 ＆ AI Agent / RAG 連携ガイド",
       "Description": "AI エージェントおよび RAG パイプライン向け機械可読 JSON API エンドポイントの仕様書です。",
-      "Author": "API 開発チーム",
+      "Author": "human:api-team",
       "Domain": "仕様/API",
       "Tags": ["API", "RAG", "JSON", "LLM"],
-      "LastUpdated": "2026-08-09T00:00:00Z",
-      "Status": "active",
+      "LastUpdated": "2026-08-25T00:00:00Z",
+      "Status": "stable",
       "HasYaml": true,
       "RelPath": "docs/api/REST-API.md"
     }
@@ -115,8 +122,8 @@ Markdown 本文を `#`, `##`, `###` の見出し単位で自動分割し、文�
     "Domain": "仕様/API",
     "Section": "1. 全文書メタデータインデックス API (/api/index.json)",
     "Tags": ["API", "RAG", "JSON"],
-    "LastUpdated": "2026-08-10T00:00:00Z",
-    "Status": "active",
+    "LastUpdated": "2026-08-25T00:00:00Z",
+    "Status": "stable",
     "Content": "### レスポンス構造例:\n```json\n[ ... ]\n```",
     "EnrichedText": "[Document: REST API 仕様書 | Domain: 仕様/API | Section: 1. 全文書メタデータインデックス API | Tags: API, RAG]\n\n### レスポンス構造例:\n```json\n[ ... ]\n```"
   }
@@ -127,7 +134,7 @@ Markdown 本文を `#`, `##`, `###` の見出し単位で自動分割し、文�
 
 ## 3. 2モード制 OKF RAG LLM AI チャット API (`/api/chat`)
 
-Wiki 内の `status: active` ドキュメントを自動文脈検索し、グラウンディング（根拠に基づく回答）された AI 応答を取得する POST エンドポイントです。
+Wiki 内の `status: stable` ドキュメントを自動文脈検索し、グラウンディング（根拠に基づく回答）された AI 応答を取得する POST エンドポイントです。
 **`mode` パラメータ**に `"fast"` (低遅延1-Pass) または `"agentic"` (ReAct自律調査) を指定できます。
 
 ### リクエスト例 (POST):
@@ -159,29 +166,7 @@ data: {"type":"token","content":"『K-DAT』は"}
 
 data: {"type":"token","content":"データバックアップツールです。"}
 
-data: {"type":"done","mode":"agentic","answer":"『K-DAT』はデータバックアップツールです。基幹DBの復旧は...","thinkingLog":["..."],"sources":[{"title":"社内用語定義集","relPath":"glossary.md","relUri":"/glossary.md","lastUpdated":"2026-08-10","author":"ナレッジ管理チーム"}]}
-```
-
-### レスポンス構造例 (一括 JSON `stream: false` / フォールバック時):
-```json
-{
-  "mode": "agentic",
-  "answer": "『K-DAT』はデータバックアップツールです。基幹DBの復旧は以下の手順で行います...",
-  "thinkingLog": [
-    "🔍 Tool Call: lookup_glossary (term: 'K-DAT')",
-    "🔍 Tool Call: search_okf (query: '基幹DB 復旧', domain: '')",
-    "📄 Tool Call: read_doc (relPath: 'docs/infrastructure/db.md')"
-  ],
-  "sources": [
-    {
-      "title": "社内用語定義集",
-      "relPath": "glossary.md",
-      "relUri": "/glossary.md",
-      "lastUpdated": "2026-08-10",
-      "author": "ナレッジ管理チーム"
-    }
-  ]
-}
+data: {"type":"done","mode":"agentic","answer":"『K-DAT』はデータバックアップツールです。基幹DBの復旧は...","thinkingLog":["..."],"sources":[{"title":"社内用語定義集","relPath":"glossary.md","relUri":"/glossary.md","lastUpdated":"2026-08-25","author":"human:knowledge-team"}]}
 ```
 
 ---
@@ -195,7 +180,7 @@ import requests
 chunks = requests.get("http://localhost:8080/api/chunks.json").json()
 
 for chunk in chunks:
-    if chunk["Status"] == "active":
+    if chunk["Status"] == "stable":
         print(f"Ingesting: {chunk['ChunkId']} (Section: {chunk['Section']})")
         # vector_db.add(text=chunk["EnrichedText"], metadata=chunk)
 ```
@@ -204,5 +189,6 @@ for chunk in chunks:
 
 ## 🔗 関連ページへの移動
 - [詳細仕様書を見る](../詳細仕様.md)
+- [API 目次に戻る](index.md)
 - [開発環境構築ガイドを見る](../../guides/環境構築.md)
 - [ポータルに戻る](../../index.md)

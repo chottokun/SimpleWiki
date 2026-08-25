@@ -1,0 +1,12 @@
+---
+okf_version: "0.2"
+---
+
+# {{BUNDLE_TITLE}}
+
+## {{SECTION_1_TITLE}}
+* [{{ITEM_1_NAME}}]({{ITEM_1_PATH}}) - {{ITEM_1_DESCRIPTION}}
+* [{{ITEM_2_NAME}}]({{ITEM_2_PATH}}) - {{ITEM_2_DESCRIPTION}}
+
+## {{SECTION_2_TITLE}}
+* [{{ITEM_3_NAME}}]({{ITEM_3_PATH}}) - {{ITEM_3_DESCRIPTION}}

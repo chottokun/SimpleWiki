@@ -1,0 +1,38 @@
+@echo off
+setlocal
+chcp 65001 >nul 2>&1
+
+:: Check Administrator privileges
+net session >nul 2>&1
+if %ERRORLEVEL% neq 0 (
+    echo Requesting Administrator privileges...
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -ArgumentList '/c \"\"%~f0\" %*\"' -Verb RunAs"
+    exit /b
+)
+
+:: Set working directory to batch location (RunAs often changes working dir to system32)
+cd /d "%~dp0"
+set "SCRIPT_DIR=%~dp0"
+set "PS_SCRIPT=%SCRIPT_DIR%{{SCRIPT_NAME}}.ps1"
+
+if not exist "%PS_SCRIPT%" (
+    echo [ERROR] Target script not found: "%PS_SCRIPT%"
+    pause
+    exit /b 1
+)
+
+where pwsh >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+    set "PS_EXE=pwsh"
+) else (
+    set "PS_EXE=powershell.exe"
+)
+
+"%PS_EXE%" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" %*
+set "EXIT_CODE=%ERRORLEVEL%"
+
+echo.
+echo Process complete with exit code %EXIT_CODE%.
+pause
+
+endlocal & exit /b %EXIT_CODE%

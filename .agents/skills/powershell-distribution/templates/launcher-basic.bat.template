@@ -1,0 +1,30 @@
+@echo off
+setlocal
+chcp 65001 >nul 2>&1
+
+:: Determine script directory and target PowerShell script
+set "SCRIPT_DIR=%~dp0"
+set "PS_SCRIPT=%SCRIPT_DIR%{{SCRIPT_NAME}}.ps1"
+
+if not exist "%PS_SCRIPT%" (
+    echo [ERROR] Target script not found: "%PS_SCRIPT%"
+    pause
+    exit /b 1
+)
+
+:: Detect PowerShell 7 (pwsh) or fall back to Windows PowerShell 5.1
+where pwsh >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+    set "PS_EXE=pwsh"
+) else (
+    set "PS_EXE=powershell.exe"
+)
+
+:: Execute with ExecutionPolicy Bypass and argument passing
+"%PS_EXE%" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" %*
+set "EXIT_CODE=%ERRORLEVEL%"
+
+:: Optional pause on completion / failure
+{{PAUSE_SECTION}}
+
+endlocal & exit /b %EXIT_CODE%

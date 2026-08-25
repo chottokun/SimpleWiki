@@ -100,13 +100,25 @@ Write-Host "  URL: $prefix" -ForegroundColor Cyan
 Write-Host "  ※ 終了するにはこのウィンドウで [Ctrl + C] を押してください" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Green
 
-# 起動時インデックス事前生成 (ノンブロッキング配慮 & エラーハンドリング)
+# 起動時インデックス事前生成 (ノンブロッキング・バックグラウンド実行)
 $initCfg = Get-ConfigJson -TargetScriptDir $scriptDir
+$bgIndexingJob = $null
 if ($initCfg.search -and $initCfg.search.prebuildIndex -eq $true) {
     try {
-        Write-Host "インデックスを事前生成中..." -ForegroundColor Cyan
-        $prebuilt = Build-WikiIndex -TargetWikiDir $wikiDir
-        Write-Host "インデックス事前生成完了 ($($prebuilt.Count) 件のドキュメント)" -ForegroundColor Green
+        # キャッシュが有効で既に最新が存在する場合は同期読み込み、それ以外は非同期ジョブで構築
+        if (-not (Load-WikiIndexCache -TargetWikiDir $wikiDir -TargetScriptDir $scriptDir)) {
+            Write-Host "インデックスをバックグラウンドで事前生成中..." -ForegroundColor Cyan
+            $bgIndexingJob = Start-Job -ScriptBlock {
+                param($targetDir, $baseScriptDir)
+                $searchLib = Join-Path $baseScriptDir "lib\WikiSearch.ps1"
+                $i18nLib   = Join-Path $baseScriptDir "lib\WikiI18n.ps1"
+                if (Test-Path $i18nLib) { . $i18nLib }
+                if (Test-Path $searchLib) { . $searchLib }
+                Build-WikiIndex -TargetWikiDir $targetDir -TargetScriptDir $baseScriptDir | Out-Null
+            } -ArgumentList $wikiDir, $scriptDir
+        } else {
+            Write-Host "インデックスキャッシュを読み込みました ($($script:WikiIndex.Count) 件)" -ForegroundColor Green
+        }
     } catch {
         Write-Warning "起動時のインデックス事前生成中にエラーが発生しましたが、サーバー起動を継続します: $_"
     }
@@ -129,6 +141,10 @@ $cancelHandler = $null
 try {
     $cancelHandler = [System.ConsoleCancelEventHandler]{
         param($sender, $e)
+        if ($bgIndexingJob) {
+            try { Stop-Job -Job $bgIndexingJob -ErrorAction SilentlyContinue } catch {}
+            try { Remove-Job -Job $bgIndexingJob -Force -ErrorAction SilentlyContinue } catch {}
+        }
         if ($listener -and $listener.IsListening) {
             try { $listener.Stop() } catch {}
         }
@@ -173,15 +189,33 @@ try {
                 Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
                 try { $response.Close() } catch {}
                 Write-Host "UIからのシャットダウン要求を受信しました。サーバーを終了します..." -ForegroundColor Yellow
+                if ($bgIndexingJob) {
+                    try { Stop-Job -Job $bgIndexingJob -ErrorAction SilentlyContinue } catch {}
+                    try { Remove-Job -Job $bgIndexingJob -Force -ErrorAction SilentlyContinue } catch {}
+                }
                 if ($listener.IsListening) {
                     try { $listener.Stop() } catch {}
                 }
                 break
             }
 
+            if ($rawPath -eq "/api/indexing-status" -and $request.HttpMethod -eq "GET") {
+                $statusObj = Get-WikiIndexingStatus -TargetWikiDir $wikiDir -TargetScriptDir $scriptDir
+                $jsonRes = $statusObj | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+                continue
+            }
+
             if ($rawPath -eq "/api/config") {
                 $configPath = Join-Path $scriptDir "config.json"
                 if ($request.HttpMethod -eq "GET") {
+                    if ($queryParams.ContainsKey("action") -and $queryParams["action"] -eq "indexing_status") {
+                        $statusObj = Get-WikiIndexingStatus -TargetWikiDir $wikiDir -TargetScriptDir $scriptDir
+                        $jsonRes = $statusObj | ConvertTo-Json
+                        Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+                        continue
+                    }
+
                     $currCfg = Get-ConfigJson -TargetScriptDir $scriptDir
                     $safeCfg = [ordered]@{
                         search = if ($currCfg.search) { $currCfg.search } else { @{ prebuildIndex = $false; useCache = $false; cacheFolder = ".cache" } }
@@ -210,6 +244,19 @@ try {
                             Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
                         } catch {
                             $jsonRes = @{ success = $false; message = "インデックス再構築中にエラーが発生しました: $_" } | ConvertTo-Json
+                            Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 500
+                        }
+                        continue
+                    }
+
+                    # ローカルキャッシュ全消去アクション
+                    if ($queryParams.ContainsKey("action") -and $queryParams["action"] -eq "clear_all_caches") {
+                        try {
+                            $clearRes = Clear-AllWikiCaches -TargetScriptDir $scriptDir
+                            $jsonRes = @{ success = $true; deletedFiles = $clearRes.deletedFiles; message = "ローカルキャッシュを全消去しました ($($clearRes.deletedFiles) 件のファイルを削除)" } | ConvertTo-Json
+                            Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+                        } catch {
+                            $jsonRes = @{ success = $false; message = "ローカルキャッシュ消去中にエラーが発生しました: $_" } | ConvertTo-Json
                             Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 500
                         }
                         continue
@@ -1107,6 +1154,7 @@ try {
     .muted { color: #6a737d; font-size: 12px; }
     .search-item { border-bottom: 1px solid #e1e4e8; padding: 12px 0; }
     .search-item h3 { border: none; margin: 0 0 6px 0; font-size: 16px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -1132,6 +1180,7 @@ try {
             <button type="button" class="shutdown-btn" onclick="shutdownWikiServer()" title="{21}">{21}</button>
         </div>
     </header>
+
     <div class="layout-container">
         <nav class="sidebar">
             <h2>{12}</h2>
@@ -1321,6 +1370,23 @@ try {
             if (typeof mermaid !== "undefined") {
                 mermaid.initialize({ startOnLoad: true, theme: "default" });
             }
+
+            // -- Global Search Form Loading Spinner --
+            var searchLoadingTxt = "{31}";
+            document.querySelectorAll('form[action="/search"]').forEach(function(f) {
+                f.addEventListener('submit', function() {
+                    var btn = f.querySelector('button[type="submit"]');
+                    if (btn) {
+                        btn.disabled = true;
+                        btn.innerHTML = '<span style="display:inline-block; width:12px; height:12px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite; vertical-align:middle; margin-right:6px;"></span> ' + (searchLoadingTxt || btn.textContent || '');
+                    }
+                    var banner = document.getElementById('searchProgressBanner');
+                    if (banner) {
+                        banner.style.display = 'flex';
+                    }
+                });
+            });
+
         });
     </script>
 </body>
@@ -1372,7 +1438,10 @@ try {
                 }
                 $langOptionsStr = $langOptionsHtml -join ""
 
-                $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{13}", $edTitle).Replace("{14}", $edLatest).Replace("{15}", $edHolder).Replace("{16}", $edCancel).Replace("{17}", $edSave).Replace("{18}", $reqLang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $edLoadingJs).Replace("{26}", $edHistoryLoadingJs).Replace("{27}", $edLoadErrorJs).Replace("{28}", $edBackupLoadErrJs).Replace("{29}", $edSavedWarningJs).Replace("{30}", $edSavedJs)
+
+                $searchLoadingTxtJs = ConvertTo-JsString (Get-LocalizedStr -Key "indexing_searching" -Lang $reqLang)
+
+                $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{13}", $edTitle).Replace("{14}", $edLatest).Replace("{15}", $edHolder).Replace("{16}", $edCancel).Replace("{17}", $edSave).Replace("{18}", $reqLang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $edLoadingJs).Replace("{26}", $edHistoryLoadingJs).Replace("{27}", $edLoadErrorJs).Replace("{28}", $edBackupLoadErrJs).Replace("{29}", $edSavedWarningJs).Replace("{30}", $edSavedJs).Replace("{31}", $searchLoadingTxtJs)
 
                 if (-not [string]::IsNullOrWhiteSpace($chatWidgetHtml)) {
                     $fullHtml = $fullHtml.Replace("</body>", "$chatWidgetHtml`n</body>")

@@ -1,0 +1,39 @@
+<# :
+@echo off
+setlocal
+chcp 65001 >nul 2>&1
+
+:: Detect PowerShell 7 (pwsh) or Windows PowerShell 5.1
+where pwsh >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+    set "PS_EXE=pwsh"
+) else (
+    set "PS_EXE=powershell.exe"
+)
+
+:: Execute embedded PowerShell script
+"%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -Command "$_f=[System.IO.File]::ReadAllText('%~f0', [System.Text.Encoding]::UTF8); Invoke-Expression ($_f.Substring($_f.IndexOf([char]10)+1))"
+set "EXIT_CODE=%ERRORLEVEL%"
+
+if %EXIT_CODE% neq 0 (
+    echo.
+    echo Process exited with code %EXIT_CODE%.
+    pause
+)
+
+endlocal & exit /b %EXIT_CODE%
+#>
+
+# ==============================================================================
+# Embedded PowerShell Script (Edit below this line)
+# ==============================================================================
+[CmdletBinding()]
+param()
+
+$Title = "{{SCRIPT_TITLE}}"
+Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host " $Title" -ForegroundColor Green
+Write-Host "==========================================" -ForegroundColor Cyan
+
+# Script Logic
+Write-Host "Running script at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')..."
