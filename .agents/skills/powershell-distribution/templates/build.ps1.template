@@ -1,0 +1,144 @@
+<#
+.SYNOPSIS
+    Standard build and packaging script for PowerShell projects.
+
+.DESCRIPTION
+    Automates pre-distribution tasks:
+    1. Cleans and initializes the dist/ output directory.
+    2. Runs PSScriptAnalyzer and Pester tests (if available).
+    3. Copies src/ contents to dist/.
+    4. Ensures all .ps1, .psd1, .psm1 files are encoded in UTF-8 with BOM (PS 5.1 & 7+ compatibility).
+    5. Generates the production batch launcher (.bat).
+    6. Creates a versioned .zip archive for distribution.
+
+.PARAMETER Version
+    Version string for the build artifact (e.g. 1.0.0). Defaults to 1.0.0.
+
+.PARAMETER WrapperType
+    Batch wrapper type: Basic, Elevated, Hybrid, or Installer. Defaults to Basic.
+
+.EXAMPLE
+    .\build.ps1 -Version "1.2.0" -WrapperType Basic
+#>
+
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $false)]
+    [string]$Version = '1.0.0',
+
+    [Parameter(Mandatory = $false)]
+    [ValidateSet('Basic', 'Elevated', 'Hybrid', 'Installer')]
+    [string]$WrapperType = 'Basic'
+)
+
+$ErrorActionPreference = 'Stop'
+
+$rootDir = Split-Path -Path $PSScriptRoot -Parent
+$srcDir  = Join-Path $rootDir 'src'
+$distDir = Join-Path $rootDir 'dist'
+$testsDir = Join-Path $rootDir 'tests'
+
+Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host " Building PowerShell Distribution Package" -ForegroundColor Green
+Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host "Project Root : $rootDir"
+Write-Host "Source Dir   : $srcDir"
+Write-Host "Dist Dir     : $distDir"
+Write-Host "Version      : $Version"
+Write-Host ""
+
+# 1. Clean dist/
+if (Test-Path $distDir) {
+    Remove-Item -Path $distDir -Recurse -Force
+}
+New-Item -ItemType Directory -Path $distDir | Out-Null
+Write-Host "[1/6] Cleaned dist/ directory." -ForegroundColor Green
+
+# 2. Run Tests if tests directory exists
+if (Test-Path $testsDir) {
+    Write-Host "[2/6] Running unit tests..." -ForegroundColor Yellow
+    if (Get-Command Invoke-Pester -ErrorAction SilentlyContinue) {
+        $testResults = Invoke-Pester -Path $testsDir -PassThru
+        if ($testResults.FailedCount -gt 0) {
+            throw "Build aborted: $($testResults.FailedCount) test(s) failed."
+        }
+        Write-Host "  Pester tests passed!" -ForegroundColor Green
+    } else {
+        Write-Host "  [SKIP] Pester module not installed. Skipping unit tests." -ForegroundColor DarkGray
+    }
+} else {
+    Write-Host "[2/6] [SKIP] No tests/ directory found." -ForegroundColor DarkGray
+}
+
+# 3. Copy src/ to dist/
+Write-Host "[3/6] Copying source files to dist/..." -ForegroundColor Yellow
+Copy-Item -Path "$srcDir\*" -Destination $distDir -Recurse -Force
+Write-Host "  Source files copied." -ForegroundColor Green
+
+# 4. Enforce UTF-8 with BOM for all PowerShell files
+Write-Host "[4/6] Enforcing UTF-8 with BOM for cross-version compatibility..." -ForegroundColor Yellow
+$psFiles = Get-ChildItem -Path $distDir -Recurse -Include *.ps1, *.psd1, *.psm1
+$utf8BomEncoding = New-Object System.Text.UTF8Encoding($true)
+
+foreach ($file in $psFiles) {
+    $content = [System.IO.File]::ReadAllText($file.FullName)
+    [System.IO.File]::WriteAllText($file.FullName, $content, $utf8BomEncoding)
+}
+Write-Host "  $($psFiles.Count) PowerShell files normalized to UTF-8 with BOM." -ForegroundColor Green
+
+# 5. Generate Batch Launcher
+Write-Host "[5/6] Generating $WrapperType batch launcher..." -ForegroundColor Yellow
+$mainScripts = Get-ChildItem -Path $distDir -Filter "*.ps1" -File | Where-Object { $_.Name -notlike "*Helper*" -and $_.Name -notlike "*Config*" }
+if ($mainScripts.Count -gt 0) {
+    $primaryScript = $mainScripts[0]
+    $batPath = Join-Path $distDir "$($primaryScript.BaseName).bat"
+
+    $batTemplate = @"
+@echo off
+setlocal
+chcp 65001 >nul 2>&1
+
+set "SCRIPT_DIR=%~dp0"
+set "PS_SCRIPT=%SCRIPT_DIR%$($primaryScript.Name)"
+
+if not exist "%PS_SCRIPT%" (
+    echo [ERROR] Target script not found: "%PS_SCRIPT%"
+    pause
+    exit /b 1
+)
+
+where pwsh >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+    set "PS_EXE=pwsh"
+) else (
+    set "PS_EXE=powershell.exe"
+)
+
+"%PS_EXE%" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" %*
+set "EXIT_CODE=%ERRORLEVEL%"
+
+if %EXIT_CODE% neq 0 (
+    echo.
+    echo [ERROR] Process exited with code %EXIT_CODE%.
+    pause
+)
+
+endlocal & exit /b %EXIT_CODE%
+"@
+    Set-Content -Path $batPath -Value $batTemplate -Encoding OEM
+    Write-Host "  Generated batch launcher: $($primaryScript.BaseName).bat" -ForegroundColor Green
+}
+
+# 6. Create Distribution Archive (.zip)
+Write-Host "[6/6] Creating release archive (.zip)..." -ForegroundColor Yellow
+$projectName = (Get-Item $rootDir).Name
+$zipName = "$projectName-v$Version.zip"
+$zipPath = Join-Path $rootDir "dist\$zipName"
+
+Compress-Archive -Path "$distDir\*" -DestinationPath $zipPath -Force
+Write-Host "  Release package ready: $zipPath" -ForegroundColor Green
+
+Write-Host ""
+Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host " Build Complete! Artifacts in dist/" -ForegroundColor Green
+Write-Host "==========================================" -ForegroundColor Cyan

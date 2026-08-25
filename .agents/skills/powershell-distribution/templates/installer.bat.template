@@ -1,0 +1,41 @@
+@echo off
+setlocal
+chcp 65001 >nul 2>&1
+
+:: Installer Batch Template
+:: Deploys script/module to user or system directory and creates shortcuts
+
+echo ==========================================
+echo  {{APP_NAME}} Installer
+echo ==========================================
+echo.
+
+set "SOURCE_DIR=%~dp0"
+set "TARGET_DIR=%LOCALAPPDATA%\{{APP_NAME}}"
+
+echo Installing to: "%TARGET_DIR%"
+if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
+
+xcopy /E /I /Y "%SOURCE_DIR%*" "%TARGET_DIR%\" >nul
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] Failed to copy files.
+    pause
+    exit /b 1
+)
+
+:: Create Desktop Shortcut using PowerShell COM object
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$ws = New-Object -ComObject WScript.Shell; " ^
+    "$s = $ws.CreateShortcut([IO.Path]::Combine([Environment]::GetFolderPath('Desktop'), '{{APP_NAME}}.lnk')); " ^
+    "$s.TargetPath = [IO.Path]::Combine('%TARGET_DIR%', '{{LAUNCHER_NAME}}.bat'); " ^
+    "$s.WorkingDirectory = '%TARGET_DIR%'; " ^
+    "$s.Description = '{{APP_DESCRIPTION}}'; " ^
+    "$s.Save()"
+
+echo.
+echo [SUCCESS] Installation completed successfully!
+echo Shortcut created on your Desktop.
+echo.
+pause
+
+endlocal & exit /b 0

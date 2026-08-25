@@ -132,7 +132,11 @@ function Render-ExportFolderTreeHtml {
     $html = "<ul>`n"
 
     # 1. フォルダの描画 (再帰)
-    foreach ($folderName in $node.SubFolders.Keys) {
+    $sortedFolderNames = if ($node.SubFolders) {
+        @($node.SubFolders.Keys | Sort-Object)
+    } else { @() }
+
+    foreach ($folderName in $sortedFolderNames) {
         $subNode = $node.SubFolders[$folderName]
         $hasActive = Test-ExportNodeHasActiveFile -node $subNode -currentFile $currentFile
         $openAttr = if ($hasActive) { " open" } else { "" }
@@ -146,8 +150,16 @@ function Render-ExportFolderTreeHtml {
         $html += "  </li>`n"
     }
 
-    # 2. ファイルの描画
-    foreach ($file in $node.Files) {
+    # 2. ファイルの描画 (index.md / README.md を先頭に優先ソート)
+    $sortedFiles = if ($node.Files) {
+        @($node.Files | Sort-Object {
+            if ($_.BaseName -eq "index") { 0 }
+            elseif ($_.BaseName -eq "README") { 1 }
+            else { 2 }
+        }, BaseName)
+    } else { @() }
+
+    foreach ($file in $sortedFiles) {
         $fileHtmlPath = $file.FullName -replace '\.md$', '.html'
         $fileUri      = New-Object System.Uri($fileHtmlPath)
         $relHref      = $currentUri.MakeRelativeUri($fileUri).ToString()

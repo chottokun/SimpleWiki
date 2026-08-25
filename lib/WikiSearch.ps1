@@ -423,7 +423,15 @@ function Render-ServerFolderTreeHtml {
 
     $html = "<ul>`n"
 
-    foreach ($file in $node.Files) {
+    $sortedFiles = if ($node.Files) {
+        @($node.Files | Sort-Object {
+            if ($_.BaseName -eq "index") { 0 }
+            elseif ($_.BaseName -eq "README") { 1 }
+            else { 2 }
+        }, BaseName)
+    } else { @() }
+
+    foreach ($file in $sortedFiles) {
         $relPath   = $file.FullName.Substring($wikiDir.Length).TrimStart("\", "/")
         $cleanPath = $relPath -replace "\\", "/"
         $webPath   = "/" + [Uri]::EscapeUriString($cleanPath)
@@ -433,7 +441,11 @@ function Render-ServerFolderTreeHtml {
         $html += "  <li class='nav-file'><a href='$webPath'$activeClass>$title</a></li>`n"
     }
 
-    foreach ($folderName in $node.SubFolders.Keys) {
+    $sortedFolderNames = if ($node.SubFolders) {
+        @($node.SubFolders.Keys | Sort-Object)
+    } else { @() }
+
+    foreach ($folderName in $sortedFolderNames) {
         $subNode     = $node.SubFolders[$folderName]
         $encodedName = [System.Net.WebUtility]::HtmlEncode($folderName)
         $subHtml     = Render-ServerFolderTreeHtml -node $subNode -currentRelPath $currentRelPath -wikiDir $wikiDir

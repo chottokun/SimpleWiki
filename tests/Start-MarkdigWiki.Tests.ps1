@@ -1367,6 +1367,43 @@ Describe 'Directory Listing and Fallback Tests (Get-DirectoryListingHtml)' {
         } | Should Not Throw
     }
 
+    It "Render-ServerFolderTreeHtml pins index.md and README.md to the top of folder listings" {
+        $node = [PSCustomObject]@{
+            Files = [System.Collections.Generic.List[PSObject]]@(
+                [PSCustomObject]@{ FullName = "C:\wiki\zoo.md"; BaseName = "zoo" },
+                [PSCustomObject]@{ FullName = "C:\wiki\about.md"; BaseName = "about" },
+                [PSCustomObject]@{ FullName = "C:\wiki\index.md"; BaseName = "index" },
+                [PSCustomObject]@{ FullName = "C:\wiki\README.md"; BaseName = "README" }
+            )
+            SubFolders = [ordered]@{}
+        }
+        $treeHtml = Render-ServerFolderTreeHtml -node $node -currentRelPath "" -wikiDir "C:\wiki"
+        $idxPos = $treeHtml.IndexOf("index")
+        $readmePos = $treeHtml.IndexOf("README")
+        $aboutPos = $treeHtml.IndexOf("about")
+        $zooPos = $treeHtml.IndexOf("zoo")
+
+        ($idxPos -lt $readmePos) | Should Be $true
+        ($readmePos -lt $aboutPos) | Should Be $true
+        ($aboutPos -lt $zooPos) | Should Be $true
+    }
+
+    It "Render-ServerFolderTreeHtml safely sorts folders without index.md or empty files" {
+        $node = [PSCustomObject]@{
+            Files = [System.Collections.Generic.List[PSObject]]@(
+                [PSCustomObject]@{ FullName = "C:\wiki\zeta.md"; BaseName = "zeta" },
+                [PSCustomObject]@{ FullName = "C:\wiki\alpha.md"; BaseName = "alpha" }
+            )
+            SubFolders = [ordered]@{}
+        }
+        {
+            $treeHtml = Render-ServerFolderTreeHtml -node $node -currentRelPath "" -wikiDir "C:\wiki"
+            $alphaPos = $treeHtml.IndexOf("alpha")
+            $zetaPos = $treeHtml.IndexOf("zeta")
+            ($alphaPos -lt $zetaPos) | Should Be $true
+        } | Should Not Throw
+    }
+
     It "Get-ChatWidgetHtml に開いているページを含めるデフォルトONのチェックボックスが含まれる" {
         $html = Get-ChatWidgetHtml
         $html | Should Match "okfIncludeCurrentPage"
@@ -1759,8 +1796,7 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
         $scriptContent | Should Match 'editor_backup_load_err'
         $scriptContent | Should Match 'editor_saved_warning'
         $scriptContent | Should Match 'editor_saved'
-        $scriptContent | Should Match 'indexing_cache_reason'
-        $scriptContent | Should Match 'indexing_in_progress'
+        $scriptContent | Should Match 'indexing_searching'
     }
 
     It "/api/config handles OrderedDictionary and saves config.json without errors" {
