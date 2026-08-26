@@ -603,6 +603,11 @@ function Search-OkfDocs {
         }
     }
 
+    # ドキュメントループ外で正規表現エスケープ文字列を事前計算
+    $excludeRegexes = @(foreach ($ex in $excludeKeywords) { [regex]::Escape($ex) })
+    $keywordRegexes = @(foreach ($kw in $keywords) { [regex]::Escape($kw) })
+    $phraseRegex    = if ($cleanQuery.Length -ge 2) { [regex]::Escape($cleanQuery) } else { $null }
+
     $results = [System.Collections.Generic.List[PSObject]]::new()
 
     foreach ($item in $script:WikiIndex) {
@@ -626,10 +631,9 @@ function Search-OkfDocs {
         }
 
         # 3. NOT 除外フィルタ (タイトル/概要/タグ/本文に対象が含まれる場合は除外)
-        if ($excludeKeywords.Count -gt 0) {
+        if ($excludeRegexes.Count -gt 0) {
             $hasExcluded = $false
-            foreach ($ex in $excludeKeywords) {
-                $exRegex = [regex]::Escape($ex)
+            foreach ($exRegex in $excludeRegexes) {
                 if (($item.Title -and $item.Title -match "(?i)$exRegex") -or
                     ($item.Description -and $item.Description -match "(?i)$exRegex") -or
                     ($item.Tags -and ($item.Tags | Where-Object { $_ -match "(?i)$exRegex" })) -or
@@ -650,16 +654,14 @@ function Search-OkfDocs {
         $matchedKwCount = 0
 
         # --- A. フレーズ全体一致ボーナス (Exact Phrase Bonus) ---
-        if ($cleanQuery.Length -ge 2) {
-            $phraseRegex = [regex]::Escape($cleanQuery)
+        if ($phraseRegex) {
             if ($item.Title -and $item.Title -match "(?i)$phraseRegex") { $score += 15 }
             if ($item.Description -and $item.Description -match "(?i)$phraseRegex") { $score += 10 }
             if ($item.BodyText -and $item.BodyText -match "(?i)$phraseRegex") { $score += 8 }
         }
 
         # --- B. 形態素単語単位スコアリング ---
-        foreach ($kw in $keywords) {
-            $kwRegex = [regex]::Escape($kw)
+        foreach ($kwRegex in $keywordRegexes) {
             $kwMatched = $false
 
             # Title (+10)
