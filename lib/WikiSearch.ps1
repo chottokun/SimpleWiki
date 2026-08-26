@@ -450,15 +450,26 @@ function Build-FileTreeNode {
 function Test-ExportNodeHasActiveFile {
     param(
         [Parameter(Mandatory = $true)]$node,
-        [Parameter(Mandatory = $true)][string]$pageRelPath
+        [Parameter(Mandatory = $false)][string]$pageRelPath = "",
+        [Parameter(Mandatory = $false)]$currentFile = $null
     )
 
+    $targetRel = if ($currentFile) {
+        if ($currentFile.FullName) { $currentFile.FullName } else { $currentFile.ToString() }
+    } else {
+        $pageRelPath
+    }
+
+    if ([string]::IsNullOrWhiteSpace($targetRel)) { return $false }
+    $normTarget = $targetRel.Replace('\', '/').ToLower()
+
     foreach ($f in $node.Files) {
-        if ($f.RelPath -eq $pageRelPath) { return $true }
+        $fRel = if ($f.RelPath) { $f.RelPath.Replace('\', '/').ToLower() } elseif ($f.FullName) { $f.FullName.Replace('\', '/').ToLower() } else { "" }
+        if ($fRel -eq $normTarget -or $normTarget.EndsWith($fRel)) { return $true }
     }
     foreach ($subKey in $node.SubFolders.Keys) {
         $sub = $node.SubFolders[$subKey]
-        if (Test-ExportNodeHasActiveFile -node $sub -pageRelPath $pageRelPath) { return $true }
+        if (Test-ExportNodeHasActiveFile -node $sub -pageRelPath $pageRelPath -currentFile $currentFile) { return $true }
     }
     return $false
 }
@@ -489,7 +500,7 @@ function Render-FileTreeHtml {
 
         $html += "  <li class='nav-folder'>`n"
         $html += "    <details$openAttr>`n"
-        $html += "      <summary class='folder-title'>刀 $encodedName</summary>`n"
+        $html += "      <summary class='folder-title'>&#128193; $encodedName</summary>`n"
         $html += "      $subHtml`n"
         $html += "    </details>`n"
         $html += "  </li>`n"
@@ -677,7 +688,7 @@ function Render-ServerFolderTreeHtml {
 
         $html += "  <li class='nav-folder'>`n"
         $html += "    <details$openAttr>`n"
-        $html += "      <summary class='folder-title'>刀 $encodedName</summary>`n"
+        $html += "      <summary class='folder-title'>&#128193; $encodedName</summary>`n"
         $html += "      $subHtml`n"
         $html += "    </details>`n"
         $html += "  </li>`n"

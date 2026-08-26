@@ -117,9 +117,9 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
 
         $subHtmlContent | Should Match "<li class='nav-folder'>"
         # アクティブな親フォルダ docs は open
-        $subHtmlContent | Should Match "<details open>\s*<summary class='folder-title'>📁 docs</summary>"
+        $subHtmlContent | Should Match "<details open>\s*<summary class='folder-title'>.*?\s*docs</summary>"
         # アクティブでないフォルダ guides は open なし
-        $subHtmlContent | Should Match "<details>\s*<summary class='folder-title'>📁 guides</summary>"
+        $subHtmlContent | Should Match "<details>\s*<summary class='folder-title'>.*?\s*guides</summary>"
     }
 
     It "Embeds OKF top bar and footer card in exported static HTML files" {

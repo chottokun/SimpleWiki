@@ -130,7 +130,7 @@ function Render-ExportFolderTreeHtml {
 
         $html += "  <li class='nav-folder'>`n"
         $html += "    <details$openAttr>`n"
-        $html += "      <summary class='folder-title'>📁 $encodedFolder</summary>`n"
+        $html += "      <summary class='folder-title'>&#128193; $encodedFolder</summary>`n"
         $html += "      " + (Render-ExportFolderTreeHtml -node $subNode -currentFile $currentFile -currentUri $currentUri) + "`n"
         $html += "    </details>`n"
         $html += "  </li>`n"
