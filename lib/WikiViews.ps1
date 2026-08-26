@@ -10,57 +10,28 @@ function Get-SidebarHtml {
         [string]$Lang = "ja"
     )
 
-    if ($null -eq $script:SidebarCachedHtml -or [string]::IsNullOrEmpty($script:SidebarCachedHtml)) {
-        if ($null -ne $script:WikiIndex -and $script:WikiIndex.Count -gt 0) {
-            # インデックス構築済みの場合はインデックスデータから高速にツリー生成（ファイルIO不要）
-            $treeNode = [PSCustomObject]@{
-                Files      = [System.Collections.Generic.List[PSObject]]::new()
-                SubFolders = [ordered]@{}
-            }
-            foreach ($item in $script:WikiIndex) {
-                $rel = $item.RelPath
-                $parts = $rel -split '[\\/]'
-                $curr = $treeNode
-                for ($i = 0; $i -lt $parts.Length - 1; $i++) {
-                    $fn = $parts[$i]
-                    if (-not $curr.SubFolders.Contains($fn)) {
-                        $curr.SubFolders[$fn] = [PSCustomObject]@{
-                            Files      = [System.Collections.Generic.List[PSObject]]::new()
-                            SubFolders = [ordered]@{}
-                        }
-                    }
-                    $curr = $curr.SubFolders[$fn]
-                }
-                $fileMock = [PSCustomObject]@{
-                    FullName = (Join-Path $wikiDir $rel)
-                    BaseName = [System.IO.Path]::GetFileNameWithoutExtension($rel)
-                }
-                $curr.Files.Add($fileMock)
-            }
-            $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath "" -wikiDir $wikiDir
-            $script:SidebarCachedHtml = $treeHtml
-        } elseif ($null -eq $script:SidebarMdFiles -or $script:SidebarMdFiles.Count -eq 0) {
-            # インデックス構築中は直下のトップレベルフォルダ/ファイルのみを軽量取得
-            $topItems = @(Get-ChildItem -Path $wikiDir -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -notmatch '^\.(git|lib|tests|dist|\.cache)$' })
-            $mdFiles = @($topItems | Where-Object { $_.Extension -eq ".md" } | Sort-Object Name)
-            $subDirs = @($topItems | Where-Object { $_.PSIsContainer } | Sort-Object Name)
+    $targetWiki = if ($wikiDir) { $wikiDir } elseif ($script:wikiDir) { $script:wikiDir } else { $PWD.Path }
 
-            $treeNode = [PSCustomObject]@{
-                Files      = [System.Collections.Generic.List[PSObject]]::new()
-                SubFolders = [ordered]@{}
-            }
-            foreach ($f in $mdFiles) { $treeNode.Files.Add($f) }
-            foreach ($d in $subDirs) {
-                $treeNode.SubFolders[$d.Name] = [PSCustomObject]@{
-                    Files      = [System.Collections.Generic.List[PSObject]]::new()
-                    SubFolders = [ordered]@{}
-                }
-            }
-            $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath "" -wikiDir $wikiDir
-            $script:SidebarCachedHtml = $treeHtml
+    # Load cache from disk if WikiIndex is currently empty
+    if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
+        Load-WikiIndexCache -TargetWikiDir $targetWiki | Out-Null
+    }
+
+    # Retrieve tree: from index if available, otherwise full recursive scan from disk
+    $treeNode = $null
+    if ($null -ne $script:CachedSidebarTree -and $null -ne $script:WikiIndex -and $script:WikiIndex.Count -gt 0 -and $script:CachedSidebarTreeLastScan -eq $script:WikiIndexLastScan) {
+        $treeNode = $script:CachedSidebarTree
+    } else {
+        if ($null -ne $script:WikiIndex -and $script:WikiIndex.Count -gt 0) {
+            $treeNode = Build-ServerFileTreeNode -allMdFiles $script:WikiIndex -wikiDir $targetWiki
+            $script:CachedSidebarTree = $treeNode
+            $script:CachedSidebarTreeLastScan = $script:WikiIndexLastScan
+        } else {
+            $treeNode = Build-ServerFileTreeNode -wikiDir $targetWiki
         }
     }
+
+    $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath $currentRelPath -wikiDir $targetWiki
 
     $clearCacheText = Get-LocalizedStr -Key "sidebar_clear_cache" -Lang $Lang
     $procText       = Get-LocalizedStr -Key "sidebar_processing" -Lang $Lang
@@ -97,10 +68,8 @@ function refreshWikiSidebarCache(btn) {
 </script>
 "@
 
-    return $script:SidebarCachedHtml + $refreshButtonHtml
+    return $treeHtml + $refreshButtonHtml
 }
-
-# --- ディレクトリ一覧 HTML 生成関数 ---
 function Get-DirectoryListingHtml {
     param (
         [string]$DirFullPath,
