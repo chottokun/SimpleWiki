@@ -1,9 +1,9 @@
 ﻿# ==============================================================================
 #  WikiMetadata.ps1
-#  OKF (Open Knowledge Format) v0.2 繝峨く繝･繝｡繝ｳ繝医Γ繧ｿ繝・・繧ｿ謚ｽ蜃ｺ & 繧ｭ繝｣繝・す繝･邂｡逅・#  譁・ｭ励さ繝ｼ繝・ UTF-8 with BOM
+#  OKF (Open Knowledge Format) v0.2 Document Metadata Extraction & Cache
+#  Encoding: UTF-8 with BOM
 # ==============================================================================
 
-# --- OKF YAML Front Matter 讒区枚讀懆ｨｼ髢｢謨ｰ ---
 function Test-YamlFrontMatterSyntax {
     param (
         [string]$MdText = ""
@@ -16,6 +16,13 @@ function Test-YamlFrontMatterSyntax {
     }
 
     if ([string]::IsNullOrEmpty($MdText)) {
+        return $result
+    }
+
+    if ($MdText -match '^\s*---\r?\n' -and $MdText -notmatch '(?s)^\s*---\r?\n(.*?)\r?\n---\r?\n') {
+        $result.isValid = $false
+        $result.hasYaml = $true
+        [void]$result.warnings.Add("YAML Front Matter closing header (---) not found.")
         return $result
     }
 
@@ -44,15 +51,17 @@ function Test-YamlFrontMatterSyntax {
             }
 
             $result.isValid = $false
-            $trimmedLine = if ($line.Length -gt 40) { $line.Substring(0, 40) + "..." } else { $line }
-            [void]$result.warnings.Add("${lineNo}陦檎岼: YAML 縺ｮ蠖｢蠑・(key: value) 縺御ｸ肴ｭ｣縺ｧ縺・ `"$trimmedLine`"")
+            $trimmedLine = $line
+            if ($line.Length -gt 40) {
+                $trimmedLine = $line.Substring(0, 40) + "..."
+            }
+            [void]$result.warnings.Add(("Line {0}: Invalid YAML format (key: value): {1}" -f $lineNo, $trimmedLine))
         }
     }
 
     return $result
 }
 
-# --- 繝ｫ繝ｼ繝医ヵ繧ｩ繝ｫ繝豎ｺ螳壹・繝ｫ繝代・髢｢謨ｰ ---
 function Get-WikiDir {
     param (
         [string]$RootFolder = "",
@@ -75,7 +84,7 @@ function Get-WikiDir {
     }
 
     if (-not (Test-Path $resolvedDir)) {
-        Write-Error "謖・ｮ壹＆繧後◆繝ｫ繝ｼ繝医ヵ繧ｩ繝ｫ繝縺瑚ｦ九▽縺九ｊ縺ｾ縺帙ｓ:`n$resolvedDir"
+        Write-Error ("Specified root folder not found: {0}" -f $resolvedDir)
         exit 1
     }
 
@@ -130,7 +139,7 @@ function ConvertFrom-YamlHeader {
                 }
             }
         } catch {
-            Write-Warning "YAML parsing failed for $RelPath : $_"
+            Write-Warning ("YAML parsing failed for {0}: {1}" -f $RelPath, $_)
         }
 
         $result.YamlDict = $yamlDict
@@ -166,13 +175,13 @@ function Get-DocumentTitle {
     )
 
     if ($YamlDict -and $YamlDict.ContainsKey("title") -and -not [string]::IsNullOrWhiteSpace($YamlDict["title"])) {
-        return $YamlDict["title"]
+        return $YamlDict["title"].ToString().Trim()
     }
-    if ($BodyText -match '(?m)^\s*#\s+(.+)$') {
+    if ($BodyText -and ($BodyText -match '(?m)^\s*#\s+(.+)$')) {
         return $matches[1].Trim()
     }
-    if ($File) {
-        return $File.BaseName
+    if ($File -and -not [string]::IsNullOrWhiteSpace($File.BaseName)) {
+        return $File.BaseName.ToString().Trim()
     }
     return "Untitled"
 }
@@ -184,8 +193,9 @@ function Get-DocumentDescription {
     )
 
     if ($YamlDict -and $YamlDict.ContainsKey("description") -and -not [string]::IsNullOrWhiteSpace($YamlDict["description"])) {
-        return $YamlDict["description"]
+        return $YamlDict["description"].ToString().Trim()
     }
+    if ([string]::IsNullOrWhiteSpace($BodyText)) { return "" }
     $cleanBody = $BodyText -replace '(?m)^\s*#+\s*', '' -replace '[\*\`\[\]\(\)]', '' -replace '\s+', ' '
     $cleanBody = $cleanBody.Trim()
     if ($cleanBody.Length -gt 150) {
@@ -201,7 +211,7 @@ function Get-DocumentDomain {
     )
 
     if ($YamlDict -and $YamlDict.ContainsKey("domain") -and -not [string]::IsNullOrWhiteSpace($YamlDict["domain"])) {
-        return $YamlDict["domain"]
+        return $YamlDict["domain"].ToString().Trim()
     }
     if (-not [string]::IsNullOrWhiteSpace($RelPath)) {
         $dir = [System.IO.Path]::GetDirectoryName($RelPath)
@@ -214,7 +224,6 @@ function Get-DocumentDomain {
     return "root"
 }
 
-# --- OKF 繝｡繧ｿ繝・・繧ｿ謚ｽ蜃ｺ ・・閾ｪ蜍戊｣懷ｮ・(繝輔か繝ｼ繝ｫ繝舌ャ繧ｯ) 髢｢謨ｰ ---
 function Get-DocumentMetadata {
     param (
         [Parameter(Mandatory = $false)]$File = $null,
@@ -235,52 +244,47 @@ function Get-DocumentMetadata {
     $description = Get-DocumentDescription -YamlDict $yamlDict -BodyText $bodyText
     $domain      = Get-DocumentDomain -YamlDict $yamlDict -RelPath $RelPath
 
-    # Author
     $author = ""
     if ($yamlDict.ContainsKey("author") -and -not [string]::IsNullOrWhiteSpace($yamlDict["author"])) {
-        $author = $yamlDict["author"]
+        $author = $yamlDict["author"].ToString().Trim()
     }
 
-    # Tags
     $tags = Get-YamlListProperty -YamlDict $yamlDict -Key "tags"
 
-    # LastUpdated (繝輔ぃ繧､繝ｫ譎ょ綾 or YAML謖・ｮ壹ゅ←縺｡繧峨ｂ辟｡縺代ｌ縺ｰ $null 縺ｧ荳肴・謇ｱ縺・
     $lastUpdated = if ($File -and (Test-Path $File.FullName)) { $File.LastWriteTime } else { $null }
     if ($yamlDict.ContainsKey("last_updated") -and -not [string]::IsNullOrWhiteSpace($yamlDict["last_updated"])) {
         try {
             $lastUpdated = [DateTime]::Parse($yamlDict["last_updated"])
         } catch {
-            # 繝代・繧ｹ螟ｱ謨玲凾縺ｯ繝輔ぃ繧､繝ｫ譎ょ綾繧堤ｶｭ謖・        }
+            # Keep file time on parse failure
+        }
     }
 
-    # OKF v0.2: Status (繝・ヵ繧ｩ繝ｫ繝・ active)
     $status = "active"
     if ($yamlDict.ContainsKey("status") -and -not [string]::IsNullOrWhiteSpace($yamlDict["status"])) {
-        $status = $yamlDict["status"].ToLower().Trim()
+        $status = $yamlDict["status"].ToString().ToLower().Trim()
     }
 
-    # OKF v0.2: Trust Tier (繝・ヵ繧ｩ繝ｫ繝・ tier-1)
+    $version = if ($yamlDict.ContainsKey("version") -and -not [string]::IsNullOrWhiteSpace($yamlDict["version"])) { $yamlDict["version"].ToString().Trim() } else { "" }
+    $reviewer = if ($yamlDict.ContainsKey("reviewer") -and -not [string]::IsNullOrWhiteSpace($yamlDict["reviewer"])) { $yamlDict["reviewer"].ToString().Trim() } else { "" }
+    $supersededBy = if ($yamlDict.ContainsKey("superseded_by") -and -not [string]::IsNullOrWhiteSpace($yamlDict["superseded_by"])) { $yamlDict["superseded_by"].ToString().Trim() } else { "" }
+
     $trustTier = "tier-1"
     if ($yamlDict.ContainsKey("trust_tier") -and -not [string]::IsNullOrWhiteSpace($yamlDict["trust_tier"])) {
-        $trustTier = $yamlDict["trust_tier"].ToLower().Trim()
+        $trustTier = $yamlDict["trust_tier"].ToString().ToLower().Trim()
     }
 
-    # OKF v0.2: Provenance (蜃ｺ謇諠・ｱ)
     $provenance = $null
     if ($yamlDict.ContainsKey("provenance")) {
         $provenance = $yamlDict["provenance"]
     }
 
-    # OKF v0.2: Computations (險育ｮ嶺ｻ墓ｧ倥・邨先棡)
     $computations = $null
     if ($yamlDict.ContainsKey("computations")) {
         $computations = $yamlDict["computations"]
     }
 
-    # OKF v0.2: Contributors (蜈ｱ蜷悟濤遲・・
     $contributors = Get-YamlListProperty -YamlDict $yamlDict -Key "contributors"
-
-    # OKF v0.2: Related (髢｢騾｣繝峨く繝･繝｡繝ｳ繝・
     $related = Get-YamlListProperty -YamlDict $yamlDict -Key "related"
 
     return [PSCustomObject]@{
@@ -291,18 +295,22 @@ function Get-DocumentMetadata {
         Tags         = $tags
         LastUpdated  = $lastUpdated
         Status       = $status
+        Version      = $version
+        Reviewer     = $reviewer
+        SupersededBy = $supersededBy
         TrustTier    = $trustTier
         Provenance   = $provenance
         Computations = $computations
         Contributors = $contributors
         Related      = $related
         HasYaml      = $hasYaml
+        RelPath      = $RelPath
+        FullPath     = if ($File) { $File.FullName } else { "" }
         BodyText     = $bodyText
         RawYamlDict  = $yamlDict
     }
 }
 
-# --- 蜈ｨ莉ｶ繧､繝ｳ繝・ャ繧ｯ繧ｹ讒狗ｯ・& 繧ｭ繝｣繝・す繝･讖溯・ ---
 $script:WikiIndex = @()
 $script:WikiIndexLastScan = [DateTime]::MinValue
 $script:WikiIndexDirWriteTime = [DateTime]::MinValue

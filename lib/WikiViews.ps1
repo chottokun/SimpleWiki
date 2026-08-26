@@ -606,6 +606,25 @@ function Get-TagsViewHtml {
 }
 
 # --- 品質・メンテナンスダッシュボード生成関数 ---
+function Render-DocList {
+    param (
+        $docArray,
+        [string]$emptyMsg
+    )
+    if ($null -eq $docArray) { return "<p class='empty-msg'>$emptyMsg</p>" }
+    $arr = @($docArray)
+    if ($arr.Count -eq 0) { return "<p class='empty-msg'>$emptyMsg</p>" }
+    $items = foreach ($item in $arr) {
+        if ($null -eq $item) { continue }
+        $relUri  = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
+        $title   = [System.Net.WebUtility]::HtmlEncode($item.Title)
+        $lastUpd = if ($item.LastUpdated -is [DateTime]) { $item.LastUpdated.ToString("yyyy-MM-dd") } else { $item.LastUpdated }
+        "<li><a href='$relUri'>$title</a> <span class='muted'>($lastUpd)</span></li>"
+    }
+    if (-not $items -or $items.Count -eq 0) { return "<p class='empty-msg'>$emptyMsg</p>" }
+    return "<ul>" + ($items -join "") + "</ul>"
+}
+
 function Get-MaintenanceViewHtml {
     param (
         [string]$Lang = "ja"
@@ -1311,6 +1330,7 @@ function Get-SettingsViewData {
     $rawIndexingInProg = Get-LocalizedStr -Key "indexing_in_progress" -Lang $Lang -FormatArgs @("__INDEX_CURR__", "__INDEX_TOTAL__")
 
     return [PSCustomObject]@{
+        Lang              = $Lang
         PrebuildChecked   = $prebuildChecked
         UseCacheChecked   = $useCacheChecked
         CacheFolder       = $cacheFolder
