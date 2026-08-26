@@ -90,6 +90,8 @@ function Clear-AllWikiCaches {
     $script:WikiIndexLastScan = [DateTime]::MinValue
     $script:WikiIndexDirWriteTime = [DateTime]::MinValue
     $script:SidebarCachedHtml = $null
+    $script:CachedSidebarTree = $null
+    $script:CachedSidebarTreeLastScan = [DateTime]::MinValue
     $script:IndexingStatus = [PSCustomObject]@{
         IsBuilding = $false
         Total      = 0
