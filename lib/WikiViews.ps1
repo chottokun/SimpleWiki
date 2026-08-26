@@ -316,16 +316,6 @@ function Get-OkfFooterCardHtml {
 }
 
 
-# 互換用別名関数
-function Get-OkfCardHtml {
-    param (
-        [Parameter(Mandatory = $true)]$Meta,
-        [string]$RelPath = "",
-        [string]$Lang = "ja"
-    )
-    return (Get-OkfTopBarHtml -Meta $Meta -RelPath $RelPath -Lang $Lang) + (Get-OkfFooterCardHtml -Meta $Meta -Lang $Lang)
-}
-
 # --- 機械可読 API JSON 生成関数 (AI エージェント / LLM 用) ---
 function Get-ApiIndexJson {
     param (
