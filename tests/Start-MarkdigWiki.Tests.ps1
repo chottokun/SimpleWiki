@@ -1641,6 +1641,47 @@ Describe "Multi-Language (i18n) & Localization Tests" {
         }
     }
 
+    It "Import-ExternalI18n safely handles null, whitespace, or non-existent TargetScriptDir" {
+        { Import-ExternalI18n -TargetScriptDir $null } | Should -Not -Throw
+        { Import-ExternalI18n -TargetScriptDir "" } | Should -Not -Throw
+        { Import-ExternalI18n -TargetScriptDir "   " } | Should -Not -Throw
+
+        $nonExistentDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_NonExistent_$(Get-Random)"
+        { Import-ExternalI18n -TargetScriptDir $nonExistentDir } | Should -Not -Throw
+    }
+
+    It "Import-ExternalI18n gracefully handles malformed JSON without throwing exceptions" {
+        $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestI18nBad_$(Get-Random)"
+        $null = New-Item -ItemType Directory -Path $tempDir -Force
+        try {
+            $badJson = '{ "fr": { "home": "Accueil" '
+            $i18nFile = Join-Path $tempDir "i18n.json"
+            [System.IO.File]::WriteAllText($i18nFile, $badJson, [System.Text.Encoding]::UTF8)
+
+            { Import-ExternalI18n -TargetScriptDir $tempDir } | Should -Not -Throw
+        } finally {
+            Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "Import-ExternalI18n imports new language keys and nested property values correctly" {
+        $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestI18nNew_$(Get-Random)"
+        $null = New-Item -ItemType Directory -Path $tempDir -Force
+        try {
+            $extJson = '{ "fr": { "home": "Accueil", "brand_title": "📖 SimpleWiki FR" }, "en": { "custom_key": "Custom Value" } }'
+            $i18nFile = Join-Path $tempDir "i18n.json"
+            [System.IO.File]::WriteAllText($i18nFile, $extJson, [System.Text.Encoding]::UTF8)
+
+            Import-ExternalI18n -TargetScriptDir $tempDir
+
+            (Get-LocalizedStr -Key "home" -Lang "fr") | Should -Be "Accueil"
+            (Get-LocalizedStr -Key "brand_title" -Lang "fr") | Should -Be "📖 SimpleWiki FR"
+            (Get-LocalizedStr -Key "custom_key" -Lang "en") | Should -Be "Custom Value"
+        } finally {
+            Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     It "Dynamically merges external i18n.json dictionary entries" {
         $tempI18nFile = Join-Path $projectRoot "i18n.json"
         $i18nContent = '{ "zh": { "home": "首页" }, "en": { "home": "Custom Home" } }'
@@ -1919,6 +1960,3 @@ Describe "Repository Code Quality, Syntax & Character Encoding Validation Tests"
         }
     }
 }
-
-
-
