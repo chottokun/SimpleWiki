@@ -13,23 +13,16 @@ param (
 $scriptDir = [System.IO.Path]::GetFullPath($PSScriptRoot)
 $libDir    = Join-Path $scriptDir "lib"
 
+# --- モジュールのロード (lib/*.ps1) ---
+. (Join-Path $libDir "WikiI18n.ps1")
+. (Join-Path $libDir "WikiMetadata.ps1")
+. (Join-Path $libDir "WikiSecurity.ps1")
+. (Join-Path $libDir "WikiSearch.ps1")
+. (Join-Path $libDir "WikiRag.ps1")
+. (Join-Path $libDir "WikiViews.ps1")
+
 # ドキュメントルートの設定 (指定がない場合は markdown_sample フォルダ、存在しない場合は $PSScriptRoot)
-if ([string]::IsNullOrWhiteSpace($RootFolder)) {
-    $sampleDir = Join-Path $scriptDir "markdown_sample"
-    if (Test-Path $sampleDir) {
-        $wikiDir = $sampleDir
-    } else {
-        $wikiDir = $scriptDir
-    }
-} else {
-    $wikiDir = [System.IO.Path]::GetFullPath($RootFolder)
-}
-
-if (-not (Test-Path $wikiDir)) {
-    Write-Error "指定されたルートフォルダが見つかりません:`n$wikiDir"
-    exit 1
-}
-
+$wikiDir     = Get-WikiDir -RootFolder $RootFolder -TargetScriptDir $scriptDir
 $fullWikiDir = $wikiDir.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
 
 # --- 1. Markdig.dll および依存ライブラリのロード ---
@@ -45,16 +38,6 @@ Get-ChildItem -Path $libDir -Filter "*.dll" | ForEach-Object {
     }
     Add-Type -Path $_.FullName
 }
-
-# --- OKF YAML Front Matter 構文検証関数 ---
-
-# --- モジュールのロード (lib/*.ps1) ---
-. (Join-Path $libDir "WikiI18n.ps1")
-. (Join-Path $libDir "WikiMetadata.ps1")
-. (Join-Path $libDir "WikiSecurity.ps1")
-. (Join-Path $libDir "WikiSearch.ps1")
-. (Join-Path $libDir "WikiRag.ps1")
-. (Join-Path $libDir "WikiViews.ps1")
 
 Import-ExternalI18n -TargetScriptDir $scriptDir
 
