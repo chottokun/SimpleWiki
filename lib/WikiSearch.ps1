@@ -74,7 +74,7 @@ function Clear-AllWikiCaches {
 
     $deletedCount = 0
     if (Test-Path $cacheDir) {
-        $cacheFiles = Get-ChildItem -Path $cacheDir -Filter ".index-cache-*.json" -File -ErrorAction SilentlyContinue
+        $cacheFiles = Get-ChildItem -Path $cacheDir -Force -Filter ".index-cache-*.json" -File -ErrorAction SilentlyContinue
         foreach ($f in $cacheFiles) {
             try {
                 Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue
@@ -158,11 +158,11 @@ function Load-WikiIndexCache {
 
         $targetDir = if (-not [string]::IsNullOrWhiteSpace($TargetWikiDir)) { $TargetWikiDir } else { $baseScriptDir }
         if ((Test-Path $targetDir) -and (Test-Path -LiteralPath $cacheFilePath)) {
-            $cacheItem = Get-Item -LiteralPath $cacheFilePath -ErrorAction SilentlyContinue
+            $cacheItem = Get-Item -LiteralPath $cacheFilePath -Force -ErrorAction SilentlyContinue
             if ($cacheItem) {
                 $cacheFileWriteTime = $cacheItem.LastWriteTime
                 $currentMdFiles = @(Get-ChildItem -Path $targetDir -Recurse -Filter "*.md" -ErrorAction SilentlyContinue |
-                    Where-Object { $_.FullName -notmatch '[\\/]\.(git|lib|tests|dist|\.cache)[\\/]' })
+                    Where-Object { $_.FullName -notmatch '[\\/]\.(git|lib|tests|dist|\.cache)[\\/]' }) | Where-Object { $null -ne $_ }
 
                 # ファイル件数が異なる場合（追加・削除された場合）はキャッシュ無効
                 if ($currentMdFiles.Count -ne $cacheData.Items.Count) {
@@ -603,6 +603,11 @@ function Search-OkfDocs {
         }
     }
 
+    # 正規表現パターンの事前エスケープ処理 (ドキュメントループ外で事前計算してCPUサイクルを削減)
+    $escapedExcludeKeywords = @(foreach ($ex in $excludeKeywords) { [regex]::Escape($ex) })
+    $phraseRegex            = if ($cleanQuery.Length -ge 2) { [regex]::Escape($cleanQuery) } else { $null }
+    $escapedKeywords       = @(foreach ($kw in $keywords) { [regex]::Escape($kw) })
+
     $results = [System.Collections.Generic.List[PSObject]]::new()
 
     foreach ($item in $script:WikiIndex) {
@@ -626,10 +631,9 @@ function Search-OkfDocs {
         }
 
         # 3. NOT 除外フィルタ (タイトル/概要/タグ/本文に対象が含まれる場合は除外)
-        if ($excludeKeywords.Count -gt 0) {
+        if ($escapedExcludeKeywords.Count -gt 0) {
             $hasExcluded = $false
-            foreach ($ex in $excludeKeywords) {
-                $exRegex = [regex]::Escape($ex)
+            foreach ($exRegex in $escapedExcludeKeywords) {
                 if (($item.Title -and $item.Title -match "(?i)$exRegex") -or
                     ($item.Description -and $item.Description -match "(?i)$exRegex") -or
                     ($item.Tags -and ($item.Tags | Where-Object { $_ -match "(?i)$exRegex" })) -or
@@ -650,16 +654,14 @@ function Search-OkfDocs {
         $matchedKwCount = 0
 
         # --- A. フレーズ全体一致ボーナス (Exact Phrase Bonus) ---
-        if ($cleanQuery.Length -ge 2) {
-            $phraseRegex = [regex]::Escape($cleanQuery)
+        if ($phraseRegex) {
             if ($item.Title -and $item.Title -match "(?i)$phraseRegex") { $score += 15 }
             if ($item.Description -and $item.Description -match "(?i)$phraseRegex") { $score += 10 }
             if ($item.BodyText -and $item.BodyText -match "(?i)$phraseRegex") { $score += 8 }
         }
 
         # --- B. 形態素単語単位スコアリング ---
-        foreach ($kw in $keywords) {
-            $kwRegex = [regex]::Escape($kw)
+        foreach ($kwRegex in $escapedKeywords) {
             $kwMatched = $false
 
             # Title (+10)
@@ -723,9 +725,9 @@ function Search-OkfDocs {
                 for ($lIdx = 0; $lIdx -lt $lines.Count; $lIdx++) {
                     $line = $lines[$lIdx]
                     if ($line -match '^\s*---') { continue }
-                    if ($keywords.Count -gt 0) {
-                        foreach ($kw in $keywords) {
-                            if ($line -match [regex]::Escape($kw)) {
+                    if ($escapedKeywords.Count -gt 0) {
+                        foreach ($kwRegex in $escapedKeywords) {
+                            if ($line -match $kwRegex) {
                                 $matchIdx = $lIdx
                                 break
                             }
