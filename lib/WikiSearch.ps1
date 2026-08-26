@@ -391,11 +391,24 @@ function Build-FileTreeNode {
     if ($allMdFiles -and $allMdFiles.Count -gt 0) {
         $prefix = if ($wikiDir) { $wikiDir.TrimEnd('\', '/') } else { "" }
         foreach ($file in $allMdFiles) {
-            $fullName = if ($file.FullName) { $file.FullName } else { $file.ToString() }
-            $rel = if ($prefix -and $fullName.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-                $fullName.Substring($prefix.Length).TrimStart('\', '/')
+            $rel = if ($file.RelPath) {
+                $file.RelPath
+            } elseif ($file.FullPath -and $prefix -and $file.FullPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $file.FullPath.Substring($prefix.Length).TrimStart('\', '/')
+            } elseif ($file.FullName -and $prefix -and $file.FullName.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $file.FullName.Substring($prefix.Length).TrimStart('\', '/')
+            } elseif ($file.FullName) {
+                $file.FullName.TrimStart('\', '/')
             } else {
-                $fullName.TrimStart('\', '/')
+                $file.ToString().TrimStart('\', '/')
+            }
+
+            $title = if ($file.Title) {
+                $file.Title
+            } elseif ($file.BaseName) {
+                $file.BaseName
+            } else {
+                [System.IO.Path]::GetFileNameWithoutExtension($rel)
             }
 
             $parts = $rel -split '[\\/]'
@@ -403,7 +416,7 @@ function Build-FileTreeNode {
                 $node.Files.Add([PSCustomObject]@{
                     Name     = $parts[0]
                     RelPath  = $rel.Replace('\', '/')
-                    Title    = if ($file.BaseName) { $file.BaseName } else { [System.IO.Path]::GetFileNameWithoutExtension($parts[0]) }
+                    Title    = $title
                     IsActive = ($rel.Replace('\', '/') -eq $pageRelPath)
                 })
             } else {
@@ -422,7 +435,7 @@ function Build-FileTreeNode {
                 $currNode.Files.Add([PSCustomObject]@{
                     Name     = $fileName
                     RelPath  = $rel.Replace('\', '/')
-                    Title    = if ($file.BaseName) { $file.BaseName } else { [System.IO.Path]::GetFileNameWithoutExtension($fileName) }
+                    Title    = $title
                     IsActive = ($rel.Replace('\', '/') -eq $pageRelPath)
                 })
             }
@@ -534,11 +547,24 @@ function Build-ServerFileTreeNode {
     if ($allMdFiles -and $allMdFiles.Count -gt 0) {
         $prefix = if ($wikiDir) { $wikiDir.TrimEnd('\', '/') } else { "" }
         foreach ($file in $allMdFiles) {
-            $fullName = if ($file.FullName) { $file.FullName } else { $file.ToString() }
-            $rel = if ($prefix -and $fullName.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-                $fullName.Substring($prefix.Length).TrimStart('\', '/')
+            $rel = if ($file.RelPath) {
+                $file.RelPath
+            } elseif ($file.FullPath -and $prefix -and $file.FullPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $file.FullPath.Substring($prefix.Length).TrimStart('\', '/')
+            } elseif ($file.FullName -and $prefix -and $file.FullName.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $file.FullName.Substring($prefix.Length).TrimStart('\', '/')
+            } elseif ($file.FullName) {
+                $file.FullName.TrimStart('\', '/')
             } else {
-                $fullName.TrimStart('\', '/')
+                $file.ToString().TrimStart('\', '/')
+            }
+
+            $title = if ($file.Title) {
+                $file.Title
+            } elseif ($file.BaseName) {
+                $file.BaseName
+            } else {
+                [System.IO.Path]::GetFileNameWithoutExtension($rel)
             }
 
             $parts = $rel -split '[\\/]'
@@ -546,7 +572,7 @@ function Build-ServerFileTreeNode {
                 $node.Files.Add([PSCustomObject]@{
                     Name     = $parts[0]
                     RelPath  = $rel.Replace('\', '/')
-                    Title    = [System.IO.Path]::GetFileNameWithoutExtension($parts[0])
+                    Title    = $title
                 })
             } else {
                 $currNode = $node
@@ -564,7 +590,7 @@ function Build-ServerFileTreeNode {
                 $currNode.Files.Add([PSCustomObject]@{
                     Name     = $fileName
                     RelPath  = $rel.Replace('\', '/')
-                    Title    = [System.IO.Path]::GetFileNameWithoutExtension($fileName)
+                    Title    = $title
                 })
             }
         }
