@@ -1286,8 +1286,8 @@ function Get-ChatWidgetHtml {
     return $widget
 }
 
-# --- システム設定ビュー生成関数 ---
-function Get-SettingsViewHtml {
+# --- システム設定データ取得・準備関数 ---
+function Get-SettingsViewData {
     param (
         [string]$Lang = "ja"
     )
@@ -1308,172 +1308,189 @@ function Get-SettingsViewHtml {
     $notRunText  = Get-LocalizedStr -Key "settings_not_run" -Lang $Lang
     $lastScanStr = if ($script:WikiIndexLastScan -and $script:WikiIndexLastScan -gt [DateTime]::MinValue) { $script:WikiIndexLastScan.ToString("yyyy-MM-dd HH:mm:ss") } else { $notRunText }
 
-    $titleLbl       = Get-LocalizedStr -Key "settings_title" -Lang $Lang
-    $descLbl        = Get-LocalizedStr -Key "settings_desc" -Lang $Lang
-    $searchTitleLbl = Get-LocalizedStr -Key "settings_search_title" -Lang $Lang
-    $prebuildLbl    = Get-LocalizedStr -Key "settings_prebuild_label" -Lang $Lang
-    $defOffLbl      = Get-LocalizedStr -Key "settings_default_off" -Lang $Lang
-    $prebuildDesc   = Get-LocalizedStr -Key "settings_prebuild_desc" -Lang $Lang
-    $cacheLbl       = Get-LocalizedStr -Key "settings_cache_label" -Lang $Lang
-    $cacheDesc      = Get-LocalizedStr -Key "settings_cache_desc" -Lang $Lang
-    $cacheFoldLbl   = Get-LocalizedStr -Key "settings_cache_folder" -Lang $Lang
-    $cachedStatLbl  = Get-LocalizedStr -Key "settings_cached_status" -Lang $Lang -FormatArgs @($cachedCount, $lastScanStr)
-    $rebuildBtnLbl  = Get-LocalizedStr -Key "settings_rebuild_btn" -Lang $Lang
-    $ragTitleLbl    = Get-LocalizedStr -Key "settings_rag_title" -Lang $Lang
-    $ragEnableLbl   = Get-LocalizedStr -Key "settings_rag_enable" -Lang $Lang
-    $machineIdLbl   = Get-LocalizedStr -Key "settings_machine_id" -Lang $Lang
-    $copyMachineLbl = Get-LocalizedStr -Key "settings_copy_machine_id" -Lang $Lang
-    $copiedLbl      = Get-LocalizedStr -Key "settings_copied" -Lang $Lang
-    $actCodeLbl     = Get-LocalizedStr -Key "settings_act_code" -Lang $Lang
-    $actHolderLbl   = Get-LocalizedStr -Key "settings_act_code_holder" -Lang $Lang
-    $actDescLbl     = Get-LocalizedStr -Key "settings_act_desc" -Lang $Lang
-    $apiUrlLbl      = Get-LocalizedStr -Key "settings_api_url" -Lang $Lang
-    $modelLbl       = Get-LocalizedStr -Key "settings_model" -Lang $Lang
-    $saveBtnLbl     = Get-LocalizedStr -Key "settings_save_btn" -Lang $Lang
-
-    $serverTitleLbl = Get-LocalizedStr -Key "settings_server_title" -Lang $Lang
-    $serverDescLbl  = Get-LocalizedStr -Key "settings_shutdown_desc" -Lang $Lang
-    $shutdownBtnLbl = Get-LocalizedStr -Key "settings_shutdown_btn" -Lang $Lang
-    $savedSuccessJs = ConvertTo-JsString (Get-LocalizedStr -Key "settings_saved_success" -Lang $Lang)
-    $savedErrorJs   = ConvertTo-JsString (Get-LocalizedStr -Key "settings_saved_error" -Lang $Lang)
-    $commErrorJs    = ConvertTo-JsString (Get-LocalizedStr -Key "settings_comm_error" -Lang $Lang)
-    $rebuildRunJs   = ConvertTo-JsString (Get-LocalizedStr -Key "settings_rebuild_running" -Lang $Lang)
-    $rebuildStartJs = ConvertTo-JsString (Get-LocalizedStr -Key "settings_rebuild_start" -Lang $Lang)
-    $rebuildFailJs  = ConvertTo-JsString (Get-LocalizedStr -Key "settings_rebuild_failed" -Lang $Lang)
-    $clearAllBtnLbl = Get-LocalizedStr -Key "settings_clear_all_cache" -Lang $Lang
-    $clearAllDesc   = Get-LocalizedStr -Key "settings_clear_all_desc" -Lang $Lang
-    $clearAllConfJs = ConvertTo-JsString (Get-LocalizedStr -Key "settings_clear_all_confirm" -Lang $Lang)
-    $clearAllRunJs  = ConvertTo-JsString (Get-LocalizedStr -Key "settings_clear_all_running" -Lang $Lang)
-    $clearAllFailJs = ConvertTo-JsString (Get-LocalizedStr -Key "settings_clear_all_failed" -Lang $Lang)
     $rawIndexingInProg = Get-LocalizedStr -Key "indexing_in_progress" -Lang $Lang -FormatArgs @("__INDEX_CURR__", "__INDEX_TOTAL__")
-    $indexingInProgJs = ConvertTo-JsString $rawIndexingInProg
+
+    return [PSCustomObject]@{
+        PrebuildChecked   = $prebuildChecked
+        UseCacheChecked   = $useCacheChecked
+        CacheFolder       = $cacheFolder
+        LocalMachineId    = $localMachineId
+        RagEnabledChecked = $ragEnabledChecked
+        ApiUrl            = $apiUrl
+        Model             = $model
+        UserEmail         = $userEmail
+
+        TitleLbl          = Get-LocalizedStr -Key "settings_title" -Lang $Lang
+        DescLbl           = Get-LocalizedStr -Key "settings_desc" -Lang $Lang
+        SearchTitleLbl    = Get-LocalizedStr -Key "settings_search_title" -Lang $Lang
+        PrebuildLbl       = Get-LocalizedStr -Key "settings_prebuild_label" -Lang $Lang
+        DefOffLbl         = Get-LocalizedStr -Key "settings_default_off" -Lang $Lang
+        PrebuildDesc      = Get-LocalizedStr -Key "settings_prebuild_desc" -Lang $Lang
+        CacheLbl          = Get-LocalizedStr -Key "settings_cache_label" -Lang $Lang
+        CacheDesc         = Get-LocalizedStr -Key "settings_cache_desc" -Lang $Lang
+        CacheFoldLbl      = Get-LocalizedStr -Key "settings_cache_folder" -Lang $Lang
+        CachedStatLbl     = Get-LocalizedStr -Key "settings_cached_status" -Lang $Lang -FormatArgs @($cachedCount, $lastScanStr)
+        RebuildBtnLbl     = Get-LocalizedStr -Key "settings_rebuild_btn" -Lang $Lang
+        RagTitleLbl       = Get-LocalizedStr -Key "settings_rag_title" -Lang $Lang
+        RagEnableLbl      = Get-LocalizedStr -Key "settings_rag_enable" -Lang $Lang
+        MachineIdLbl      = Get-LocalizedStr -Key "settings_machine_id" -Lang $Lang
+        CopyMachineLbl    = Get-LocalizedStr -Key "settings_copy_machine_id" -Lang $Lang
+        CopiedLbl         = Get-LocalizedStr -Key "settings_copied" -Lang $Lang
+        ActCodeLbl        = Get-LocalizedStr -Key "settings_act_code" -Lang $Lang
+        ActHolderLbl      = Get-LocalizedStr -Key "settings_act_code_holder" -Lang $Lang
+        ActDescLbl        = Get-LocalizedStr -Key "settings_act_desc" -Lang $Lang
+        ApiUrlLbl         = Get-LocalizedStr -Key "settings_api_url" -Lang $Lang
+        ModelLbl          = Get-LocalizedStr -Key "settings_model" -Lang $Lang
+        SaveBtnLbl        = Get-LocalizedStr -Key "settings_save_btn" -Lang $Lang
+        ServerTitleLbl    = Get-LocalizedStr -Key "settings_server_title" -Lang $Lang
+        ServerDescLbl     = Get-LocalizedStr -Key "settings_shutdown_desc" -Lang $Lang
+        ShutdownBtnLbl    = Get-LocalizedStr -Key "settings_shutdown_btn" -Lang $Lang
+        SavedSuccessJs    = ConvertTo-JsString (Get-LocalizedStr -Key "settings_saved_success" -Lang $Lang)
+        SavedErrorJs      = ConvertTo-JsString (Get-LocalizedStr -Key "settings_saved_error" -Lang $Lang)
+        CommErrorJs       = ConvertTo-JsString (Get-LocalizedStr -Key "settings_comm_error" -Lang $Lang)
+        RebuildRunJs      = ConvertTo-JsString (Get-LocalizedStr -Key "settings_rebuild_running" -Lang $Lang)
+        RebuildStartJs    = ConvertTo-JsString (Get-LocalizedStr -Key "settings_rebuild_start" -Lang $Lang)
+        RebuildFailJs     = ConvertTo-JsString (Get-LocalizedStr -Key "settings_rebuild_failed" -Lang $Lang)
+        ClearAllBtnLbl    = Get-LocalizedStr -Key "settings_clear_all_cache" -Lang $Lang
+        ClearAllDesc      = Get-LocalizedStr -Key "settings_clear_all_desc" -Lang $Lang
+        ClearAllConfJs    = ConvertTo-JsString (Get-LocalizedStr -Key "settings_clear_all_confirm" -Lang $Lang)
+        ClearAllRunJs     = ConvertTo-JsString (Get-LocalizedStr -Key "settings_clear_all_running" -Lang $Lang)
+        ClearAllFailJs    = ConvertTo-JsString (Get-LocalizedStr -Key "settings_clear_all_failed" -Lang $Lang)
+        IndexingInProgJs  = ConvertTo-JsString $rawIndexingInProg
+    }
+}
+
+# --- システム設定 UI コンポーネント描画サブ関数 ---
+function Render-SettingsSearchCard {
+    param ([PSCustomObject]$Data)
 
     return @"
-<div class="settings-container">
-    <h2>$titleLbl</h2>
-    <p>$descLbl</p>
-
-    <div id="settingsToast" class="okf-card" style="display:none; border-left: 4px solid #28a745; margin-bottom: 20px;">
-        <span id="settingsToastMsg" style="font-weight: bold;"></span>
-    </div>
-
-    <form id="settingsForm" onsubmit="saveSettings(event)" style="display: flex; flex-direction: column; gap: 20px;">
         <div class="okf-card">
-            <div class="okf-card-header">$searchTitleLbl</div>
+            <div class="okf-card-header">$($Data.SearchTitleLbl)</div>
             <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 12px;">
                 <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-                    <input type="checkbox" id="prebuildIndex" name="prebuildIndex" $prebuildChecked>
-                    <span><strong>$prebuildLbl</strong> $defOffLbl</span>
+                    <input type="checkbox" id="prebuildIndex" name="prebuildIndex" $($Data.PrebuildChecked)>
+                    <span><strong>$($Data.PrebuildLbl)</strong> $($Data.DefOffLbl)</span>
                 </label>
                 <div style="font-size: 13px; color: #586069; margin-left: 24px;">
-                    $prebuildDesc
+                    $($Data.PrebuildDesc)
                 </div>
 
                 <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-top: 8px;">
-                    <input type="checkbox" id="useCache" name="useCache" $useCacheChecked>
-                    <span><strong>$cacheLbl</strong> $defOffLbl</span>
+                    <input type="checkbox" id="useCache" name="useCache" $($Data.UseCacheChecked)>
+                    <span><strong>$($Data.CacheLbl)</strong> $($Data.DefOffLbl)</span>
                 </label>
                 <div style="font-size: 13px; color: #586069; margin-left: 24px;">
-                    $cacheDesc
+                    $($Data.CacheDesc)
                 </div>
 
                 <div style="margin-left: 24px; margin-top: 5px;">
-                    <label for="cacheFolder" style="font-size: 13px; font-weight: bold;">$cacheFoldLbl</label><br>
-                    <input type="text" id="cacheFolder" name="cacheFolder" value="$cacheFolder" style="width: 250px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;" required>
+                    <label for="cacheFolder" style="font-size: 13px; font-weight: bold;">$($Data.CacheFoldLbl)</label><br>
+                    <input type="text" id="cacheFolder" name="cacheFolder" value="$($Data.CacheFolder)" style="width: 250px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;" required>
                 </div>
             </div>
 
             <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eaecef; font-size: 13px; color: #586069; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                 <div>
-                    <strong>$cachedStatLbl</strong>
+                    <strong>$($Data.CachedStatLbl)</strong>
                 </div>
                 <div style="display: flex; gap: 8px;">
                     <button type="button" id="clearAllCacheBtn" onclick="clearAllCachesNow()" style="padding: 6px 12px; background: #fff; color: #d73a49; border: 1px solid #d1d5da; border-radius: 4px; cursor: pointer; font-weight: bold; display: inline-flex; align-items: center; gap: 4px;">
-                        $clearAllBtnLbl
+                        $($Data.ClearAllBtnLbl)
                     </button>
                     <button type="button" id="rebuildBtn" onclick="rebuildIndexNow()" style="padding: 6px 12px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
-                        $rebuildBtnLbl
+                        $($Data.RebuildBtnLbl)
                     </button>
                 </div>
             </div>
             <div style="font-size: 12px; color: #6a737d; margin-top: 8px;">
-                $clearAllDesc
+                $($Data.ClearAllDesc)
             </div>
         </div>
+"@
+}
 
+function Render-SettingsRagCard {
+    param ([PSCustomObject]$Data)
+
+    return @"
         <div class="okf-card">
-            <div class="okf-card-header">$ragTitleLbl</div>
+            <div class="okf-card-header">$($Data.RagTitleLbl)</div>
             <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 14px;">
                 <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-                    <input type="checkbox" id="ragEnabled" name="ragEnabled" $ragEnabledChecked>
-                    <span><strong>$ragEnableLbl</strong></span>
+                    <input type="checkbox" id="ragEnabled" name="ragEnabled" $($Data.RagEnabledChecked)>
+                    <span><strong>$($Data.RagEnableLbl)</strong></span>
                 </label>
 
                 <!-- マシン ID 表示 ＆ コピー -->
                 <div style="background: #f6f8fa; border: 1px solid #e1e4e8; border-radius: 6px; padding: 12px; margin-left: 24px;">
-                    <div style="font-size: 12px; font-weight: bold; color: #586069; margin-bottom: 6px;">$machineIdLbl</div>
+                    <div style="font-size: 12px; font-weight: bold; color: #586069; margin-bottom: 6px;">$($Data.MachineIdLbl)</div>
                     <div style="display: flex; align-items: center; gap: 10px;">
-                        <code id="machineIdText" style="font-family: monospace; font-size: 14px; font-weight: bold; background: #fff; border: 1px solid #d1d5da; padding: 6px 12px; border-radius: 4px; color: #0366d6;">$localMachineId</code>
+                        <code id="machineIdText" style="font-family: monospace; font-size: 14px; font-weight: bold; background: #fff; border: 1px solid #d1d5da; padding: 6px 12px; border-radius: 4px; color: #0366d6;">$($Data.LocalMachineId)</code>
                         <button type="button" onclick="copyMachineId(this)" style="padding: 6px 12px; font-size: 12px; background: #fff; border: 1px solid #d1d5da; border-radius: 4px; cursor: pointer; color: #24292e;">
-                            $copyMachineLbl
+                            $($Data.CopyMachineLbl)
                         </button>
                     </div>
                 </div>
 
                 <!-- アクティベーションコード入力欄 -->
                 <div style="margin-left: 24px;">
-                    <label for="activationCode" style="font-size: 13px; font-weight: bold;">$actCodeLbl</label><br>
-                    <input type="text" id="activationCode" name="activationCode" placeholder="$actHolderLbl" style="width: 100%; max-width: 500px; padding: 7px 10px; font-family: monospace; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;">
+                    <label for="activationCode" style="font-size: 13px; font-weight: bold;">$($Data.ActCodeLbl)</label><br>
+                    <input type="text" id="activationCode" name="activationCode" placeholder="$($Data.ActHolderLbl)" style="width: 100%; max-width: 500px; padding: 7px 10px; font-family: monospace; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;">
                     <div style="font-size: 12px; color: #586069; margin-top: 4px;">
-                        $actDescLbl
+                        $($Data.ActDescLbl)
                     </div>
                 </div>
 
                 <div style="margin-left: 24px;">
                     <label for="userEmail" style="font-size: 13px; font-weight: bold;">メールアドレス (登録時に入力した場合のみ):</label><br>
-                    <input type="email" id="userEmail" name="userEmail" value="$userEmail" placeholder="user@example.com" style="width: 100%; max-width: 350px; padding: 6px 10px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;">
+                    <input type="email" id="userEmail" name="userEmail" value="$($Data.UserEmail)" placeholder="user@example.com" style="width: 100%; max-width: 350px; padding: 6px 10px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;">
                 </div>
 
                 <div style="margin-left: 24px; display: flex; flex-direction: column; gap: 10px; margin-top: 4px;">
                     <div>
-                        <label for="apiUrl" style="font-size: 13px; font-weight: bold;">$apiUrlLbl</label><br>
-                        <input type="text" id="apiUrl" name="apiUrl" value="$apiUrl" style="width: 100%; max-width: 400px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;">
+                        <label for="apiUrl" style="font-size: 13px; font-weight: bold;">$($Data.ApiUrlLbl)</label><br>
+                        <input type="text" id="apiUrl" name="apiUrl" value="$($Data.ApiUrl)" style="width: 100%; max-width: 400px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;">
                     </div>
                     <div>
-                        <label for="model" style="font-size: 13px; font-weight: bold;">$modelLbl</label><br>
-                        <input type="text" id="model" name="model" value="$model" style="width: 100%; max-width: 400px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;">
+                        <label for="model" style="font-size: 13px; font-weight: bold;">$($Data.ModelLbl)</label><br>
+                        <input type="text" id="model" name="model" value="$($Data.Model)" style="width: 100%; max-width: 400px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;">
                     </div>
                 </div>
             </div>
         </div>
+"@
+}
 
-        <div>
-            <button type="submit" id="saveBtn" style="padding: 10px 24px; background: #28a745; color: white; border: none; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer;">
-                $saveBtnLbl
-            </button>
-        </div>
-    </form>
+function Render-SettingsServerCard {
+    param ([PSCustomObject]$Data)
 
+    return @"
     <div class="okf-card" style="margin-top: 30px; border-color: #f5c6cb;">
-        <div class="okf-card-header" style="color: #721c24;">$serverTitleLbl</div>
+        <div class="okf-card-header" style="color: #721c24;">$($Data.ServerTitleLbl)</div>
         <div style="margin-top: 12px; font-size: 13px; color: #586069;">
-            $serverDescLbl
+            $($Data.ServerDescLbl)
         </div>
         <div style="margin-top: 15px;">
             <button type="button" onclick="shutdownWikiServer()" style="padding: 8px 18px; background: #dc3545; color: white; border: none; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer;">
-                $shutdownBtnLbl
+                $($Data.ShutdownBtnLbl)
             </button>
         </div>
     </div>
-</div>
+"@
+}
 
+function Render-SettingsScript {
+    param ([PSCustomObject]$Data)
+
+    return @"
 <script>
 function copyMachineId(btn) {
     var mid = document.getElementById('machineIdText').innerText.trim();
     if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(mid).then(function() {
             var orig = btn.innerText;
-            btn.innerText = '$copiedLbl';
+            btn.innerText = '$($Data.CopiedLbl)';
             setTimeout(function() { btn.innerText = orig; }, 2000);
         });
     }
@@ -1533,17 +1550,17 @@ function saveSettings(e) {
     .then(function(res) { return res.json(); })
     .then(function(data) {
         saveBtn.disabled = false;
-        saveBtn.innerText = '$saveBtnLbl';
+        saveBtn.innerText = '$($Data.SaveBtnLbl)';
         if (data.success) {
-            showToast('$savedSuccessJs', false);
+            showToast('$($Data.SavedSuccessJs)', false);
         } else {
-            showToast('$savedErrorJs' + (data.message || ''), true);
+            showToast('$($Data.SavedErrorJs)' + (data.message || ''), true);
         }
     })
     .catch(function(err) {
         saveBtn.disabled = false;
-        saveBtn.innerText = '$saveBtnLbl';
-        showToast('$commErrorJs', true);
+        saveBtn.innerText = '$($Data.SaveBtnLbl)';
+        showToast('$($Data.CommErrorJs)', true);
     });
 }
 
@@ -1551,16 +1568,16 @@ function rebuildIndexNow() {
     var rebuildBtn = document.getElementById('rebuildBtn');
     if (rebuildBtn) {
         rebuildBtn.disabled = true;
-        rebuildBtn.innerText = '$rebuildRunJs';
+        rebuildBtn.innerText = '$($Data.RebuildRunJs)';
     }
-    showToast('$rebuildStartJs', false, 0);
+    showToast('$($Data.RebuildStartJs)', false, 0);
 
     var pollTimer = setInterval(function() {
         fetch('/api/indexing-status')
         .then(function(r) { return r.json(); })
         .then(function(st) {
             if (st && st.IsBuilding && st.Total > 0) {
-                var txt = '$indexingInProgJs'.replace('__INDEX_CURR__', st.Current).replace('__INDEX_TOTAL__', st.Total);
+                var txt = '$($Data.IndexingInProgJs)'.replace('__INDEX_CURR__', st.Current).replace('__INDEX_TOTAL__', st.Total);
                 showToast(txt, false, 0);
             }
         })
@@ -1573,58 +1590,99 @@ function rebuildIndexNow() {
         clearInterval(pollTimer);
         if (rebuildBtn) {
             rebuildBtn.disabled = false;
-            rebuildBtn.innerText = '$rebuildBtnLbl';
+            rebuildBtn.innerText = '$($Data.RebuildBtnLbl)';
         }
         if (data.success) {
             showToast('✅ ' + data.message, false, 3000);
             setTimeout(function() { location.reload(); }, 1200);
         } else {
-            showToast('$rebuildFailJs' + (data.message || ''), true, 5000);
+            showToast('$($Data.RebuildFailJs)' + (data.message || ''), true, 5000);
         }
     })
     .catch(function(err) {
         clearInterval(pollTimer);
         if (rebuildBtn) {
             rebuildBtn.disabled = false;
-            rebuildBtn.innerText = '$rebuildBtnLbl';
+            rebuildBtn.innerText = '$($Data.RebuildBtnLbl)';
         }
-        showToast('$commErrorJs', true, 5000);
+        showToast('$($Data.CommErrorJs)', true, 5000);
     });
 }
 
 function clearAllCachesNow() {
-    if (!confirm('$clearAllConfJs')) {
+    if (!confirm('$($Data.ClearAllConfJs)')) {
         return;
     }
     var clearBtn = document.getElementById('clearAllCacheBtn');
     if (clearBtn) {
         clearBtn.disabled = true;
-        clearBtn.innerText = '$clearAllRunJs';
+        clearBtn.innerText = '$($Data.ClearAllRunJs)';
     }
-    showToast('$clearAllRunJs', false, 0);
+    showToast('$($Data.ClearAllRunJs)', false, 0);
 
     fetch('/api/config?action=clear_all_caches', { method: 'POST' })
     .then(function(res) { return res.json(); })
     .then(function(data) {
         if (clearBtn) {
             clearBtn.disabled = false;
-            clearBtn.innerText = '$clearAllBtnLbl';
+            clearBtn.innerText = '$($Data.ClearAllBtnLbl)';
         }
         if (data.success) {
             showToast('✅ ' + data.message, false, 3000);
             setTimeout(function() { location.reload(); }, 1200);
         } else {
-            showToast('$clearAllFailJs' + (data.message || ''), true, 5000);
+            showToast('$($Data.ClearAllFailJs)' + (data.message || ''), true, 5000);
         }
     })
     .catch(function(err) {
         if (clearBtn) {
             clearBtn.disabled = false;
-            clearBtn.innerText = '$clearAllBtnLbl';
+            clearBtn.innerText = '$($Data.ClearAllBtnLbl)';
         }
-        showToast('$commErrorJs', true, 5000);
+        showToast('$($Data.CommErrorJs)', true, 5000);
     });
 }
 </script>
+"@
+}
+
+# --- システム設定ビュー生成メイン関数 ---
+function Get-SettingsViewHtml {
+    param (
+        [string]$Lang = "ja"
+    )
+
+    $data = Get-SettingsViewData -Lang $Lang
+
+    $searchCardHtml = Render-SettingsSearchCard -Data $data
+    $ragCardHtml    = Render-SettingsRagCard -Data $data
+    $serverCardHtml = Render-SettingsServerCard -Data $data
+    $scriptHtml     = Render-SettingsScript -Data $data
+
+    return @"
+<div class="settings-container">
+    <h2>$($data.TitleLbl)</h2>
+    <p>$($data.DescLbl)</p>
+
+    <div id="settingsToast" class="okf-card" style="display:none; border-left: 4px solid #28a745; margin-bottom: 20px;">
+        <span id="settingsToastMsg" style="font-weight: bold;"></span>
+    </div>
+
+    <form id="settingsForm" onsubmit="saveSettings(event)" style="display: flex; flex-direction: column; gap: 20px;">
+$searchCardHtml
+
+$ragCardHtml
+
+        <div>
+            <button type="submit" id="saveBtn" style="padding: 10px 24px; background: #28a745; color: white; border: none; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer;">
+                $($data.SaveBtnLbl)
+            </button>
+        </div>
+    </form>
+
+$serverCardHtml
+</div>
+
+$scriptHtml
 "@
 }
