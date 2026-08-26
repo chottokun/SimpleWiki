@@ -867,16 +867,6 @@ function Get-SearchViewHtml {
 "@
 }
 
-function Get-OKFSearchResultsHtml {
-    param (
-        [string]$query = "",
-        [string]$statusFilter = "active",
-        [string]$domainFilter = "",
-        [string]$Lang = "ja"
-    )
-    return Get-SearchViewHtml -Query $query -StatusFilter $statusFilter -DomainFilter $domainFilter -Lang $Lang
-}
-
 function Get-ChatWidgetHtml {
     param (
         [string]$Lang = "ja"
