@@ -77,9 +77,17 @@ function Get-MachineFingerprint {
             if ($csp -and $csp.UUID -and $csp.UUID -ne "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF") {
                 $uuid = $csp.UUID.Trim()
             }
+        } elseif (Test-Path "/etc/machine-id") {
+            $uuid = (Get-Content -Path "/etc/machine-id" -Raw -ErrorAction SilentlyContinue).Trim()
+        } elseif (Test-Path "/var/lib/dbus/machine-id") {
+            $uuid = (Get-Content -Path "/var/lib/dbus/machine-id" -Raw -ErrorAction SilentlyContinue).Trim()
         }
+
         if ([string]::IsNullOrWhiteSpace($uuid)) {
-            $rawId = "$($env:COMPUTERNAME):$($env:PROCESSOR_IDENTIFIER):$($env:USERDOMAIN)"
+            $computerName = if ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { [System.Environment]::MachineName }
+            $procId = if ($env:PROCESSOR_IDENTIFIER) { $env:PROCESSOR_IDENTIFIER } else { [System.Runtime.InteropServices.RuntimeInformation]::OSDescription }
+            $userDomain = if ($env:USERDOMAIN) { $env:USERDOMAIN } else { [System.Environment]::UserName }
+            $rawId = "${computerName}:${procId}:${userDomain}"
             $sha = [System.Security.Cryptography.SHA256]::Create()
             $hash = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($rawId))
             $uuid = [System.BitConverter]::ToString($hash).Replace("-", "")

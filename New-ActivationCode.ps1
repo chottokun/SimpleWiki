@@ -49,6 +49,9 @@ if ([string]::IsNullOrWhiteSpace($ApiKey)) {
 # 2. 方式の選択 / マシンIDの入力
 $localMachineId = Get-MachineFingerprint
 $isLegacy = $Legacy
+$MachineId = if ([string]::IsNullOrWhiteSpace($MachineId)) { "" } else { $MachineId.Trim() }
+$Email = if ([string]::IsNullOrWhiteSpace($Email)) { "" } else { $Email.Trim() }
+
 if (-not $isLegacy -and [string]::IsNullOrWhiteSpace($MachineId)) {
     Write-Host "`n発行タイプを選択してください:" -ForegroundColor Cyan
     Write-Host "  [1] マシン固有ロック形式 (推奨: 指定PC専用)" -ForegroundColor White
@@ -58,8 +61,12 @@ if (-not $isLegacy -and [string]::IsNullOrWhiteSpace($MachineId)) {
         $isLegacy = $true
     } else {
         $inputMachine = Read-Host "ユーザーのマシンID (例: $localMachineId) を入力してください (空欄で自PCのID)"
-        $MachineId = if ([string]::IsNullOrWhiteSpace($inputMachine)) { $localMachineId } else { $inputMachine }
+        $MachineId = if ([string]::IsNullOrWhiteSpace($inputMachine)) { $localMachineId } else { $inputMachine.Trim() }
     }
+}
+
+if (-not $isLegacy -and [string]::IsNullOrWhiteSpace($MachineId)) {
+    $MachineId = $localMachineId
 }
 
 $activationCode = ""
