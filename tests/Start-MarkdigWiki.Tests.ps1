@@ -1404,6 +1404,64 @@ Describe 'Directory Listing and Fallback Tests (Get-DirectoryListingHtml)' {
         } | Should Not Throw
     }
 
+    It "Render-ServerFolderTreeHtml renders empty root node with empty ul list" {
+        $node = [PSCustomObject]@{
+            Files      = [System.Collections.Generic.List[PSObject]]::new()
+            SubFolders = [ordered]@{}
+        }
+        $html = Render-ServerFolderTreeHtml -node $node -currentRelPath "" -wikiDir "C:\wiki"
+        $html | Should -Be "<ul>`n</ul>"
+    }
+
+    It "Render-ServerFolderTreeHtml encodes file title, Uri escapes webPath, and highlights active file" {
+        $wikiDir = "C:\wiki"
+        $file1 = [PSCustomObject]@{ FullName = "C:\wiki\docs\<test & spec>.md"; BaseName = "<test & spec>" }
+        $file2 = [PSCustomObject]@{ FullName = "C:\wiki\docs\normal.md"; BaseName = "normal" }
+        $node = [PSCustomObject]@{
+            Files      = [System.Collections.Generic.List[PSObject]]@($file1, $file2)
+            SubFolders = [ordered]@{}
+        }
+
+        $html = Render-ServerFolderTreeHtml -node $node -currentRelPath "docs/<test & spec>.md" -wikiDir $wikiDir
+        $html | Should -Match "<li class='nav-file'><a href='/docs/%3Ctest%20&%20spec%3E.md' class=""active"">&lt;test &amp; spec&gt;</a></li>"
+        $html | Should -Match "<li class='nav-file'><a href='/docs/normal.md'>normal</a></li>"
+    }
+
+    It "Render-ServerFolderTreeHtml recursively renders nested subfolders and toggles open attribute for active path" {
+        $wikiDir = "C:\wiki"
+        $activeFile = [PSCustomObject]@{ FullName = "C:\wiki\sub1\active.md"; BaseName = "active" }
+        $inactiveFile = [PSCustomObject]@{ FullName = "C:\wiki\sub2\inactive.md"; BaseName = "inactive" }
+
+        $subNode1 = [PSCustomObject]@{
+            Files      = [System.Collections.Generic.List[PSObject]]@($activeFile)
+            SubFolders = [ordered]@{}
+        }
+        $subNode2 = [PSCustomObject]@{
+            Files      = [System.Collections.Generic.List[PSObject]]@($inactiveFile)
+            SubFolders = [ordered]@{}
+        }
+
+        $rootNode = [PSCustomObject]@{
+            Files      = [System.Collections.Generic.List[PSObject]]::new()
+            SubFolders = [ordered]@{
+                "sub1 <active>"   = $subNode1
+                "sub2 <inactive>" = $subNode2
+            }
+        }
+
+        $html = Render-ServerFolderTreeHtml -node $rootNode -currentRelPath "sub1\active.md" -wikiDir $wikiDir
+
+        # Check sub1 is open andHtml encoded summary
+        $html | Should -Match "<details open>"
+        $html | Should -Match "<summary class='folder-title'>📁 sub1 &lt;active&gt;</summary>"
+        $html | Should -Match "<li class='nav-file'><a href='/sub1/active.md' class=""active"">active</a></li>"
+
+        # Check sub2 is closed (no open attribute) and Html encoded summary
+        $html | Should -Match "<details>"
+        $html | Should -Match "<summary class='folder-title'>📁 sub2 &lt;inactive&gt;</summary>"
+        $html | Should -Match "<li class='nav-file'><a href='/sub2/inactive.md'>inactive</a></li>"
+    }
+
     It "Get-ChatWidgetHtml に開いているページを含めるデフォルトONのチェックボックスが含まれる" {
         $html = Get-ChatWidgetHtml
         $html | Should Match "okfIncludeCurrentPage"
