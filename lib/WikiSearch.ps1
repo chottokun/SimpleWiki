@@ -402,16 +402,38 @@ function Build-ServerFileTreeNode {
 function Test-ServerNodeHasActiveFile {
     param ($node, $currentRelPath, $wikiDir)
 
-    foreach ($file in $node.Files) {
-        $relPath = $file.FullName.Substring($wikiDir.Length).TrimStart("\", "/")
-        if ($relPath -eq $currentRelPath) {
-            return $true
+    if ($null -eq $node) { return $false }
+
+    if ($node.Files) {
+        foreach ($file in $node.Files) {
+            if (-not [string]::IsNullOrWhiteSpace($wikiDir) -and $file.FullName) {
+                $relPath = $file.FullName.Substring($wikiDir.Length).TrimStart("\", "/")
+                if ($relPath -eq $currentRelPath) {
+                    return $true
+                }
+            } elseif ([string]::IsNullOrWhiteSpace($currentRelPath)) {
+                return $true
+            }
         }
     }
 
-    foreach ($folderName in $node.SubFolders.Keys) {
-        if (Test-ServerNodeHasActiveFile -node $node.SubFolders[$folderName] -currentRelPath $currentRelPath -wikiDir $wikiDir) {
-            return $true
+    if ($node.files -and $node.files.Count -gt 0 -and [string]::IsNullOrWhiteSpace($currentRelPath)) {
+        return $true
+    }
+
+    if ($node.SubFolders) {
+        foreach ($folderName in $node.SubFolders.Keys) {
+            if (Test-ServerNodeHasActiveFile -node $node.SubFolders[$folderName] -currentRelPath $currentRelPath -wikiDir $wikiDir) {
+                return $true
+            }
+        }
+    }
+
+    if ($node.children) {
+        foreach ($child in $node.children) {
+            if (Test-ServerNodeHasActiveFile -node $child -currentRelPath $currentRelPath -wikiDir $wikiDir) {
+                return $true
+            }
         }
     }
 

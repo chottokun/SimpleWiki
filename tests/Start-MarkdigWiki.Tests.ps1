@@ -1416,6 +1416,65 @@ Describe 'Directory Listing and Fallback Tests (Get-DirectoryListingHtml)' {
     }
 }
 
+Describe 'Test-ServerNodeHasActiveFile Unit Tests' {
+    BeforeAll {
+        $projectRoot = (Resolve-Path "$PSScriptRoot\..").Path
+        . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -DotSourceOnly
+    }
+
+    It 'Returns $true when node files count is greater than 0' {
+        $node = [PSCustomObject]@{
+            files = @("file1.md")
+        }
+        (Test-ServerNodeHasActiveFile -Node $node) | Should -Be $true
+    }
+
+    It 'Returns $true when a child node in children contains files' {
+        $childNode = [PSCustomObject]@{
+            files = @("active.md")
+            children = @()
+        }
+        $parentNode = [PSCustomObject]@{
+            files = @()
+            children = @($childNode)
+        }
+        (Test-ServerNodeHasActiveFile -Node $parentNode) | Should -Be $true
+    }
+
+    It 'Returns $false when node and all children have no files' {
+        $childNode = [PSCustomObject]@{
+            files = @()
+            children = @()
+        }
+        $parentNode = [PSCustomObject]@{
+            files = @()
+            children = @($childNode)
+        }
+        (Test-ServerNodeHasActiveFile -Node $parentNode) | Should -Be $false
+    }
+
+    It 'Returns $false when node is empty or null' {
+        $emptyNode = [PSCustomObject]@{
+            files = @()
+            children = @()
+        }
+        (Test-ServerNodeHasActiveFile -Node $emptyNode) | Should -Be $false
+        (Test-ServerNodeHasActiveFile -Node $null) | Should -Be $false
+    }
+
+    It 'Returns $true when active file matches currentRelPath in SubFolders tree structure' {
+        $wikiDir = Join-Path ([System.IO.Path]::GetTempPath()) "wiki"
+        $filePath = Join-Path $wikiDir (Join-Path "docs" "guide.md")
+        $fakeFile = [PSCustomObject]@{ FullName = $filePath }
+        $node = [PSCustomObject]@{
+            Files = [System.Collections.Generic.List[PSObject]]@($fakeFile)
+            SubFolders = [ordered]@{}
+        }
+        $relPath = Join-Path "docs" "guide.md"
+        (Test-ServerNodeHasActiveFile -node $node -currentRelPath $relPath -wikiDir $wikiDir) | Should -Be $true
+    }
+}
+
 Describe 'Index Cache and Settings View Tests' {
     BeforeAll {
         $testScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Join-Path $PWD "tests" }
