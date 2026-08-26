@@ -299,6 +299,39 @@ related:
         $footer = Get-OkfFooterCardHtml -Meta $meta -Lang "en"
         $footer | Should Match "Unknown"
     }
+
+    It "Get-OkfCardHtml combines TopBar and FooterCard HTML cleanly with default and explicit parameters" {
+        $meta = [PSCustomObject]@{
+            Title       = "<Script>Alert('XSS')</Script>"
+            Description = "Card <Description> & test"
+            Author      = "Author & Co."
+            Domain      = "infrastructure/database"
+            Status      = "active"
+            Version     = "1.2.0"
+            Tags        = @("DB", "SQL")
+            LastUpdated = (Get-Date "2026-03-15")
+        }
+
+        # Default parameters ($RelPath = "", $Lang = "ja")
+        $htmlDefault = Get-OkfCardHtml -Meta $meta
+        $htmlDefault | Should -Match "class=""okf-top-bar"""
+        $htmlDefault | Should -Match "class=""okf-footer-card"""
+        $htmlDefault | Should -Match "&lt;Script&gt;Alert\('XSS'\)&lt;/Script&gt;"
+        $htmlDefault | Should -Match "Card &lt;Description&gt; &amp; test"
+        $htmlDefault | Should -Match "Author &amp; Co."
+        $htmlDefault | Should -Match "📁 infrastructure/database"
+        $htmlDefault | Should -Match "v1.2.0"
+        $htmlDefault | Should -Not -Match "edit-doc-btn"
+
+        # Explicit parameters ($RelPath = "docs/db.md", $Lang = "en")
+        $htmlExplicit = Get-OkfCardHtml -Meta $meta -RelPath "docs/db.md" -Lang "en"
+        $htmlExplicit | Should -Match "class=""okf-top-bar"""
+        $htmlExplicit | Should -Match "class=""okf-footer-card"""
+        $htmlExplicit | Should -Match "edit-doc-btn"
+        $htmlExplicit | Should -Match "data-relpath='docs/db.md'"
+        $htmlExplicit | Should -Match "Edit"
+        $htmlExplicit | Should -Match "Document Metadata \(OKF\)"
+    }
 }
 
 
