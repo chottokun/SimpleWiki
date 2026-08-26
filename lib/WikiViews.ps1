@@ -616,6 +616,25 @@ function Get-TagsViewHtml {
 }
 
 # --- 品質・メンテナンスダッシュボード生成関数 ---
+function Render-DocList {
+    param (
+        $docArray,
+        [string]$emptyMsg
+    )
+    if ($null -eq $docArray) { return "<p class='empty-msg'>$emptyMsg</p>" }
+    $arr = @($docArray)
+    if ($arr.Count -eq 0) { return "<p class='empty-msg'>$emptyMsg</p>" }
+    $items = foreach ($item in $arr) {
+        if ($null -eq $item) { continue }
+        $relUri  = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
+        $title   = [System.Net.WebUtility]::HtmlEncode($item.Title)
+        $lastUpd = if ($item.LastUpdated -is [DateTime]) { $item.LastUpdated.ToString("yyyy-MM-dd") } else { $item.LastUpdated }
+        "<li><a href='$relUri'>$title</a> <span class='muted'>($lastUpd)</span></li>"
+    }
+    if (-not $items -or $items.Count -eq 0) { return "<p class='empty-msg'>$emptyMsg</p>" }
+    return "<ul>" + ($items -join "") + "</ul>"
+}
+
 function Get-MaintenanceViewHtml {
     param (
         [string]$Lang = "ja"
@@ -638,18 +657,6 @@ function Get-MaintenanceViewHtml {
     $maintDraft   = Get-LocalizedStr -Key "maint_drafts" -Lang $Lang
     $maintDep     = Get-LocalizedStr -Key "maint_deprecated" -Lang $Lang
     $maintNoDocs  = Get-LocalizedStr -Key "maint_no_docs" -Lang $Lang
-
-    function Render-DocList ($docArray, $emptyMsg) {
-        $arr = @($docArray)
-        if ($arr.Count -eq 0) { return "<p class='empty-msg'>$emptyMsg</p>" }
-        $items = foreach ($item in $arr) {
-            $relUri  = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
-            $title   = [System.Net.WebUtility]::HtmlEncode($item.Title)
-            $lastUpd = $item.LastUpdated.ToString("yyyy-MM-dd")
-            "<li><a href='$relUri'>$title</a> <span class='muted'>($lastUpd)</span></li>"
-        }
-        return "<ul>" + ($items -join "") + "</ul>"
-    }
 
     return @"
 <h1>$maintTitle</h1>

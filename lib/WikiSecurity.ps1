@@ -24,6 +24,9 @@ function Protect-StringAes {
 
 function Protect-StringDpapi {
     param ([string]$PlainText)
+    if (-not $IsWindows -and $env:OS -ne "Windows_NT") {
+        return Protect-StringAes -PlainText $PlainText
+    }
     Add-Type -AssemblyName System.Security
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($PlainText)
     $enc   = [System.Security.Cryptography.ProtectedData]::Protect($bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
@@ -57,6 +60,9 @@ function Unprotect-StringAes {
 function Unprotect-StringDpapi {
     param ([string]$EncryptedText)
     if ([string]::IsNullOrWhiteSpace($EncryptedText) -or -not $EncryptedText.StartsWith("DPAPI:")) { return "" }
+    if (-not $IsWindows -and $env:OS -ne "Windows_NT") {
+        return Unprotect-StringAes -EncryptedText ("ENC:" + $EncryptedText.Substring(6))
+    }
     try {
         Add-Type -AssemblyName System.Security
         $cipherText = $EncryptedText.Substring(6)

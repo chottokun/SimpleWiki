@@ -74,7 +74,7 @@ function Clear-AllWikiCaches {
 
     $deletedCount = 0
     if (Test-Path $cacheDir) {
-        $cacheFiles = Get-ChildItem -Path $cacheDir -Filter ".index-cache-*.json" -File -ErrorAction SilentlyContinue
+        $cacheFiles = Get-ChildItem -Path $cacheDir -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -like ".index-cache-*.json" }
         foreach ($f in $cacheFiles) {
             try {
                 Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue
@@ -158,14 +158,15 @@ function Load-WikiIndexCache {
 
         $targetDir = if (-not [string]::IsNullOrWhiteSpace($TargetWikiDir)) { $TargetWikiDir } else { $baseScriptDir }
         if ((Test-Path $targetDir) -and (Test-Path -LiteralPath $cacheFilePath)) {
-            $cacheItem = Get-Item -LiteralPath $cacheFilePath -ErrorAction SilentlyContinue
+            $cacheItem = Get-Item -LiteralPath $cacheFilePath -Force -ErrorAction SilentlyContinue
             if ($cacheItem) {
                 $cacheFileWriteTime = $cacheItem.LastWriteTime
-                $currentMdFiles = @(Get-ChildItem -Path $targetDir -Recurse -Filter "*.md" -ErrorAction SilentlyContinue |
+                $currentMdFiles = @(Get-ChildItem -Path $targetDir -Recurse -Filter "*.md" -Force -ErrorAction SilentlyContinue |
                     Where-Object { $_.FullName -notmatch '[\\/]\.(git|lib|tests|dist|\.cache)[\\/]' })
 
                 # ファイル件数が異なる場合（追加・削除された場合）はキャッシュ無効
-                if ($currentMdFiles.Count -ne $cacheData.Items.Count) {
+                $cacheItems = @($cacheData.Items)
+                if ($currentMdFiles.Count -ne $cacheItems.Count) {
                     return $false
                 }
 
