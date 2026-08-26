@@ -173,15 +173,21 @@ function Load-WikiIndexCache {
                     return $false
                 }
 
-                $hasNewer = $false
+                # Verify that all cached items still exist on disk and have not been modified
+                $currentMap = @{}
                 foreach ($f in $currentMdFiles) {
-                    if ($f.LastWriteTime -gt $cacheFileWriteTime) {
-                        $hasNewer = $true
-                        break
-                    }
+                    $normPath = $f.FullName.Replace('\', '/').ToLower()
+                    $currentMap[$normPath] = $f.LastWriteTime
                 }
-                if ($hasNewer) {
-                    return $false
+
+                foreach ($item in $cacheData.Items) {
+                    $itemPath = if ($item.FullPath) { $item.FullPath.Replace('\', '/').ToLower() } else { (Join-Path $targetDir $item.RelPath).Replace('\', '/').ToLower() }
+                    if (-not $currentMap.ContainsKey($itemPath)) {
+                        return $false
+                    }
+                    if ($currentMap[$itemPath] -gt $cacheFileWriteTime) {
+                        return $false
+                    }
                 }
             }
         }
