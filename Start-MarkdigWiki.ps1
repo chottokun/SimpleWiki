@@ -341,7 +341,11 @@ try {
                                 $validationError = "アクティベーションコードが無効です。この PC のマシン ID 用に発行されたコードであるか、メールアドレスが正しいかご確認ください。"
                             } else {
                                 # DPAPI で暗号化してローカル保護
-                                $dpapiKey = Protect-StringDpapi -PlainText $decryptedKey
+                                if ($IsWindows -or $env:OS -eq "Windows_NT") {
+                                    $dpapiKey = Protect-StringDpapi -PlainText $decryptedKey
+                                } else {
+                                    $dpapiKey = Protect-StringAes -PlainText $decryptedKey
+                                }
                                 $cfgDict["rag"]["apiKey"] = $dpapiKey
                             }
                         }

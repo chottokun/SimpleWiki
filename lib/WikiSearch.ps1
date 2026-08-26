@@ -74,7 +74,7 @@ function Clear-AllWikiCaches {
 
     $deletedCount = 0
     if (Test-Path $cacheDir) {
-        $cacheFiles = Get-ChildItem -Path $cacheDir -Filter ".index-cache-*.json" -File -ErrorAction SilentlyContinue
+        $cacheFiles = Get-ChildItem -Path $cacheDir -Force -Filter ".index-cache-*.json" -File -ErrorAction SilentlyContinue
         foreach ($f in $cacheFiles) {
             try {
                 Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue
@@ -158,11 +158,11 @@ function Load-WikiIndexCache {
 
         $targetDir = if (-not [string]::IsNullOrWhiteSpace($TargetWikiDir)) { $TargetWikiDir } else { $baseScriptDir }
         if ((Test-Path $targetDir) -and (Test-Path -LiteralPath $cacheFilePath)) {
-            $cacheItem = Get-Item -LiteralPath $cacheFilePath -ErrorAction SilentlyContinue
+            $cacheItem = Get-Item -LiteralPath $cacheFilePath -Force -ErrorAction SilentlyContinue
             if ($cacheItem) {
                 $cacheFileWriteTime = $cacheItem.LastWriteTime
                 $currentMdFiles = @(Get-ChildItem -Path $targetDir -Recurse -Filter "*.md" -ErrorAction SilentlyContinue |
-                    Where-Object { $_.FullName -notmatch '[\\/]\.(git|lib|tests|dist|\.cache)[\\/]' })
+                    Where-Object { $_.FullName -notmatch '[\\/]\.(git|lib|tests|dist|\.cache)[\\/]' }) | Where-Object { $null -ne $_ }
 
                 # ファイル件数が異なる場合（追加・削除された場合）はキャッシュ無効
                 if ($currentMdFiles.Count -ne $cacheData.Items.Count) {
@@ -769,96 +769,248 @@ function Search-OkfDocs {
         }
     }
 
+    # 正規表現パターンの事前エスケープ処理 (ドキュメントループ外で事前計算してCPUサイクルを削減)
+    $escapedExcludeKeywords = @(foreach ($ex in $excludeKeywords) { [regex]::Escape($ex) })
+    $phraseRegex            = if ($cleanQuery.Length -ge 2) { [regex]::Escape($cleanQuery) } else { $null }
+    $escapedKeywords       = @(foreach ($kw in $keywords) { [regex]::Escape($kw) })
+
     $results = [System.Collections.Generic.List[PSObject]]::new()
 
     foreach ($item in $script:WikiIndex) {
-        # 1. フィルタリング (Status, Domain, NOT除外)
-        if (-not (Test-OkfDocFilter -Item $item -StatusFilter $StatusFilter -DomainFilter $DomainFilter -ExcludeKeywords $excludeKeywords)) {
-            continue
+# --- OKF 讀懃ｴ｢繝倥Ν繝代・: 繧ｹ繝・・繧ｿ繧ｹ繝ｻ繝峨Γ繧､繝ｳ繝ｻNOT髯､螟悶ヵ繧｣繝ｫ繧ｿ蛻､螳・---
+function Test-OkfDocFilter {
+    param (
+        [PSObject]$Item,
+        [string]$StatusFilter = "active",
+        [string]$DomainFilter = "",
+        [string[]]$EscapedExcludeKeywords = @()
+    )
+
+    # 1. Status Filter (OKF v0.2: stable/active, draft/wip/review, deprecated/archived/obsolete)
+    $stFilterLower = if (-not [string]::IsNullOrWhiteSpace($StatusFilter)) { $StatusFilter.ToLower().Trim() } else { "active" }
+    $st = if ($Item.Status) { $Item.Status.ToString().ToLower().Trim() } else { "active" }
+    if ($stFilterLower -ne "all" -and $stFilterLower -ne "") {
+        $isMatch = ($st -eq $stFilterLower)
+        if (-not $isMatch) {
+            if ($stFilterLower -eq "active" -and $st -eq "stable") { $isMatch = $true }
+            if ($stFilterLower -eq "draft" -and ($st -in @("wip", "review", "in-review"))) { $isMatch = $true }
+            if ($stFilterLower -eq "deprecated" -and ($st -in @("archived", "obsolete"))) { $isMatch = $true }
         }
+        if (-not $isMatch) { return $false }
+    }
 
-        if ($keywords.Count -eq 0 -and [string]::IsNullOrWhiteSpace($cleanQuery) -and [string]::IsNullOrWhiteSpace($DomainFilter) -and $stFilterLower -eq "all" -and $excludeKeywords.Count -eq 0) {
-            continue
-        }
+    # 2. Domain Filter
+    if (-not [string]::IsNullOrWhiteSpace($DomainFilter)) {
+        $itemDomain = if ($Item.Domain) { $Item.Domain } else { "" }
+        if ($itemDomain -notlike "*$DomainFilter*") { return $false }
+    }
 
-        # 2. スコアリング計算
-        $score = Get-OkfDocScore -Item $item -CleanQuery $cleanQuery -Keywords $keywords
-        if ($score -lt 0) {
-            continue
-        }
-
-        # 3. 検索結果追加判定 & スニペット抽出
-        if ($score -gt 0 -or ($keywords.Count -eq 0 -and (-not [string]::IsNullOrWhiteSpace($DomainFilter) -or $stFilterLower -ne "all" -or $excludeKeywords.Count -gt 0))) {
-            $snippet = Get-OkfDocSnippet -Item $item -Keywords $keywords
-
-            $results.Add([PSCustomObject]@{
-                Meta    = $item
-                Score   = $score
-                Snippet = $snippet
-            })
+    # 3. NOT 髯､螟悶ヵ繧｣繝ｫ繧ｿ (繧ｿ繧､繝医Ν/讎りｦ・繧ｿ繧ｰ/譛ｬ譁・↓蟇ｾ雎｡縺悟性縺ｾ繧後ｋ蝣ｴ蜷医・髯､螟・
+    if ($EscapedExcludeKeywords -and $EscapedExcludeKeywords.Count -gt 0) {
+        foreach ($exRegex in $EscapedExcludeKeywords) {
+            if (($Item.Title -and $Item.Title -match "(?i)$exRegex") -or
+                ($Item.Description -and $Item.Description -match "(?i)$exRegex") -or
+                ($Item.Tags -and ($Item.Tags | Where-Object { $_ -match "(?i)$exRegex" })) -or
+                ($Item.BodyText -and $Item.BodyText -match "(?i)$exRegex")) {
+                return $false
+            }
         }
     }
 
-    $sorted = @($results | Sort-Object Score -Descending)
-    if ($MaxResults -gt 0 -and $sorted.Count -gt $MaxResults) {
-        return @($sorted[0..($MaxResults - 1)])
-    }
-    return $sorted
+    return $true
 }
 
-# --- Agentic Tools (PowerShell 内部実行ファンクション) ---
+# --- OKF 讀懃ｴ｢繝倥Ν繝代・: 驥阪∩莉倥￠繧ｹ繧ｳ繧｢繝ｪ繝ｳ繧ｰ險育ｮ・---
+function Get-OkfDocScore {
+    param (
+        [PSObject]$Item,
+        [string]$PhraseRegex = $null,
+        [string[]]$EscapedKeywords = @(),
+        [string]$CleanQuery = "",
+        [int]$KeywordCount = 0
+    )
 
-function Get-QueryParams {
-    param ([Parameter(Mandatory = $true)][object]$Request)
-    $queryDict = @{}
-    $rawQuery = $Request.Url.Query
-    if (-not [string]::IsNullOrWhiteSpace($rawQuery)) {
-        $trimmed = $rawQuery.TrimStart('?')
-        $pairs = $trimmed -split '&'
-        foreach ($pair in $pairs) {
-            if ([string]::IsNullOrWhiteSpace($pair)) { continue }
-            $kv = $pair -split '=', 2
-            $key = [System.Net.WebUtility]::UrlDecode($kv[0])
-            $val = if ($kv.Length -gt 1) { [System.Net.WebUtility]::UrlDecode($kv[1]) } else { "" }
-            $queryDict[$key] = $val
+    $score = 0
+    $matchedKwCount = 0
+
+    # A. 繝輔Ξ繝ｼ繧ｺ蜈ｨ菴謎ｸ閾ｴ繝懊・繝翫せ (Exact Phrase Bonus)
+    if ($PhraseRegex) {
+        if ($Item.Title -and $Item.Title -match "(?i)$PhraseRegex") { $score += 15 }
+        if ($Item.Description -and $Item.Description -match "(?i)$PhraseRegex") { $score += 10 }
+        if ($Item.BodyText -and $Item.BodyText -match "(?i)$PhraseRegex") { $score += 8 }
+    }
+
+    # B. 蠖｢諷狗ｴ蜊倩ｪ槫腰菴阪せ繧ｳ繧｢繝ｪ繝ｳ繧ｰ
+    foreach ($kwRegex in $EscapedKeywords) {
+        $kwMatched = $false
+
+        # Title (+10)
+        if ($Item.Title -and $Item.Title -match $kwRegex) {
+            $score += 10
+            $kwMatched = $true
+        }
+        # Tags (+8)
+        if ($Item.Tags) {
+            $tagMatch = $Item.Tags | Where-Object { $_ -match $kwRegex }
+            if ($tagMatch) {
+                $score += 8
+                $kwMatched = $true
+            }
+        }
+        # Description (+5)
+        if ($Item.Description -and $Item.Description -match $kwRegex) {
+            $score += 5
+            $kwMatched = $true
+        }
+        # Domain (+4)
+        if ($Item.Domain -and $Item.Domain -match $kwRegex) {
+            $score += 4
+            $kwMatched = $true
+        }
+        # Author (+3)
+        if ($Item.Author -and $Item.Author -match $kwRegex) {
+            $score += 3
+            $kwMatched = $true
+        }
+        # BodyText (+1 per hit, max 10)
+        if ($Item.BodyText) {
+            $bodyMatches = ([regex]::Matches($Item.BodyText, "(?i)$kwRegex")).Count
+            if ($bodyMatches -gt 0) {
+                $score += [Math]::Min($bodyMatches, 10)
+                $kwMatched = $true
+            }
+        }
+
+        if ($kwMatched) {
+            $matchedKwCount++
         }
     }
-    return $queryDict
+
+    # 闍ｱ謨ｰ蟄苓､・焚繧ｭ繝ｼ繝ｯ繝ｼ繝画欠螳壽凾縺ｮAND讀懆ｨｼ (縺吶∋縺ｦ繝偵ャ繝医＠縺ｦ縺・↑縺代ｌ縺ｰ -1 霑泌唆)
+    if ($CleanQuery -match '^[a-zA-Z0-9_\-\s]+$' -and $KeywordCount -gt 1 -and $matchedKwCount -lt $KeywordCount) {
+        return -1
+    }
+
+    # 髱樊耳螂ｨ (deprecated) 70% 繧ｹ繧ｳ繧｢貂帷せ
+    $st = if ($Item.Status) { $Item.Status.ToString().ToLower().Trim() } else { "active" }
+    if ($st -eq "deprecated") {
+        $score = [Math]::Floor($score * 0.3)
+    }
+
+    return $score
 }
 
-# --- LLM / RAG 暗号解読 ＆ 設定管理関数 ---
+# --- OKF 讀懃ｴ｢繝倥Ν繝代・: 繧ｹ繝九・繝・ヨ謚ｽ蜃ｺ ---
+function Get-OkfDocSnippet {
+    param (
+        [PSObject]$Item,
+        [string[]]$EscapedKeywords = @()
+    )
 
-function Get-JapaneseWordsWinRT {
-    param ([string]$Text)
-    if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+    if (-not $Item.BodyText) { return "" }
 
-    $words = [System.Collections.Generic.List[string]]::new()
-    try {
-        [void][Windows.Data.Text.WordsSegmenter, Windows.Foundation.UniversalApiContract, ContentType = WindowsRuntime]
-        $segmenter = [Windows.Data.Text.WordsSegmenter]::CreateWithLanguage("ja-JP")
-        $tokens = $segmenter.DetermineProperties($Text)
-        foreach ($t in $tokens) {
-            $w = $t.Text.Trim()
-            if ($w.Length -gt 0 -and $w -notmatch '^[\s\?\!\:\;\,\.\-\_\(\)「」『』【】（）！％＆＝￥？]+$') {
-                if ($w -notmatch '^(は|が|の|を|に|で|と|へ|より|から|です|ます|ですか|について|に関して|やり方|方法|教えて|したい|するには)$') {
-                    if (-not $words.Contains($w)) {
-                        $words.Add($w)
-                    }
+    $lines = $Item.BodyText -split "\r?\n"
+    $matchIdx = -1
+    for ($lIdx = 0; $lIdx -lt $lines.Count; $lIdx++) {
+        $line = $lines[$lIdx]
+        if ($line -match '^\s*---') { continue }
+        if ($EscapedKeywords.Count -gt 0) {
+            foreach ($kwRegex in $EscapedKeywords) {
+                if ($line -match $kwRegex) {
+                    $matchIdx = $lIdx
+                    break
                 }
             }
         }
-    } catch {
-        # フォールバック (正規表現トークナイズ)
-        $termMatches = [regex]::Matches($Text, '[一-龠]+|[ァ-ヴー]{2,}|[a-zA-Z0-9]+')
-        foreach ($m in $termMatches) {
-            $v = $m.Value.Trim()
-            if ($v.Length -ge 2 -and -not $words.Contains($v)) { $words.Add($v) }
+        if ($matchIdx -ge 0) { break }
+    }
+
+    if ($matchIdx -ge 0) {
+        $start = [Math]::Max(0, $matchIdx - 1)
+        $end   = [Math]::Min($lines.Count - 1, $matchIdx + 2)
+        $snipLines = @()
+        for ($i = $start; $i -le $end; $i++) {
+            $snipLines += $lines[$i].Trim()
+        }
+        $snip = $snipLines -join " "
+        if ($snip.Length -gt 200) { $snip = $snip.Substring(0, 200) + "..." }
+        return $snip
+    } else {
+        return $Item.Description
+    }
+}
+
+# --- OKF 隍・焚譚｡莉ｶ繝ｻ蠖｢諷狗ｴ繧ｹ繧ｳ繧｢繝ｪ繝ｳ繧ｰ讀懃ｴ｢髢｢謨ｰ ---
+function Search-OkfDocs {
+    param (
+        [string]$Query = "",
+        [string]$StatusFilter = "active",
+        [string]$DomainFilter = "",
+        [int]$Limit = 50
+    )
+
+    if (-not $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
+        return @()
+    }
+
+    $parsed = Split-SearchQueryTerms -RawQuery $Query
+    $cleanQuery      = $parsed.CleanQuery
+    $keywords        = $parsed.Keywords
+    $excludeKeywords = $parsed.ExcludeKeywords
+
+    # 譌･譛ｬ隱槫ｽ｢諷狗ｴ隗｣譫・(WinRT 繝医・繧ｯ繝翫う繧ｶ繝ｼ) 縺ｫ繧医ｋ繧ｯ繧ｨ繝ｪ諡｡蠑ｵ
+    if ($cleanQuery -and $cleanQuery.Length -ge 2 -and ($cleanQuery -match '[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]')) {
+        $morphWords = Get-JapaneseWordsWinRT -Text $cleanQuery
+        foreach ($mw in $morphWords) {
+            if (-not ($keywords -contains $mw)) {
+                $keywords += $mw
+            }
         }
     }
 
-    # シノニム / 同義語概念拡張
-    if ($words.Contains("セットアップ") -and -not $words.Contains("環境構築")) { $words.Add("環境構築") }
-    if ($words.Contains("環境構築") -and -not $words.Contains("セットアップ")) { $words.Add("セットアップ") }
+    # 豁｣隕剰｡ｨ迴ｾ繝代ち繝ｼ繝ｳ縺ｮ莠句燕繧ｨ繧ｹ繧ｱ繝ｼ繝怜・逅・(繝峨く繝･繝｡繝ｳ繝医Ν繝ｼ繝怜､悶〒莠句燕險育ｮ励＠縺ｦCPU繧ｵ繧､繧ｯ繝ｫ繧貞炎貂・
+    $escapedExcludeKeywords = @(foreach ($ex in $excludeKeywords) { [regex]::Escape($ex) })
+    $phraseRegex            = if ($cleanQuery.Length -ge 2) { [regex]::Escape($cleanQuery) } else { $null }
+    $escapedKeywords        = @(foreach ($kw in $keywords) { [regex]::Escape($kw) })
 
-    return $words.ToArray()
+    $results = [System.Collections.Generic.List[PSObject]]::new()
+
+    foreach ($item in $script:WikiIndex) {
+        if ($null -eq $item) { continue }
+
+        # 繝輔ぅ繝ｫ繧ｿ蛻､螳・        if (-not (Test-OkfDocFilter -Item $item -StatusFilter $StatusFilter -DomainFilter $DomainFilter -EscapedExcludeKeywords $escapedExcludeKeywords)) {
+            continue
+        }
+
+        # 繧ｯ繧ｨ繝ｪ縺檎ｩｺ縺ｮ蝣ｴ蜷医・蜈ｨ莉ｶ (繝輔ぅ繝ｫ繧ｿ騾夐℃蛻・ 繧偵せ繧ｳ繧｢1縺ｧ霑斐☆
+        if ([string]::IsNullOrWhiteSpace($cleanQuery)) {
+            [void]$results.Add([PSCustomObject]@{
+                Score   = 1
+                Item    = $item
+                Snippet = $item.Description
+            })
+            continue
+        }
+
+        # 繧ｹ繧ｳ繧｢繝ｪ繝ｳ繧ｰ險育ｮ・        $score = Get-OkfDocScore -Item $item -PhraseRegex $phraseRegex -EscapedKeywords $escapedKeywords -CleanQuery $cleanQuery -KeywordCount $keywords.Count
+        if ($score -le 0) {
+            continue
+        }
+
+        # 繧ｹ繝九・繝・ヨ謚ｽ蜃ｺ
+        $snippet = Get-OkfDocSnippet -Item $item -EscapedKeywords $escapedKeywords
+
+        [void]$results.Add([PSCustomObject]@{
+            Score   = $score
+            Item    = $item
+            Snippet = $snippet
+        })
+    }
+
+    # 繧ｹ繧ｳ繧｢髯埼・∝酔轤ｹ譎ゅ・譖ｴ譁ｰ譌･髯埼・〒繧ｽ繝ｼ繝医＠縺ｦ Limit 莉ｶ霑泌唆
+    $sorted = $results | Sort-Object -Property @{ Expression = { $_.Score }; Descending = $true },
+                                              @{ Expression = { if ($_.Item.LastUpdated) { $_.Item.LastUpdated } else { [DateTime]::MinValue } }; Descending = $true } |
+                         Select-Object -First $Limit
+
+    return @($sorted)
 }
