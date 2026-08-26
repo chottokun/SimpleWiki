@@ -53,26 +53,23 @@ function Test-YamlFrontMatterSyntax {
     return $result
 }
 
-# --- OKF メタデータ抽出し ＆ 自動補完 (フォールバック) 関数 ---
-function Get-DocumentMetadata {
+function ConvertFrom-YamlHeader {
     param (
-        [Parameter(Mandatory = $false)]$File = $null,
-        [string]$RelPath = "",
-        [string]$MdText = ""
+        [string]$MdText = "",
+        [string]$RelPath = ""
     )
 
-    if ([string]::IsNullOrEmpty($MdText) -and $File -and (Test-Path $File.FullName)) {
-        $MdText = Get-Content -Path $File.FullName -Raw -Encoding UTF8
+    $result = @{
+        HasYaml  = $false
+        BodyText = $MdText
+        YamlDict = @{}
     }
 
-    $hasYaml  = $false
-    $bodyText = $MdText
-    $yamlDict = @{}
-
     if ($MdText -match '(?s)^\s*---\r?\n(.*?)\r?\n---\r?\n(.*)$') {
-        $hasYaml  = $true
-        $rawYaml  = $matches[1]
-        $bodyText = $matches[2]
+        $result.HasYaml  = $true
+        $rawYaml         = $matches[1]
+        $result.BodyText = $matches[2]
+        $yamlDict        = @{}
 
         try {
             $currentKey = $null
@@ -106,35 +103,108 @@ function Get-DocumentMetadata {
         } catch {
             Write-Warning "YAML parsing failed for $RelPath : $_"
         }
+
+        $result.YamlDict = $yamlDict
     }
 
-    # Title
-    $title = ""
-    if ($yamlDict.ContainsKey("title") -and -not [string]::IsNullOrWhiteSpace($yamlDict["title"])) {
-        $title = $yamlDict["title"]
-    } else {
-        if ($bodyText -match '(?m)^\s*#\s+(.+)$') {
-            $title = $matches[1].Trim()
-        } elseif ($File) {
-            $title = $File.BaseName
-        } else {
-            $title = "Untitled"
+    return $result
+}
+
+function Get-YamlListProperty {
+    param (
+        [hashtable]$YamlDict,
+        [string]$Key
+    )
+
+    $list = @()
+    if ($YamlDict -and $YamlDict.ContainsKey($Key)) {
+        $val = $YamlDict[$Key]
+        if ($val -is [System.Collections.IEnumerable] -and $val -isnot [string]) {
+            $list = @($val)
+        } elseif (-not [string]::IsNullOrWhiteSpace($val)) {
+            $rawStr = $val.ToString()
+            $list = @($rawStr -split ',\s*' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
         }
+    }
+    return $list
+}
+
+function Get-DocumentTitle {
+    param (
+        [hashtable]$YamlDict,
+        [string]$BodyText,
+        $File
+    )
+
+    if ($YamlDict -and $YamlDict.ContainsKey("title") -and -not [string]::IsNullOrWhiteSpace($YamlDict["title"])) {
+        return $YamlDict["title"]
+    }
+    if ($BodyText -match '(?m)^\s*#\s+(.+)$') {
+        return $matches[1].Trim()
+    }
+    if ($File) {
+        return $File.BaseName
+    }
+    return "Untitled"
+}
+
+function Get-DocumentDescription {
+    param (
+        [hashtable]$YamlDict,
+        [string]$BodyText
+    )
+
+    if ($YamlDict -and $YamlDict.ContainsKey("description") -and -not [string]::IsNullOrWhiteSpace($YamlDict["description"])) {
+        return $YamlDict["description"]
+    }
+    $cleanBody = $BodyText -replace '(?m)^\s*#+\s*', '' -replace '[\*\`\[\]\(\)]', '' -replace '\s+', ' '
+    $cleanBody = $cleanBody.Trim()
+    if ($cleanBody.Length -gt 150) {
+        return $cleanBody.Substring(0, 150) + "..."
+    }
+    return $cleanBody
+}
+
+function Get-DocumentDomain {
+    param (
+        [hashtable]$YamlDict,
+        [string]$RelPath
+    )
+
+    if ($YamlDict -and $YamlDict.ContainsKey("domain") -and -not [string]::IsNullOrWhiteSpace($YamlDict["domain"])) {
+        return $YamlDict["domain"]
+    }
+    if (-not [string]::IsNullOrWhiteSpace($RelPath)) {
+        $dir = [System.IO.Path]::GetDirectoryName($RelPath)
+        if ([string]::IsNullOrWhiteSpace($dir)) {
+            return "root"
+        } else {
+            return $dir.Replace('\', '/')
+        }
+    }
+    return "root"
+}
+
+# --- OKF メタデータ抽出 ＆ 自動補完 (フォールバック) 関数 ---
+function Get-DocumentMetadata {
+    param (
+        [Parameter(Mandatory = $false)]$File = $null,
+        [string]$RelPath = "",
+        [string]$MdText = ""
+    )
+
+    if ([string]::IsNullOrEmpty($MdText) -and $File -and (Test-Path $File.FullName)) {
+        $MdText = Get-Content -Path $File.FullName -Raw -Encoding UTF8
     }
 
-    # Description
-    $description = ""
-    if ($yamlDict.ContainsKey("description") -and -not [string]::IsNullOrWhiteSpace($yamlDict["description"])) {
-        $description = $yamlDict["description"]
-    } else {
-        $cleanBody = $bodyText -replace '(?m)^\s*#+\s*', '' -replace '[\*\`\[\]\(\)]', '' -replace '\s+', ' '
-        $cleanBody = $cleanBody.Trim()
-        if ($cleanBody.Length -gt 150) {
-            $description = $cleanBody.Substring(0, 150) + "..."
-        } else {
-            $description = $cleanBody
-        }
-    }
+    $parsedYaml = ConvertFrom-YamlHeader -MdText $MdText -RelPath $RelPath
+    $hasYaml   = $parsedYaml.HasYaml
+    $bodyText  = $parsedYaml.BodyText
+    $yamlDict  = $parsedYaml.YamlDict
+
+    $title       = Get-DocumentTitle -YamlDict $yamlDict -BodyText $bodyText -File $File
+    $description = Get-DocumentDescription -YamlDict $yamlDict -BodyText $bodyText
+    $domain      = Get-DocumentDomain -YamlDict $yamlDict -RelPath $RelPath
 
     # Author
     $author = ""
@@ -142,29 +212,8 @@ function Get-DocumentMetadata {
         $author = $yamlDict["author"]
     }
 
-    # Domain
-    $domain = ""
-    if ($yamlDict.ContainsKey("domain") -and -not [string]::IsNullOrWhiteSpace($yamlDict["domain"])) {
-        $domain = $yamlDict["domain"]
-    } else {
-        if (-not [string]::IsNullOrWhiteSpace($RelPath)) {
-            $dir = [System.IO.Path]::GetDirectoryName($RelPath)
-            $domain = if ([string]::IsNullOrWhiteSpace($dir)) { "root" } else { $dir.Replace('\', '/') }
-        } else {
-            $domain = "root"
-        }
-    }
-
     # Tags
-    $tags = @()
-    if ($yamlDict.ContainsKey("tags")) {
-        if ($yamlDict["tags"] -is [System.Collections.IEnumerable] -and $yamlDict["tags"] -isnot [string]) {
-            $tags = @($yamlDict["tags"])
-        } elseif (-not [string]::IsNullOrWhiteSpace($yamlDict["tags"])) {
-            $rawStr = $yamlDict["tags"].ToString()
-            $tags = @($rawStr -split ',\s*' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        }
-    }
+    $tags = Get-YamlListProperty -YamlDict $yamlDict -Key "tags"
 
     # LastUpdated (ファイル時刻 or YAML指定。どちらも無ければ $null で不明扱い)
     $lastUpdated = if ($File -and (Test-Path $File.FullName)) { $File.LastWriteTime } else { $null }
@@ -203,26 +252,10 @@ function Get-DocumentMetadata {
     }
 
     # OKF v0.2: Contributors (共同執筆者)
-    $contributors = @()
-    if ($yamlDict.ContainsKey("contributors")) {
-        if ($yamlDict["contributors"] -is [System.Collections.IEnumerable] -and $yamlDict["contributors"] -isnot [string]) {
-            $contributors = @($yamlDict["contributors"])
-        } elseif (-not [string]::IsNullOrWhiteSpace($yamlDict["contributors"])) {
-            $rawC = $yamlDict["contributors"].ToString()
-            $contributors = @($rawC -split ',\s*' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        }
-    }
+    $contributors = Get-YamlListProperty -YamlDict $yamlDict -Key "contributors"
 
     # OKF v0.2: Related (関連ドキュメント)
-    $related = @()
-    if ($yamlDict.ContainsKey("related")) {
-        if ($yamlDict["related"] -is [System.Collections.IEnumerable] -and $yamlDict["related"] -isnot [string]) {
-            $related = @($yamlDict["related"])
-        } elseif (-not [string]::IsNullOrWhiteSpace($yamlDict["related"])) {
-            $rawR = $yamlDict["related"].ToString()
-            $related = @($rawR -split ',\s*' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        }
-    }
+    $related = Get-YamlListProperty -YamlDict $yamlDict -Key "related"
 
     return [PSCustomObject]@{
         Title        = $title
