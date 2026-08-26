@@ -3,7 +3,9 @@
 #  Encoding: UTF-8 with BOM
 # ==============================================================================
 
-$projectRoot = (Resolve-Path "$PSScriptRoot\..").Path
+if (-not $PSScriptRoot) { $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path }
+if (-not $PSScriptRoot -or $PSScriptRoot -eq "") { $PSScriptRoot = Join-Path (Get-Location).Path "tests" }
+$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $libDll      = Join-Path $projectRoot "lib\Markdig.dll"
 
 Describe 'Markdig Assembly and Pipeline Tests' {
@@ -77,7 +79,7 @@ Describe 'HTML Escaping and XSS Protection Tests' {
 
 Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
     BeforeAll {
-        $testExportDir = Join-Path $env:TEMP "SimpleWiki_TestExport"
+        $testExportDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestExport"
         if (Test-Path $testExportDir) { Remove-Item -Path $testExportDir -Recurse -Force }
     }
 
@@ -128,6 +130,115 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
 
         $htmlContent | Should Match "class=""okf-top-bar"""
         $htmlContent | Should Match "class=""okf-footer-card"""
+    }
+}
+
+Describe 'Build-FileTreeNode Unit Tests (Export-MarkdigWiki.ps1)' {
+    BeforeAll {
+        if (-not $projectRoot) {
+            $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Join-Path (Get-Location).Path "tests" }
+            $projectRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
+        }
+        $exportScript = Join-Path $projectRoot "Export-MarkdigWiki.ps1"
+        $tokens = $null
+        $errs   = $null
+        $ast    = [System.Management.Automation.Language.Parser]::ParseFile($exportScript, [ref]$tokens, [ref]$errs)
+        $funcAst = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Build-FileTreeNode' }, $true)
+        if ($funcAst) {
+            Invoke-Expression $funcAst.Extent.Text
+        }
+    }
+
+    It "Returns empty root node when input file list is empty" {
+        $node = Build-FileTreeNode -allMdFiles @() -wikiDir "/wiki"
+        $node | Should -Not -Be $null
+        $node.Files.Count | Should -Be 0
+        $node.SubFolders.Count | Should -Be 0
+    }
+
+    It "Places root-level markdown file directly into root Files list" {
+        $wikiDir = "/wiki"
+        $file = [PSCustomObject]@{
+            FullName = "/wiki/index.md"
+            BaseName = "index"
+        }
+        $node = Build-FileTreeNode -allMdFiles @($file) -wikiDir $wikiDir
+        $node.Files.Count | Should -Be 1
+        $node.Files[0].FullName | Should -Be "/wiki/index.md"
+        $node.SubFolders.Count | Should -Be 0
+    }
+
+    It "Creates single-level subfolder node for nested markdown file" {
+        $wikiDir = "/wiki"
+        $file = [PSCustomObject]@{
+            FullName = "/wiki/docs/guide.md"
+            BaseName = "guide"
+        }
+        $node = Build-FileTreeNode -allMdFiles @($file) -wikiDir $wikiDir
+        $node.Files.Count | Should -Be 0
+        $node.SubFolders.Contains("docs") | Should -Be $true
+
+        $docsNode = $node.SubFolders["docs"]
+        $docsNode.Files.Count | Should -Be 1
+        $docsNode.Files[0].FullName | Should -Be "/wiki/docs/guide.md"
+        $docsNode.SubFolders.Count | Should -Be 0
+    }
+
+    It "Creates multi-level nested folder hierarchy correctly" {
+        $wikiDir = "/wiki"
+        $file = [PSCustomObject]@{
+            FullName = "/wiki/docs/api/v1/spec.md"
+            BaseName = "spec"
+        }
+        $node = Build-FileTreeNode -allMdFiles @($file) -wikiDir $wikiDir
+        $node.SubFolders.Contains("docs") | Should -Be $true
+
+        $docsNode = $node.SubFolders["docs"]
+        $docsNode.SubFolders.Contains("api") | Should -Be $true
+
+        $apiNode = $docsNode.SubFolders["api"]
+        $apiNode.SubFolders.Contains("v1") | Should -Be $true
+
+        $v1Node = $apiNode.SubFolders["v1"]
+        $v1Node.Files.Count | Should -Be 1
+        $v1Node.Files[0].FullName | Should -Be "/wiki/docs/api/v1/spec.md"
+    }
+
+    It "Correctly groups multiple files across root and nested directories" {
+        $wikiDir = "/wiki"
+        $files = @(
+            [PSCustomObject]@{ FullName = "/wiki/index.md"; BaseName = "index" },
+            [PSCustomObject]@{ FullName = "/wiki/docs/guide.md"; BaseName = "guide" },
+            [PSCustomObject]@{ FullName = "/wiki/docs/faq.md"; BaseName = "faq" },
+            [PSCustomObject]@{ FullName = "/wiki/reports/2026/summary.md"; BaseName = "summary" }
+        )
+        $node = Build-FileTreeNode -allMdFiles $files -wikiDir $wikiDir
+
+        $node.Files.Count | Should -Be 1
+        $node.Files[0].BaseName | Should -Be "index"
+        $node.SubFolders.Count | Should -Be 2
+
+        $docsNode = $node.SubFolders["docs"]
+        $docsNode.Files.Count | Should -Be 2
+        ($docsNode.Files | ForEach-Object { $_.BaseName }) -contains "guide" | Should -Be $true
+        ($docsNode.Files | ForEach-Object { $_.BaseName }) -contains "faq" | Should -Be $true
+
+        $reportsNode = $node.SubFolders["reports"]
+        $reportsNode.SubFolders.Contains("2026") | Should -Be $true
+        $reportsNode.SubFolders["2026"].Files[0].BaseName | Should -Be "summary"
+    }
+
+    It "Handles both forward slash and backslash path separators correctly" {
+        $wikiDir = "C:\wiki"
+        $files = @(
+            [PSCustomObject]@{ FullName = "C:\wiki\docs\win.md"; BaseName = "win" },
+            [PSCustomObject]@{ FullName = "C:\wiki/docs/nix.md"; BaseName = "nix" }
+        )
+        $node = Build-FileTreeNode -allMdFiles $files -wikiDir $wikiDir
+
+        $node.SubFolders.Contains("docs") | Should -Be $true
+        $docsNode = $node.SubFolders["docs"]
+        $docsNode.Files.Count | Should -Be 2
     }
 }
 
