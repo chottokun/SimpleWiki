@@ -587,6 +587,12 @@ function Search-OkfDocs {
     $cleanQuery      = $parsedQuery.CleanQuery
     $excludeKeywords = $parsedQuery.ExcludeKeywords
 
+    # --- フレーズ全体一致用正規表現の事前計算 (Exact Phrase Regex Precomputation) ---
+    $phraseRegex = $null
+    if ($cleanQuery.Length -ge 2) {
+        $phraseRegex = [regex]::Escape($cleanQuery)
+    }
+
     # キーワード抽出: WinRT 形態素解析を優先使用
     $keywords = @()
     if (-not [string]::IsNullOrWhiteSpace($cleanQuery)) {
@@ -650,8 +656,7 @@ function Search-OkfDocs {
         $matchedKwCount = 0
 
         # --- A. フレーズ全体一致ボーナス (Exact Phrase Bonus) ---
-        if ($cleanQuery.Length -ge 2) {
-            $phraseRegex = [regex]::Escape($cleanQuery)
+        if ($phraseRegex) {
             if ($item.Title -and $item.Title -match "(?i)$phraseRegex") { $score += 15 }
             if ($item.Description -and $item.Description -match "(?i)$phraseRegex") { $score += 10 }
             if ($item.BodyText -and $item.BodyText -match "(?i)$phraseRegex") { $score += 8 }
