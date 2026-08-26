@@ -558,6 +558,172 @@ function Split-SearchQueryTerms {
     return $result
 }
 
+# --- OKF 検索ヘルパー: ステータス・ドメイン・NOT除外フィルタ判定 ---
+function Test-OkfDocFilter {
+    param (
+        [PSObject]$Item,
+        [string]$StatusFilter = "active",
+        [string]$DomainFilter = "",
+        [string[]]$ExcludeKeywords = @()
+    )
+
+    # 1. Status Filter (OKF v0.2: stable/active, draft/wip/review, deprecated/archived/obsolete)
+    $stFilterLower = if (-not [string]::IsNullOrWhiteSpace($StatusFilter)) { $StatusFilter.ToLower().Trim() } else { "active" }
+    $st = if ($Item.Status) { $Item.Status.ToString().ToLower().Trim() } else { "active" }
+    if ($stFilterLower -ne "all" -and $stFilterLower -ne "") {
+        $isMatch = ($st -eq $stFilterLower)
+        if (-not $isMatch) {
+            if ($stFilterLower -eq "active" -and $st -eq "stable") { $isMatch = $true }
+            if ($stFilterLower -eq "draft" -and ($st -in @("wip", "review", "in-review"))) { $isMatch = $true }
+            if ($stFilterLower -eq "deprecated" -and ($st -in @("archived", "obsolete"))) { $isMatch = $true }
+        }
+        if (-not $isMatch) { return $false }
+    }
+
+    # 2. Domain Filter
+    if (-not [string]::IsNullOrWhiteSpace($DomainFilter)) {
+        $itemDomain = if ($Item.Domain) { $Item.Domain } else { "" }
+        if ($itemDomain -notlike "*$DomainFilter*") { return $false }
+    }
+
+    # 3. NOT 除外フィルタ (タイトル/概要/タグ/本文に対象が含まれる場合は除外)
+    if ($ExcludeKeywords.Count -gt 0) {
+        foreach ($ex in $ExcludeKeywords) {
+            $exRegex = [regex]::Escape($ex)
+            if (($Item.Title -and $Item.Title -match "(?i)$exRegex") -or
+                ($Item.Description -and $Item.Description -match "(?i)$exRegex") -or
+                ($Item.Tags -and ($Item.Tags | Where-Object { $_ -match "(?i)$exRegex" })) -or
+                ($Item.BodyText -and $Item.BodyText -match "(?i)$exRegex")) {
+                return $false
+            }
+        }
+    }
+
+    return $true
+}
+
+# --- OKF 検索ヘルパー: 重み付けスコアリング計算 ---
+function Get-OkfDocScore {
+    param (
+        [PSObject]$Item,
+        [string]$CleanQuery = "",
+        [string[]]$Keywords = @()
+    )
+
+    $score = 0
+    $matchedKwCount = 0
+
+    # A. フレーズ全体一致ボーナス (Exact Phrase Bonus)
+    if ($CleanQuery.Length -ge 2) {
+        $phraseRegex = [regex]::Escape($CleanQuery)
+        if ($Item.Title -and $Item.Title -match "(?i)$phraseRegex") { $score += 15 }
+        if ($Item.Description -and $Item.Description -match "(?i)$phraseRegex") { $score += 10 }
+        if ($Item.BodyText -and $Item.BodyText -match "(?i)$phraseRegex") { $score += 8 }
+    }
+
+    # B. 形態素単語単位スコアリング
+    foreach ($kw in $Keywords) {
+        $kwRegex = [regex]::Escape($kw)
+        $kwMatched = $false
+
+        # Title (+10)
+        if ($Item.Title -and $Item.Title -match $kwRegex) {
+            $score += 10
+            $kwMatched = $true
+        }
+        # Tags (+8)
+        if ($Item.Tags) {
+            $tagMatch = $Item.Tags | Where-Object { $_ -match $kwRegex }
+            if ($tagMatch) {
+                $score += 8
+                $kwMatched = $true
+            }
+        }
+        # Description (+5)
+        if ($Item.Description -and $Item.Description -match $kwRegex) {
+            $score += 5
+            $kwMatched = $true
+        }
+        # Domain (+4)
+        if ($Item.Domain -and $Item.Domain -match $kwRegex) {
+            $score += 4
+            $kwMatched = $true
+        }
+        # Author (+3)
+        if ($Item.Author -and $Item.Author -match $kwRegex) {
+            $score += 3
+            $kwMatched = $true
+        }
+        # BodyText (+1 per hit, max 10)
+        if ($Item.BodyText) {
+            $bodyMatches = ([regex]::Matches($Item.BodyText, "(?i)$kwRegex")).Count
+            if ($bodyMatches -gt 0) {
+                $score += [Math]::Min($bodyMatches, 10)
+                $kwMatched = $true
+            }
+        }
+
+        if ($kwMatched) {
+            $matchedKwCount++
+        }
+    }
+
+    # 英数字複数キーワード指定時のAND検証 (すべてヒットしていなければ -1 返却)
+    if ($CleanQuery -match '^[a-zA-Z0-9_\-\s]+$' -and $Keywords.Count -gt 1 -and $matchedKwCount -lt $Keywords.Count) {
+        return -1
+    }
+
+    # 非推奨 (deprecated) 70% スコア減点
+    $st = if ($Item.Status) { $Item.Status.ToString().ToLower().Trim() } else { "active" }
+    if ($st -eq "deprecated") {
+        $score = [Math]::Floor($score * 0.3)
+    }
+
+    return $score
+}
+
+# --- OKF 検索ヘルパー: スニペット抽出 ---
+function Get-OkfDocSnippet {
+    param (
+        [PSObject]$Item,
+        [string[]]$Keywords = @()
+    )
+
+    if (-not $Item.BodyText) { return "" }
+
+    $lines = $Item.BodyText -split "\r?\n"
+    $matchIdx = -1
+    for ($lIdx = 0; $lIdx -lt $lines.Count; $lIdx++) {
+        $line = $lines[$lIdx]
+        if ($line -match '^\s*---') { continue }
+        if ($Keywords.Count -gt 0) {
+            foreach ($kw in $Keywords) {
+                if ($line -match [regex]::Escape($kw)) {
+                    $matchIdx = $lIdx
+                    break
+                }
+            }
+        } else {
+            if (-not [string]::IsNullOrWhiteSpace($line)) {
+                $matchIdx = $lIdx
+                break
+            }
+        }
+        if ($matchIdx -ge 0) { break }
+    }
+
+    if ($matchIdx -lt 0) { return "" }
+
+    $startLine = [Math]::Max(0, $matchIdx - 2)
+    $endLine = [Math]::Min($lines.Count - 1, $matchIdx + 4)
+    $snipLines = @($lines[$startLine..$endLine] | Where-Object { $_ -notmatch '^\s*---' })
+    $snippet = ($snipLines -join "`n").Trim()
+    if ($snippet.Length -gt 400) {
+        $snippet = $snippet.Substring(0, 400) + "..."
+    }
+    return $snippet
+}
+
 # --- OKF スコアリングドキュメント検索共通関数 ---
 function Search-OkfDocs {
     param (
@@ -606,154 +772,29 @@ function Search-OkfDocs {
     $results = [System.Collections.Generic.List[PSObject]]::new()
 
     foreach ($item in $script:WikiIndex) {
-        # 1. Status Filter (OKF v0.2: stable/active, draft/wip/review, deprecated/archived/obsolete)
-        $st = if ($item.Status) { $item.Status.ToString().ToLower().Trim() } else { "active" }
-        if ($stFilterLower -ne "all" -and $stFilterLower -ne "") {
-            $isMatch = ($st -eq $stFilterLower)
-            if (-not $isMatch) {
-                if ($stFilterLower -eq "active" -and $st -eq "stable") { $isMatch = $true }
-                if ($stFilterLower -eq "draft" -and ($st -in @("wip", "review", "in-review"))) { $isMatch = $true }
-                if ($stFilterLower -eq "deprecated" -and ($st -in @("archived", "obsolete"))) { $isMatch = $true }
-            }
-            if (-not $isMatch) { continue }
-        }
-
-
-        # 2. Domain Filter
-        if (-not [string]::IsNullOrWhiteSpace($DomainFilter)) {
-            $itemDomain = if ($item.Domain) { $item.Domain } else { "" }
-            if ($itemDomain -notlike "*$DomainFilter*") { continue }
-        }
-
-        # 3. NOT 除外フィルタ (タイトル/概要/タグ/本文に対象が含まれる場合は除外)
-        if ($excludeKeywords.Count -gt 0) {
-            $hasExcluded = $false
-            foreach ($ex in $excludeKeywords) {
-                $exRegex = [regex]::Escape($ex)
-                if (($item.Title -and $item.Title -match "(?i)$exRegex") -or
-                    ($item.Description -and $item.Description -match "(?i)$exRegex") -or
-                    ($item.Tags -and ($item.Tags | Where-Object { $_ -match "(?i)$exRegex" })) -or
-                    ($item.BodyText -and $item.BodyText -match "(?i)$exRegex")) {
-                    $hasExcluded = $true
-                    break
-                }
-            }
-            if ($hasExcluded) { continue }
+        # 1. フィルタリング (Status, Domain, NOT除外)
+        if (-not (Test-OkfDocFilter -Item $item -StatusFilter $StatusFilter -DomainFilter $DomainFilter -ExcludeKeywords $excludeKeywords)) {
+            continue
         }
 
         if ($keywords.Count -eq 0 -and [string]::IsNullOrWhiteSpace($cleanQuery) -and [string]::IsNullOrWhiteSpace($DomainFilter) -and $stFilterLower -eq "all" -and $excludeKeywords.Count -eq 0) {
             continue
         }
 
-        # 4. 重み付けスコアリング
-        $score = 0
-        $matchedKwCount = 0
-
-        # --- A. フレーズ全体一致ボーナス (Exact Phrase Bonus) ---
-        if ($cleanQuery.Length -ge 2) {
-            $phraseRegex = [regex]::Escape($cleanQuery)
-            if ($item.Title -and $item.Title -match "(?i)$phraseRegex") { $score += 15 }
-            if ($item.Description -and $item.Description -match "(?i)$phraseRegex") { $score += 10 }
-            if ($item.BodyText -and $item.BodyText -match "(?i)$phraseRegex") { $score += 8 }
-        }
-
-        # --- B. 形態素単語単位スコアリング ---
-        foreach ($kw in $keywords) {
-            $kwRegex = [regex]::Escape($kw)
-            $kwMatched = $false
-
-            # Title (+10)
-            if ($item.Title -and $item.Title -match $kwRegex) {
-                $score += 10
-                $kwMatched = $true
-            }
-            # Tags (+8)
-            if ($item.Tags) {
-                $tagMatch = $item.Tags | Where-Object { $_ -match $kwRegex }
-                if ($tagMatch) {
-                    $score += 8
-                    $kwMatched = $true
-                }
-            }
-            # Description (+5)
-            if ($item.Description -and $item.Description -match $kwRegex) {
-                $score += 5
-                $kwMatched = $true
-            }
-            # Domain (+4)
-            if ($item.Domain -and $item.Domain -match $kwRegex) {
-                $score += 4
-                $kwMatched = $true
-            }
-            # Author (+3)
-            if ($item.Author -and $item.Author -match $kwRegex) {
-                $score += 3
-                $kwMatched = $true
-            }
-            # BodyText (+1 per hit, max 10)
-            if ($item.BodyText) {
-                $bodyMatches = ([regex]::Matches($item.BodyText, "(?i)$kwRegex")).Count
-                if ($bodyMatches -gt 0) {
-                    $score += [Math]::Min($bodyMatches, 10)
-                    $kwMatched = $true
-                }
-            }
-
-            if ($kwMatched) {
-                $matchedKwCount++
-            }
-        }
-
-        # 英数字複数キーワード指定時のAND検証
-        if ($cleanQuery -match '^[a-zA-Z0-9_\-\s]+$' -and $keywords.Count -gt 1 -and $matchedKwCount -lt $keywords.Count) {
+        # 2. スコアリング計算
+        $score = Get-OkfDocScore -Item $item -CleanQuery $cleanQuery -Keywords $keywords
+        if ($score -lt 0) {
             continue
         }
 
-        # 非推奨 (deprecated) 70% スコア減点
-        if ($st -eq "deprecated") {
-            $score = [Math]::Floor($score * 0.3)
-        }
-
+        # 3. 検索結果追加判定 & スニペット抽出
         if ($score -gt 0 -or ($keywords.Count -eq 0 -and (-not [string]::IsNullOrWhiteSpace($DomainFilter) -or $stFilterLower -ne "all" -or $excludeKeywords.Count -gt 0))) {
-            # スニペット抽出 (キーワードマッチ行の前後の文脈・表を含む最大400文字)
-            $snippet = ""
-            if ($item.BodyText) {
-                $lines = $item.BodyText -split "\r?\n"
-                $matchIdx = -1
-                for ($lIdx = 0; $lIdx -lt $lines.Count; $lIdx++) {
-                    $line = $lines[$lIdx]
-                    if ($line -match '^\s*---') { continue }
-                    if ($keywords.Count -gt 0) {
-                        foreach ($kw in $keywords) {
-                            if ($line -match [regex]::Escape($kw)) {
-                                $matchIdx = $lIdx
-                                break
-                            }
-                        }
-                    } else {
-                        if (-not [string]::IsNullOrWhiteSpace($line)) {
-                            $matchIdx = $lIdx
-                            break
-                        }
-                    }
-                    if ($matchIdx -ge 0) { break }
-                }
-
-                if ($matchIdx -ge 0) {
-                    $startLine = [Math]::Max(0, $matchIdx - 2)
-                    $endLine = [Math]::Min($lines.Count - 1, $matchIdx + 4)
-                    $snipLines = @($lines[$startLine..$endLine] | Where-Object { $_ -notmatch '^\s*---' })
-                    $snippet = ($snipLines -join "`n").Trim()
-                    if ($snippet.Length -gt 400) {
-                        $snippet = $snippet.Substring(0, 400) + "..."
-                    }
-                }
-            }
+            $snippet = Get-OkfDocSnippet -Item $item -Keywords $keywords
 
             $results.Add([PSCustomObject]@{
-                Meta        = $item
-                Score       = $score
-                Snippet     = $snippet
+                Meta    = $item
+                Score   = $score
+                Snippet = $snippet
             })
         }
     }
