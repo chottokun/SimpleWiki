@@ -694,22 +694,30 @@ function Render-ServerFolderTreeHtml {
             ""
         }
 
-        $title = if ($f.Title) {
-            $f.Title
-        } elseif ($f.BaseName) {
-            $f.BaseName
-        } elseif ($f.Name) {
-            [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
-        } elseif ($f.FullName) {
-            [System.IO.Path]::GetFileNameWithoutExtension($f.FullName)
-        } else {
-            "Untitled"
+        $fileNameOnly = if ($f.Name) { $f.Name } elseif ($f.RelPath) { [System.IO.Path]::GetFileName($f.RelPath) } elseif ($f.FullName) { [System.IO.Path]::GetFileName($f.FullName) } else { "" }
+        $baseNameOnly = if ($f.BaseName) { $f.BaseName } elseif (-not [string]::IsNullOrWhiteSpace($fileNameOnly)) { [System.IO.Path]::GetFileNameWithoutExtension($fileNameOnly) } else { "" }
+
+        $config = Get-ConfigJson -TargetScriptDir $scriptDir
+        $displayMode = if ($config.ui -and $config.ui.sidebarDisplay) { $config.ui.sidebarDisplay.ToString().ToLower().Trim() } else { "basename" }
+
+        $displayText = switch ($displayMode) {
+            "title" {
+                if ($f.Title) { $f.Title } elseif ($baseNameOnly) { $baseNameOnly } else { "Untitled" }
+            }
+            "filename" {
+                if ($fileNameOnly) { $fileNameOnly } elseif ($baseNameOnly) { "$baseNameOnly.md" } else { "Untitled" }
+            }
+            default { # "basename"
+                if ($baseNameOnly) { $baseNameOnly } elseif ($fileNameOnly) { [System.IO.Path]::GetFileNameWithoutExtension($fileNameOnly) } else { "Untitled" }
+            }
         }
 
+        $docTitle = if ($f.Title) { $f.Title } else { $displayText }
+        $encTooltip = [System.Net.WebUtility]::HtmlEncode($docTitle)
         $activeClass = if ($currentRelPath -and $rel -eq $currentRelPath) { " class='active'" } else { "" }
         $relUri = "/" + [Uri]::EscapeUriString($rel.Replace('\', '/'))
-        $encTitle = [System.Net.WebUtility]::HtmlEncode($title)
-        $html += "  <li class='nav-file'><a href='$relUri'$activeClass>$encTitle</a></li>`n"
+        $encDisplay = [System.Net.WebUtility]::HtmlEncode($displayText)
+        $html += "  <li class='nav-file'><a href='$relUri'$activeClass title='$encTooltip'>$encDisplay</a></li>`n"
     }
 
     foreach ($folderName in $node.SubFolders.Keys) {

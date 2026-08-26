@@ -1,5 +1,8 @@
 {
   "defaultLanguage": "ja",
+  "ui": {
+    "sidebarDisplay": "basename"
+  },
   "rag": {
     "enabled": false,
     "apiUrl": "http://localhost:11434/v1",
