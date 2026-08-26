@@ -10,7 +10,7 @@ param (
 )
 
 # スクリプト自身のディレクトリ ($PSScriptRoot) から lib フォルダを参照
-$scriptDir = [System.IO.Path]::GetFullPath($PSScriptRoot)
+$scriptDir = if ($PSScriptRoot) { [System.IO.Path]::GetFullPath($PSScriptRoot) } elseif ($MyInvocation.MyCommand.Path) { [System.IO.Path]::GetFullPath((Split-Path $MyInvocation.MyCommand.Path -Parent)) } else { $PWD.Path }
 $libDir    = Join-Path $scriptDir "lib"
 
 # ドキュメントルートの設定 (指定がない場合は markdown_sample フォルダ、存在しない場合は $PSScriptRoot)
@@ -75,6 +75,25 @@ function Write-SafeHttpResponse {
     } catch {
         Write-Warning "HTTP応答送信エラー: $_"
     }
+}
+
+# Convert PSCustomObject recursively to OrderedDictionary
+function Convert-PSObjectToOrdered ($obj) {
+    if ($null -eq $obj) { return $null }
+    if ($obj -is [System.Collections.IDictionary]) { return $obj }
+    if ($obj -is [System.Array] -or $obj -is [System.Collections.IList]) {
+        $arr = @()
+        foreach ($item in $obj) { $arr += (Convert-PSObjectToOrdered $item) }
+        return $arr
+    }
+    if ($obj -is [PSCustomObject]) {
+        $dict = [ordered]@{}
+        foreach ($prop in $obj.PSObject.Properties) {
+            $dict[$prop.Name] = Convert-PSObjectToOrdered $prop.Value
+        }
+        return $dict
+    }
+    return $obj
 }
 
 if ($DotSourceOnly) { return }
@@ -279,24 +298,6 @@ try {
                         try {
                             $rawJson = Get-Content -Path $configPath -Raw -Encoding UTF8
                             $parsedObj = $rawJson | ConvertFrom-Json
-                            # Convert PSCustomObject recursively to OrderedDictionary
-                            function Convert-PSObjectToOrdered ($obj) {
-                                if ($null -eq $obj) { return $null }
-                                if ($obj -is [System.Collections.IDictionary]) { return $obj }
-                                if ($obj -is [System.Array] -or $obj -is [System.Collections.IList]) {
-                                    $arr = @()
-                                    foreach ($item in $obj) { $arr += (Convert-PSObjectToOrdered $item) }
-                                    return $arr
-                                }
-                                if ($obj -is [PSCustomObject]) {
-                                    $dict = [ordered]@{}
-                                    foreach ($prop in $obj.PSObject.Properties) {
-                                        $dict[$prop.Name] = Convert-PSObjectToOrdered $prop.Value
-                                    }
-                                    return $dict
-                                }
-                                return $obj
-                            }
                             $cfgDict = Convert-PSObjectToOrdered $parsedObj
                         } catch {
                             $cfgDict = [ordered]@{}
