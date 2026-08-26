@@ -3,7 +3,8 @@
 #  Encoding: UTF-8 with BOM
 # ==============================================================================
 
-$projectRoot = (Resolve-Path "$PSScriptRoot\..").Path
+$baseScriptDir = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) { $PSScriptRoot } else { Join-Path $PWD.Path "tests" }
+$projectRoot   = try { (Resolve-Path (Join-Path $baseScriptDir "..")).Path } catch { [System.IO.Path]::GetFullPath((Join-Path $baseScriptDir "..")) }
 $libDll      = Join-Path $projectRoot "lib\Markdig.dll"
 
 Describe 'Markdig Assembly and Pipeline Tests' {
@@ -77,11 +78,14 @@ Describe 'HTML Escaping and XSS Protection Tests' {
 
 Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
     BeforeAll {
-        $testExportDir = Join-Path $env:TEMP "SimpleWiki_TestExport"
+        $tempPath = [System.IO.Path]::GetTempPath()
+        $testExportDir = Join-Path $tempPath "SimpleWiki_TestExport"
         if (Test-Path $testExportDir) { Remove-Item -Path $testExportDir -Recurse -Force }
     }
 
     AfterAll {
+        $tempPath = [System.IO.Path]::GetTempPath()
+        $testExportDir = Join-Path $tempPath "SimpleWiki_TestExport"
         if (Test-Path $testExportDir) { Remove-Item -Path $testExportDir -Recurse -Force }
     }
 
@@ -1413,6 +1417,80 @@ Describe 'Directory Listing and Fallback Tests (Get-DirectoryListingHtml)' {
         $html | Should Match "text/event-stream"
         $html | Should Match "getReader"
         $html | Should Match "stream: true"
+    }
+}
+
+Describe 'Server File Tree Node Building Tests (Build-ServerFileTreeNode)' {
+    BeforeAll {
+        $serverScriptPath = Join-Path $projectRoot "Start-MarkdigWiki.ps1"
+        . $serverScriptPath -DotSourceOnly
+        $fakeWikiDir = if ($IsWindows -or $env:OS -eq "Windows_NT") { "C:\wiki" } else { "/wiki" }
+    }
+
+    It "Returns empty root node when input file list is empty" {
+        $tree = Build-ServerFileTreeNode -allMdFiles @() -wikiDir $fakeWikiDir
+        $tree | Should -Not -Be $null
+        $tree.Files.Count | Should -Be 0
+        $tree.SubFolders.Count | Should -Be 0
+    }
+
+    It "Places root-level markdown files directly in root node Files collection" {
+        $file1 = [PSCustomObject]@{ FullName = Join-Path $fakeWikiDir "index.md"; BaseName = "index" }
+        $file2 = [PSCustomObject]@{ FullName = Join-Path $fakeWikiDir "readme.md"; BaseName = "readme" }
+
+        $tree = Build-ServerFileTreeNode -allMdFiles @($file1, $file2) -wikiDir $fakeWikiDir
+        $tree.Files.Count | Should -Be 2
+        $tree.Files[0].BaseName | Should -Be "index"
+        $tree.Files[1].BaseName | Should -Be "readme"
+        $tree.SubFolders.Count | Should -Be 0
+    }
+
+    It "Creates single-level SubFolders entry for files in a subfolder" {
+        $file1 = [PSCustomObject]@{ FullName = Join-Path $fakeWikiDir "docs/guide.md"; BaseName = "guide" }
+
+        $tree = Build-ServerFileTreeNode -allMdFiles @($file1) -wikiDir $fakeWikiDir
+        $tree.Files.Count | Should -Be 0
+        $tree.SubFolders.Count | Should -Be 1
+        ($tree.SubFolders.Contains("docs")) | Should -Be $true
+
+        $docsNode = $tree.SubFolders["docs"]
+        $docsNode.Files.Count | Should -Be 1
+        $docsNode.Files[0].BaseName | Should -Be "guide"
+        $docsNode.SubFolders.Count | Should -Be 0
+    }
+
+    It "Creates recursive nested SubFolders for deeply nested markdown files" {
+        $file1 = [PSCustomObject]@{ FullName = Join-Path $fakeWikiDir "docs/api/v1/spec.md"; BaseName = "spec" }
+
+        $tree = Build-ServerFileTreeNode -allMdFiles @($file1) -wikiDir $fakeWikiDir
+        $tree.SubFolders.Contains("docs") | Should -Be $true
+
+        $docsNode = $tree.SubFolders["docs"]
+        $docsNode.SubFolders.Contains("api") | Should -Be $true
+
+        $apiNode = $docsNode.SubFolders["api"]
+        $apiNode.SubFolders.Contains("v1") | Should -Be $true
+
+        $v1Node = $apiNode.SubFolders["v1"]
+        $v1Node.Files.Count | Should -Be 1
+        $v1Node.Files[0].BaseName | Should -Be "spec"
+    }
+
+    It "Handles multiple files across different root folders and subfolders without cross-contamination" {
+        $fRoot = [PSCustomObject]@{ FullName = Join-Path $fakeWikiDir "root.md"; BaseName = "root" }
+        $fDoc1 = [PSCustomObject]@{ FullName = Join-Path $fakeWikiDir "docs/doc1.md"; BaseName = "doc1" }
+        $fDoc2 = [PSCustomObject]@{ FullName = Join-Path $fakeWikiDir "docs/doc2.md"; BaseName = "doc2" }
+        $fGuide = [PSCustomObject]@{ FullName = Join-Path $fakeWikiDir "guides/intro.md"; BaseName = "intro" }
+
+        $tree = Build-ServerFileTreeNode -allMdFiles @($fRoot, $fDoc1, $fDoc2, $fGuide) -wikiDir $fakeWikiDir
+        $tree.Files.Count | Should -Be 1
+        $tree.Files[0].BaseName | Should -Be "root"
+        $tree.SubFolders.Count | Should -Be 2
+        ($tree.SubFolders.Contains("docs")) | Should -Be $true
+        ($tree.SubFolders.Contains("guides")) | Should -Be $true
+
+        $tree.SubFolders["docs"].Files.Count | Should -Be 2
+        $tree.SubFolders["guides"].Files.Count | Should -Be 1
     }
 }
 
