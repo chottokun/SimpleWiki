@@ -1400,8 +1400,71 @@ Describe 'Directory Listing and Fallback Tests (Get-DirectoryListingHtml)' {
             $treeHtml = Render-ServerFolderTreeHtml -node $node -currentRelPath "" -wikiDir "C:\wiki"
             $alphaPos = $treeHtml.IndexOf("alpha")
             $zetaPos = $treeHtml.IndexOf("zeta")
-            ($alphaPos -lt $zetaPos) | Should Be $true
-        } | Should Not Throw
+            ($alphaPos -lt $zetaPos) | Should -Be $true
+        } | Should -Not -Throw
+    }
+
+    It "Test-ServerNodeHasActiveFile identifies active file directly under node" {
+        $wikiDir = [System.IO.Path]::GetFullPath("C:\wiki")
+        $file1 = [PSCustomObject]@{ FullName = Join-Path $wikiDir "index.md" }
+        $file2 = [PSCustomObject]@{ FullName = Join-Path $wikiDir "about.md" }
+        $node = [PSCustomObject]@{
+            Files      = [System.Collections.Generic.List[PSObject]]@($file1, $file2)
+            SubFolders = [ordered]@{}
+        }
+
+        $resultActive = Test-ServerNodeHasActiveFile -node $node -currentRelPath "about.md" -wikiDir $wikiDir
+        $resultActive | Should -Be $true
+
+        $resultInactive = Test-ServerNodeHasActiveFile -node $node -currentRelPath "nonexistent.md" -wikiDir $wikiDir
+        $resultInactive | Should -Be $false
+    }
+
+    It "Test-ServerNodeHasActiveFile recursively identifies active file in nested child folders" {
+        $wikiDir = [System.IO.Path]::GetFullPath("C:\wiki")
+        $allMdFiles = @(
+            [PSCustomObject]@{ FullName = Join-Path $wikiDir "index.md" },
+            [PSCustomObject]@{ FullName = Join-Path $wikiDir "docs\guide\installation.md" }
+        )
+        $rootNode = Build-ServerFileTreeNode -allMdFiles $allMdFiles -wikiDir $wikiDir
+
+        $hasInSubfolder = Test-ServerNodeHasActiveFile -node $rootNode -currentRelPath "docs\guide\installation.md" -wikiDir $wikiDir
+        $hasInSubfolder | Should -Be $true
+
+        $docsNode = $rootNode.SubFolders["docs"]
+        $hasFromDocsNode = Test-ServerNodeHasActiveFile -node $docsNode -currentRelPath "docs\guide\installation.md" -wikiDir $wikiDir
+        $hasFromDocsNode | Should -Be $true
+
+        $guideNode = $docsNode.SubFolders["guide"]
+        $hasFromGuideNode = Test-ServerNodeHasActiveFile -node $guideNode -currentRelPath "docs\guide\installation.md" -wikiDir $wikiDir
+        $hasFromGuideNode | Should -Be $true
+
+        $hasMissingFile = Test-ServerNodeHasActiveFile -node $docsNode -currentRelPath "docs\guide\other.md" -wikiDir $wikiDir
+        $hasMissingFile | Should -Be $false
+    }
+
+    It "Test-ServerNodeHasActiveFile returns false for empty node" {
+        $wikiDir = [System.IO.Path]::GetFullPath("C:\wiki")
+        $emptyNode = [PSCustomObject]@{
+            Files      = [System.Collections.Generic.List[PSObject]]::new()
+            SubFolders = [ordered]@{}
+        }
+
+        $result = Test-ServerNodeHasActiveFile -node $emptyNode -currentRelPath "any.md" -wikiDir $wikiDir
+        $result | Should -Be $false
+    }
+
+    It "Test-ServerNodeHasActiveFile handles relative path matching for active files" {
+        $wikiDir = [System.IO.Path]::GetFullPath("C:\wiki")
+        $file = [PSCustomObject]@{ FullName = Join-Path $wikiDir "docs\manual.md" }
+        $node = [PSCustomObject]@{
+            Files      = [System.Collections.Generic.List[PSObject]]@($file)
+            SubFolders = [ordered]@{}
+        }
+
+        $expectedRelPath = $file.FullName.Substring($wikiDir.Length).TrimStart("\", "/")
+        $result = Test-ServerNodeHasActiveFile -node $node -currentRelPath $expectedRelPath -wikiDir $wikiDir
+        $result | Should -Be $true
     }
 
     It "Get-ChatWidgetHtml に開いているページを含めるデフォルトONのチェックボックスが含まれる" {
