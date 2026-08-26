@@ -576,7 +576,7 @@ function Build-ServerFileTreeNode {
         return $node
     }
 
-    $items = Get-ChildItem -Path $targetDir | Sort-Object { -not $_.PSIsContainer }, Name
+    $items = @(Get-ChildItem -Path $targetDir | Where-Object { $_.Name -notmatch '^(\.git|lib|tests|dist|\.cache|scratch)$' } | Sort-Object { -not $_.PSIsContainer }, Name)
     foreach ($item in $items) {
         if ($item.PSIsContainer) {
             $subBase = $item.FullName
