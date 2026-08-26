@@ -577,6 +577,73 @@ Describe 'OKF Search Engine Advanced Scoring and Filtering Tests' {
     }
 }
 
+Describe 'Get-OKFSearchResultsHtml Unit Tests' {
+    BeforeAll {
+        $serverScript = Join-Path $projectRoot "Start-MarkdigWiki.ps1"
+        . $serverScript -DotSourceOnly
+        $sampleDir = Join-Path $projectRoot "markdown_sample"
+        $script:WikiIndexDirWriteTime = (Get-Item $sampleDir).LastWriteTime
+
+        $script:WikiIndex = @(
+            [PSCustomObject]@{
+                Title       = "PostgreSQL DB Recovery"
+                Description = "Database recovery steps"
+                Author      = "Taro Yamada"
+                Domain      = "infrastructure/database"
+                Tags        = @("PostgreSQL", "Database")
+                LastUpdated = (Get-Date "2026-08-01")
+                Status      = "active"
+                HasYaml     = $true
+                RelPath     = "docs/db-recovery.md"
+                FullPath    = "C:\wiki\docs\db-recovery.md"
+                BodyText    = "How to recover PostgreSQL when crash occurs."
+            },
+            [PSCustomObject]@{
+                Title       = "Old Legacy Database Setup"
+                Description = "Deprecated setup guide for PostgreSQL"
+                Author      = "Saburo Tanaka"
+                Domain      = "infrastructure/database"
+                Tags        = @("PostgreSQL", "Legacy")
+                LastUpdated = (Get-Date "2024-01-01")
+                Status      = "deprecated"
+                HasYaml     = $true
+                RelPath     = "docs/legacy-db.md"
+                FullPath    = "C:\wiki\docs\legacy-db.md"
+                BodyText    = "PostgreSQL setup instructions for legacy server."
+            }
+        )
+    }
+
+    It 'Forwards default parameters correctly and renders Japanese search results' {
+        $html = Get-OKFSearchResultsHtml -query 'PostgreSQL'
+        $html | Should Match '検索結果'
+        $html | Should Match 'docs/db-recovery.md'
+        $html | Should Not Match 'Old Legacy Database Setup'
+    }
+
+    It 'Forwards custom statusFilter, domainFilter, and English language parameter' {
+        $html = Get-OKFSearchResultsHtml -query 'PostgreSQL' -statusFilter 'deprecated' -domainFilter 'infrastructure' -Lang 'en'
+        $html | Should Match 'Search Results'
+        $html | Should Match 'Old Legacy Database Setup'
+        $html | Should Not Match 'docs/db-recovery.md'
+    }
+
+    It 'Renders localized search_no_results message when no documents match query' {
+        $htmlJa = Get-OKFSearchResultsHtml -query 'nonexistent_term_999' -Lang 'ja'
+        $htmlJa | Should Match '該当するドキュメントが見つかりませんでした'
+
+        $htmlEn = Get-OKFSearchResultsHtml -query 'nonexistent_term_999' -Lang 'en'
+        $htmlEn | Should Match 'No matching documents were found'
+    }
+
+    It 'HTML encodes query parameter input to prevent XSS injection' {
+        $xss = '<script>alert("xss")</script>'
+        $html = Get-OKFSearchResultsHtml -query $xss
+        $html | Should Not Match '<script>alert\("xss"\)</script>'
+        $html | Should Match '&lt;script&gt;'
+    }
+}
+
 Describe 'Critical Edge Case and Security Tests' {
     BeforeAll {
         $serverScript = Join-Path $projectRoot "Start-MarkdigWiki.ps1"
