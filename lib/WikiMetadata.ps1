@@ -53,6 +53,36 @@ function Test-YamlFrontMatterSyntax {
     return $result
 }
 
+# --- ルートフォルダ決定ヘルパー関数 ---
+function Get-WikiDir {
+    param (
+        [string]$RootFolder = "",
+        [string]$TargetScriptDir = ""
+    )
+
+    if ([string]::IsNullOrWhiteSpace($TargetScriptDir)) {
+        $TargetScriptDir = [System.IO.Path]::GetFullPath($PSScriptRoot)
+    }
+
+    if ([string]::IsNullOrWhiteSpace($RootFolder)) {
+        $sampleDir = Join-Path $TargetScriptDir "markdown_sample"
+        if (Test-Path $sampleDir) {
+            $resolvedDir = $sampleDir
+        } else {
+            $resolvedDir = $TargetScriptDir
+        }
+    } else {
+        $resolvedDir = [System.IO.Path]::GetFullPath($RootFolder)
+    }
+
+    if (-not (Test-Path $resolvedDir)) {
+        Write-Error "指定されたルートフォルダが見つかりません:`n$resolvedDir"
+        exit 1
+    }
+
+    return $resolvedDir
+}
+
 # --- OKF メタデータ抽出し ＆ 自動補完 (フォールバック) 関数 ---
 function Get-DocumentMetadata {
     param (

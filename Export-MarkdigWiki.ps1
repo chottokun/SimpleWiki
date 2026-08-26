@@ -36,21 +36,7 @@ if ([string]::IsNullOrWhiteSpace($exportLang) -or -not $script:I18n.ContainsKey(
 }
 
 # 入力ルートフォルダの設定 (指定がない場合は markdown_sample フォルダ、存在しない場合は $PSScriptRoot)
-if ([string]::IsNullOrWhiteSpace($RootFolder)) {
-    $sampleDir = Join-Path $scriptDir "markdown_sample"
-    if (Test-Path $sampleDir) {
-        $wikiDir = $sampleDir
-    } else {
-        $wikiDir = $scriptDir
-    }
-} else {
-    $wikiDir = [System.IO.Path]::GetFullPath($RootFolder)
-}
-
-if (-not (Test-Path $wikiDir)) {
-    Write-Error "指定されたルートフォルダが見つかりません:`n$wikiDir"
-    exit 1
-}
+$wikiDir = Get-WikiDir -RootFolder $RootFolder -TargetScriptDir $scriptDir
 
 # 出力ディレクトリの設定
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
