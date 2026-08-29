@@ -2591,6 +2591,10 @@ title: "Glossary"
                 $html | Should Match "glossary-box"
                 $html | Should Match "用語解説: OKF"
                 $html | Should Match "用語解説テストテキスト"
+                # Markdig による Markdown (太字) の HTML レンダリング確認
+                if ([System.AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -eq "Markdig" }) {
+                    $html | Should Match "<strong>概要</strong>"
+                }
 
                 $htmlNoGlossary = Get-TagsViewHtml -SelectedTag "NonGlossaryTag" -Lang "ja"
                 $htmlNoGlossary | Should Not Match "glossary-box"

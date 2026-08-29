@@ -568,12 +568,26 @@ function Get-TagsViewHtml {
 
         $defText = Get-GlossaryTermDefinition -Term $SelectedTag -GlossaryPath $gPath
         if (-not [string]::IsNullOrWhiteSpace($defText)) {
-            # 改行と箇条書きを綺麗に整形
-            $formattedDef = ($defText -split '\r?\n' | ForEach-Object { [System.Net.WebUtility]::HtmlEncode($_) }) -join "<br>"
+            $formattedDef = ""
+            if ([System.AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -eq "Markdig" }) {
+                try {
+                    $builder = New-Object Markdig.MarkdownPipelineBuilder
+                    $null = [Markdig.MarkdownExtensions]::UseAdvancedExtensions($builder)
+                    $pipeline = $builder.Build()
+                    $formattedDef = [Markdig.Markdown]::ToHtml($defText, $pipeline)
+                } catch {
+                    $formattedDef = ($defText -split '\r?\n' | ForEach-Object { [System.Net.WebUtility]::HtmlEncode($_) }) -join "<br>"
+                }
+            } else {
+                $formattedDef = ($defText -split '\r?\n' | ForEach-Object { [System.Net.WebUtility]::HtmlEncode($_) }) -join "<br>"
+            }
+
             $glossaryBoxHtml = @"
 <div class="glossary-box" style="background: #e8f4fd; border-left: 4px solid #0366d6; padding: 14px 18px; border-radius: 6px; margin-bottom: 24px;">
     <div style="font-weight: bold; color: #0366d6; font-size: 15px; margin-bottom: 8px;">📖 用語解説: $encTag</div>
-    <div style="font-size: 13px; color: #24292e; line-height: 1.6;">$formattedDef</div>
+    <div class="glossary-content" style="font-size: 13px; color: #24292e; line-height: 1.6;">
+        $formattedDef
+    </div>
 </div>
 "@
         }
