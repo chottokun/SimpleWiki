@@ -424,6 +424,28 @@ try {
                 Write-SafeHttpResponse -Response $response -Bytes $bytes -ContentType "application/json; charset=utf-8"
                 continue
             }
+            if ($rawPath -eq "/api/glossary-terms" -and $request.HttpMethod -eq "GET") {
+                $gPath = Join-Path $wikiDir "glossary.md"
+                if (-not (Test-Path $gPath)) {
+                    $gPath = Join-Path $scriptDir "markdown_sample/glossary.md"
+                }
+                $termsDict = Get-GlossaryTerms -GlossaryPath $gPath
+                $termList = [System.Collections.Generic.List[PSCustomObject]]::new()
+                foreach ($h in $termsDict.Keys) {
+                    $tag = $h.Trim()
+                    if ($h -match '^\s*([^\(\（]+)\s*[\(\（]([^\)\）]+)[\)\）]') {
+                        $tag = $matches[1].Trim()
+                    }
+                    [void]$termList.Add([PSCustomObject]@{
+                        Heading    = $h
+                        Tag        = $tag
+                        Definition = $termsDict[$h]
+                    })
+                }
+                $jsonRes = @{ terms = $termList } | ConvertTo-Json -Depth 3
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+                continue
+            }
             if ($rawPath -eq "/api/backups" -and $request.HttpMethod -eq "GET") {
                 $relPath = $queryParams["relPath"]
                 if ([string]::IsNullOrWhiteSpace($relPath)) {
@@ -1295,7 +1317,8 @@ try {
                     </div>
                     <div class="wiki-form-group" style="grid-column: 1 / -1;">
                         <label for="metaTags">{45}</label>
-                        <input type="text" id="metaTags">
+                        <input type="text" id="metaTags" list="glossaryTagDatalist" placeholder="コンマ区切りで入力または候補から選択">
+                        <datalist id="glossaryTagDatalist"></datalist>
                     </div>
                     <div class="wiki-form-group" style="grid-column: 1 / -1;">
                         <label for="metaRelated">{46}</label>
@@ -1675,6 +1698,24 @@ try {
                     }
                 })
                 .catch(err => console.error("Backup list fetch error:", err));
+
+            const datalistEl = document.getElementById("glossaryTagDatalist");
+            if (datalistEl) {
+                datalistEl.innerHTML = "";
+                fetch("/api/glossary-terms")
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data && data.terms) {
+                            data.terms.forEach(t => {
+                                const opt = document.createElement("option");
+                                opt.value = t.Tag;
+                                opt.label = t.Heading;
+                                datalistEl.appendChild(opt);
+                            });
+                        }
+                    })
+                    .catch(err => console.error("Glossary fetch error:", err));
+            }
         }
 
         function loadWikiHistoryVersion(selectEl) {

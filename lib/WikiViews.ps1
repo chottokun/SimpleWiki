@@ -558,6 +558,27 @@ function Get-TagsViewHtml {
         $tagResultsTitle = Get-LocalizedStr -Key "tag_results_title" -Lang $Lang -FormatArgs @($encTag)
         $backToTags      = Get-LocalizedStr -Key "back_to_tags" -Lang $Lang
 
+        # glossary.md からの用語定義チェック
+        $glossaryBoxHtml = ""
+        $targetWiki = if ($wikiDir) { $wikiDir } elseif ($script:wikiDir) { $script:wikiDir } else { $PWD.Path }
+        $gPath = Join-Path $targetWiki "glossary.md"
+        if (-not (Test-Path $gPath) -and $scriptDir) {
+            $gPath = Join-Path $scriptDir "markdown_sample/glossary.md"
+        }
+
+        $defText = Get-GlossaryTermDefinition -Term $SelectedTag -GlossaryPath $gPath
+        if (-not [string]::IsNullOrWhiteSpace($defText)) {
+            $encDef = [System.Net.WebUtility]::HtmlEncode($defText)
+            # 改行と箇条書きを綺麗に整形
+            $formattedDef = ($defText -split '\r?\n' | ForEach-Object { [System.Net.WebUtility]::HtmlEncode($_) }) -join "<br>"
+            $glossaryBoxHtml = @"
+<div class="glossary-box" style="background: #e8f4fd; border-left: 4px solid #0366d6; padding: 14px 18px; border-radius: 6px; margin-bottom: 24px;">
+    <div style="font-weight: bold; color: #0366d6; font-size: 15px; margin-bottom: 8px;">📖 用語解説: $encTag</div>
+    <div style="font-size: 13px; color: #24292e; line-height: 1.6;">$formattedDef</div>
+</div>
+"@
+        }
+
         $cardsHtml = foreach ($item in $filtered) {
             $relUri = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
             $title  = [System.Net.WebUtility]::HtmlEncode($item.Title)
@@ -568,6 +589,7 @@ function Get-TagsViewHtml {
         return @"
 <h1>$tagResultsTitle</h1>
 <p><a href="/tags">$backToTags</a></p>
+$glossaryBoxHtml
 <div class="tag-results">
     $($cardsHtml -join "`n")
 </div>

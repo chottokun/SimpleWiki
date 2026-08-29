@@ -312,6 +312,109 @@ function Get-DocumentMetadata {
     }
 }
 
+function Get-GlossaryTerms {
+    param (
+        [string]$GlossaryPath = "",
+        [string]$MdText = ""
+    )
+
+    $terms = [ordered]@{}
+
+    if ([string]::IsNullOrWhiteSpace($MdText) -and -not [string]::IsNullOrWhiteSpace($GlossaryPath) -and (Test-Path $GlossaryPath)) {
+        try {
+            $MdText = Get-Content -Path $GlossaryPath -Raw -Encoding UTF8
+        } catch {
+            return $terms
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($MdText)) {
+        return $terms
+    }
+
+    # YAML Front Matter の除去
+    $bodyText = $MdText
+    if ($MdText -match '(?s)^\s*---\r?\n.*?\r?\n---\r?\n(.*)$') {
+        $bodyText = $matches[1]
+    }
+
+    $lines = $bodyText -split '\r?\n'
+    $currentTerm = $null
+    $currentLines = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($line in $lines) {
+        # 見出し (## 用語名) の判定
+        if ($line -match '^\s*##\s+(.+)$') {
+            $rawHeading = $matches[1].Trim()
+            # 「出典」や「Sources」などの特殊見出し、または1文字以下/記号のみの無効な見出しはスキップ
+            if ($rawHeading -match '^(出典|Sources|\uD83D\uDCDA)' -or [string]::IsNullOrWhiteSpace($rawHeading)) {
+                if ($currentTerm) {
+                    $def = ($currentLines -join "`n").Trim()
+                    $terms[$currentTerm] = $def
+                    $currentLines.Clear()
+                    $currentTerm = $null
+                }
+                continue
+            }
+
+            if ($currentTerm) {
+                $def = ($currentLines -join "`n").Trim()
+                $terms[$currentTerm] = $def
+                $currentLines.Clear()
+            }
+            $currentTerm = $rawHeading
+        } else {
+            if ($currentTerm) {
+                # 上位見出し (# ...) または区切り線 (---) の出現で用語セクションを終了
+                if ($line -match '^\s*#\s+' -or $line -match '^\s*---\s*$') {
+                    $def = ($currentLines -join "`n").Trim()
+                    $terms[$currentTerm] = $def
+                    $currentLines.Clear()
+                    $currentTerm = $null
+                } else {
+                    [void]$currentLines.Add($line)
+                }
+            }
+        }
+    }
+
+    if ($currentTerm) {
+        $def = ($currentLines -join "`n").Trim()
+        $terms[$currentTerm] = $def
+    }
+
+    return $terms
+}
+
+function Get-GlossaryTermDefinition {
+    param (
+        [string]$Term = "",
+        [string]$GlossaryPath = "",
+        [string]$MdText = ""
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Term)) { return $null }
+
+    $terms = Get-GlossaryTerms -GlossaryPath $GlossaryPath -MdText $MdText
+    if ($terms.Contains($Term)) {
+        return $terms[$Term]
+    }
+
+    # 完全一致しない場合、略称やエイリアス表記（例: "OKF (Open Knowledge Format)" に対する "OKF"）の部分一致/カッコ抽出検索
+    foreach ($key in $terms.Keys) {
+        if ($key -eq $Term) { return $terms[$key] }
+        if ($key -match '^\s*([^\(\（]+)\s*[\(\（]([^\)\）]+)[\)\）]') {
+            $mainTerm = $matches[1].Trim()
+            $altTerm  = $matches[2].Trim()
+            if ($mainTerm -ieq $Term -or $altTerm -ieq $Term) {
+                return $terms[$key]
+            }
+        }
+    }
+
+    return $null
+}
+
 $script:WikiIndex = @()
 $script:WikiIndexLastScan = [DateTime]::MinValue
 $script:WikiIndexDirWriteTime = [DateTime]::MinValue
