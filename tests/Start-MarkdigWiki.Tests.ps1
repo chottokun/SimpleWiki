@@ -1240,13 +1240,106 @@ Describe 'Markdown Editor API and Generation Backup Tests' {
         $unclosedMd = "---`r`ntitle: Test Title`r`n# Body"
         $resUnclosed = Test-YamlFrontMatterSyntax -MdText $unclosedMd
         $resUnclosed.isValid | Should Be $false
-        $resUnclosed.warnings[0] | Should Match "(髢峨§繝倥ャ繝繝ｼ|closing header|---)"
+        $resUnclosed.warnings[0] | Should Match "(閉じヘッダー|closing header|---)"
 
         # Invalid line without colon
         $invalidLineMd = "---`r`ntitle Test Title`r`n---`r`n# Body"
         $resInvalid = Test-YamlFrontMatterSyntax -MdText $invalidLineMd
         $resInvalid.isValid | Should Be $false
         $resInvalid.warnings[0] | Should Match "(key: value|キー: 値)"
+    }
+}
+
+Describe 'Editor Settings and Read-Only Guard Tests' {
+    BeforeAll {
+        . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -DotSourceOnly
+    }
+
+    It "Get-SettingsViewData includes EditorEnabledChecked and EditorMaxBackups fields for ja and en" {
+        $dataJa = Get-SettingsViewData -Lang "ja"
+        $dataJa.EditorEnabledChecked | Should Not Be $null
+        ($dataJa.EditorMaxBackups -ge 0) | Should Be $true
+        $dataJa.EditorTitleLbl | Should Match "エディター設定"
+
+        $dataEn = Get-SettingsViewData -Lang "en"
+        $dataEn.EditorTitleLbl | Should Match "Editor Settings"
+    }
+
+    It "Get-SettingsViewHtml renders editor settings card and enable checkbox" {
+        $html = Get-SettingsViewHtml -Lang "ja"
+        $html | Should Match "editorEnabled"
+        $html | Should Match "editorMaxBackups"
+        $html | Should Match "エディター設定"
+    }
+
+    It "Get-OkfTopBarHtml hides edit button when EditorEnabled is false" {
+        $meta = [PSCustomObject]@{
+            Title       = "Test Doc"
+            Domain      = "docs"
+            Status      = "active"
+            Tags        = @("test")
+            LastUpdated = (Get-Date)
+        }
+
+        $topBarEnabled = Get-OkfTopBarHtml -Meta $meta -RelPath "test.md" -Lang "ja" -EditorEnabled $true
+        $topBarEnabled | Should Match "edit-doc-btn"
+
+        $topBarDisabled = Get-OkfTopBarHtml -Meta $meta -RelPath "test.md" -Lang "ja" -EditorEnabled $false
+        $topBarDisabled | Should Not Match "edit-doc-btn"
+    }
+
+    It "/api/config saves editor enabled and maxBackups settings safely" {
+        $tempIsolatedDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestEditorIsolated"
+        if (Test-Path $tempIsolatedDir) { Remove-Item -Path $tempIsolatedDir -Recurse -Force -ErrorAction SilentlyContinue }
+        $null = New-Item -ItemType Directory -Path $tempIsolatedDir
+
+        Copy-Item -Path (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -Destination $tempIsolatedDir -Force
+        Copy-Item -Path (Join-Path $projectRoot "lib") -Destination (Join-Path $tempIsolatedDir "lib") -Recurse -Force
+        Copy-Item -Path (Join-Path $projectRoot "markdown_sample") -Destination (Join-Path $tempIsolatedDir "markdown_sample") -Recurse -Force
+
+        $isolatedConfig = Join-Path $tempIsolatedDir "config.json"
+        @{
+            editor = @{ enabled = $true; maxBackups = 3 }
+            search = @{ prebuildIndex = $false; useCache = $false; cacheFolder = ".cache" }
+        } | ConvertTo-Json -Depth 5 | Out-File -FilePath $isolatedConfig -Encoding UTF8
+
+        $port = 8095
+        $proc = Start-Process "powershell.exe" -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $tempIsolatedDir "Start-MarkdigWiki.ps1"), "-RootFolder", (Join-Path $tempIsolatedDir "markdown_sample"), "-Port", $port -PassThru
+        Start-Sleep -Seconds 3
+        try {
+            # 1. /api/config POST with editor.enabled = false
+            $payload = @{
+                editor = @{
+                    enabled    = $false
+                    maxBackups = 5
+                }
+            } | ConvertTo-Json -Depth 5
+
+            $res = Invoke-RestMethod -Uri "http://localhost:$port/api/config" -Method Post -Body $payload -ContentType "application/json; charset=utf-8"
+            $res.success | Should Be $true
+
+            # Verify saved config
+            $savedCfg = Get-Content -Path $isolatedConfig -Raw -Encoding UTF8 | ConvertFrom-Json
+            $savedCfg.editor.enabled | Should Be $false
+            $savedCfg.editor.maxBackups | Should Be 5
+
+            # 2. /api/save POST should return 403 Forbidden when editor.enabled = false
+            $savePayload = @{
+                relPath  = "概要.md"
+                markdown = "# Read Only Test"
+            } | ConvertTo-Json -Depth 5
+
+            try {
+                Invoke-RestMethod -Uri "http://localhost:$port/api/save" -Method Post -Body $savePayload -ContentType "application/json; charset=utf-8"
+                throw "Expected 403 Forbidden exception"
+            } catch {
+                $_.Exception.Response.StatusCode.value__ | Should Be 403
+            }
+        } finally {
+            Invoke-RestMethod -Uri "http://localhost:$port/api/shutdown" -Method Post -ErrorAction SilentlyContinue
+            if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+            Remove-Item -Path $tempIsolatedDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 

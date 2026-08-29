@@ -167,13 +167,13 @@ function Load-WikiIndexCache {
 
         $targetDir = if (-not [string]::IsNullOrWhiteSpace($TargetWikiDir)) { $TargetWikiDir } else { $baseScriptDir }
         if ((Test-Path $targetDir) -and (Test-Path -LiteralPath $cacheFilePath)) {
-            $cacheItem = Get-Item -LiteralPath $cacheFilePath -ErrorAction SilentlyContinue
+            $cacheItem = Get-Item -LiteralPath $cacheFilePath -Force -ErrorAction SilentlyContinue
             if ($cacheItem) {
                 $cacheFileWriteTime = $cacheItem.LastWriteTime
                 $currentMdFiles = @(Get-ChildItem -Path $targetDir -Recurse -Filter "*.md" -ErrorAction SilentlyContinue |
-                    Where-Object { $_.FullName -notmatch '[\\/](\.git|lib|tests|dist|\.cache|scratch)[\\/]' })
+                    Where-Object { $_ -and $_.FullName -notmatch '[\\/](\.git|lib|tests|dist|\.cache|scratch)[\\/]' })
 
-                if ($currentMdFiles.Count -ne $cacheData.Items.Count) {
+                if (@($currentMdFiles).Count -ne @($cacheData.Items).Count) {
                     return $false
                 }
 
@@ -395,14 +395,13 @@ function Build-FileTreeNode {
     }
 
     if ($allMdFiles -and $allMdFiles.Count -gt 0) {
-        $prefix = if ($wikiDir) { $wikiDir.TrimEnd('\', '/') } else { "" }
+        $prefix = if ($wikiDir) { $wikiDir.Replace('\', '/').TrimEnd('/') } else { "" }
         foreach ($file in $allMdFiles) {
+            $fFull = if ($file.FullPath) { $file.FullPath.Replace('\', '/') } elseif ($file.FullName) { $file.FullName.Replace('\', '/') } else { "" }
             $rel = if ($file.RelPath) {
                 $file.RelPath
-            } elseif ($file.FullPath -and $prefix -and $file.FullPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-                $file.FullPath.Substring($prefix.Length).TrimStart('\', '/')
-            } elseif ($file.FullName -and $prefix -and $file.FullName.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-                $file.FullName.Substring($prefix.Length).TrimStart('\', '/')
+            } elseif ($fFull -and $prefix -and $fFull.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $fFull.Substring($prefix.Length).TrimStart('/')
             } elseif ($file.FullName) {
                 $file.FullName.TrimStart('\', '/')
             } else {
@@ -551,14 +550,13 @@ function Build-ServerFileTreeNode {
     }
 
     if ($allMdFiles -and $allMdFiles.Count -gt 0) {
-        $prefix = if ($wikiDir) { $wikiDir.TrimEnd('\', '/') } else { "" }
+        $prefix = if ($wikiDir) { $wikiDir.Replace('\', '/').TrimEnd('/') } else { "" }
         foreach ($file in $allMdFiles) {
+            $fFull = if ($file.FullPath) { $file.FullPath.Replace('\', '/') } elseif ($file.FullName) { $file.FullName.Replace('\', '/') } else { "" }
             $rel = if ($file.RelPath) {
                 $file.RelPath
-            } elseif ($file.FullPath -and $prefix -and $file.FullPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-                $file.FullPath.Substring($prefix.Length).TrimStart('\', '/')
-            } elseif ($file.FullName -and $prefix -and $file.FullName.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-                $file.FullName.Substring($prefix.Length).TrimStart('\', '/')
+            } elseif ($fFull -and $prefix -and $fFull.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $fFull.Substring($prefix.Length).TrimStart('/')
             } elseif ($file.FullName) {
                 $file.FullName.TrimStart('\', '/')
             } else {

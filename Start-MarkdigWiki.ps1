@@ -10,7 +10,13 @@ param (
 )
 
 # スクリプト自身のディレクトリ ($PSScriptRoot) から lib フォルダを参照
-$scriptDir = [System.IO.Path]::GetFullPath($PSScriptRoot)
+$scriptDir = if ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot "lib"))) {
+    [System.IO.Path]::GetFullPath($PSScriptRoot)
+} elseif ($PSScriptRoot) {
+    [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+} else {
+    [System.IO.Path]::GetFullPath($PWD.Path)
+}
 $libDir    = Join-Path $scriptDir "lib"
 
 # --- モジュールのロード (lib/*.ps1) ---
@@ -199,7 +205,13 @@ try {
                     }
 
                     $currCfg = Get-ConfigJson -TargetScriptDir $scriptDir
+                    $editorEnabled = if ($currCfg.editor -and $null -ne $currCfg.editor.enabled) { [bool]$currCfg.editor.enabled } else { $true }
+                    $editorMaxBackups = if ($currCfg.editor -and $null -ne $currCfg.editor.maxBackups) { [int]$currCfg.editor.maxBackups } else { 3 }
                     $safeCfg = [ordered]@{
+                        editor = @{
+                            enabled    = $editorEnabled
+                            maxBackups = $editorMaxBackups
+                        }
                         search = if ($currCfg.search) { $currCfg.search } else { @{ prebuildIndex = $false; useCache = $false; cacheFolder = ".cache" } }
                         rag    = if ($currCfg.rag) {
                             @{
@@ -288,9 +300,25 @@ try {
                     if (-not $cfgDict.Contains("search")) {
                         $cfgDict["search"] = [ordered]@{ prebuildIndex = $false; useCache = $false; cacheFolder = ".cache" }
                     }
+                    if (-not $cfgDict.Contains("editor")) {
+                        $cfgDict["editor"] = [ordered]@{ enabled = $true; maxBackups = 3 }
+                    }
 
                     # バリデーションエラー用変数
                     $validationError = $null
+
+                    # editor 設定の安全な更新
+                    if ($null -eq $validationError -and $reqObj.PSObject.Properties["editor"]) {
+                        $eObj = $reqObj.editor
+                        if ($eObj.PSObject.Properties["enabled"]) {
+                            $cfgDict["editor"]["enabled"] = [bool]$eObj.enabled
+                        }
+                        if ($eObj.PSObject.Properties["maxBackups"]) {
+                            $mBackups = [int]$eObj.maxBackups
+                            if ($mBackups -lt 0) { $mBackups = 0 }
+                            $cfgDict["editor"]["maxBackups"] = $mBackups
+                        }
+                    }
 
                     # search 設定の安全な更新
                     if ($reqObj.PSObject.Properties["search"]) {
@@ -472,6 +500,14 @@ try {
                 continue
             }
             if ($rawPath -eq "/api/save" -and $request.HttpMethod -eq "POST") {
+                $config = Get-ConfigJson -TargetScriptDir $scriptDir
+                $editorEnabled = if ($config.editor -and $null -ne $config.editor.enabled) { [bool]$config.editor.enabled } else { $true }
+                if (-not $editorEnabled) {
+                    $disabledMsg = Get-LocalizedStr -Key "settings_editor_disabled_msg" -Lang $reqLang
+                    $jsonRes = @{ error = "FORBIDDEN"; message = $disabledMsg } | ConvertTo-Json
+                    Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 403
+                    continue
+                }
                 $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
                 $bodyText = $reader.ReadToEnd()
                 $reqObj = try { $bodyText | ConvertFrom-Json } catch { $null }
@@ -1049,7 +1085,8 @@ try {
                     $pipeline = $builder.Build()
                     $renderedHtml = [Markdig.Markdown]::ToHtml($mdText, $pipeline)
 
-                    $okfTopBar   = Get-OkfTopBarHtml -Meta $meta -RelPath $relPath -Lang $reqLang
+                    $editorEnabled = if ($config.editor -and $null -ne $config.editor.enabled) { [bool]$config.editor.enabled } else { $true }
+                    $okfTopBar   = Get-OkfTopBarHtml -Meta $meta -RelPath $relPath -Lang $reqLang -EditorEnabled $editorEnabled
                     $okfFooter   = Get-OkfFooterCardHtml -Meta $meta -Lang $reqLang
                     $bodyContent = $okfTopBar + $renderedHtml + $okfFooter
                     $pageTitle   = [System.Net.WebUtility]::HtmlEncode($meta.Title)

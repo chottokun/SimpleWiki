@@ -78,8 +78,14 @@ function Build-FileTreeNode {
         SubFolders = [ordered]@{}
     }
 
+    $normWikiDir = if ($wikiDir) { $wikiDir.Replace('\', '/').TrimEnd('/') } else { "" }
     foreach ($file in $allMdFiles) {
-        $relPath = $file.FullName.Substring($wikiDir.Length).TrimStart("\", "/")
+        $normFullName = if ($file.FullName) { $file.FullName.Replace('\', '/') } else { "" }
+        $relPath = if ($normWikiDir -and $normFullName.StartsWith($normWikiDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $normFullName.Substring($normWikiDir.Length).TrimStart('/')
+        } else {
+            $file.FullName.TrimStart('\', '/')
+        }
         $parts   = $relPath -split '[\\/]'
 
         $currentNode = $rootNode
