@@ -2496,4 +2496,108 @@ Describe "Adversarial & Security Resilience Tests" {
             $rendered | Should Match "&lt;script&gt;"
         }
     }
+
+    Context "5. Glossary & Term-Linked Backlinks Extension Tests" {
+        It "Extracts terms and definitions correctly from glossary.md" {
+            $glossaryMd = @"
+---
+title: "Glossary"
+---
+
+# 社内用語
+
+## OKF (Open Knowledge Format)
+
+* **概要**: ドキュメント構造化フォーマット。
+
+## K-DAT
+
+* **概要**: バックアップツール。
+"@
+            $terms = Get-GlossaryTerms -MdText $glossaryMd
+            $terms.Count | Should Be 2
+            $terms.Contains("K-DAT") | Should Be $true
+            $terms.Contains("OKF (Open Knowledge Format)") | Should Be $true
+
+            $defOkf = Get-GlossaryTermDefinition -Term "OKF" -MdText $glossaryMd
+            $defOkf | Should Match "ドキュメント構造化フォーマット"
+        }
+
+        It "Runs Update-WikiTags.ps1 in DryRun mode without modifying files" {
+            $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("WikiTagsTest_" + [Guid]::NewGuid().ToString("N"))
+            $null = New-Item -ItemType Directory -Path $tempDir -Force
+            try {
+                $gPath = Join-Path $tempDir "glossary.md"
+                $docPath = Join-Path $tempDir "test.md"
+
+                Set-Content -Path $gPath -Value "## OKF`n`n* **概要**: ドキュメントフォーマット" -Encoding UTF8
+                $origContent = "---\ntags:\n  - draft\n---\n\nこの文章には OKF が含まれます。"
+                Set-Content -Path $docPath -Value $origContent -Encoding UTF8 -NoNewline
+
+                $updateScript = Join-Path $PSScriptRoot "../Update-WikiTags.ps1"
+                & $updateScript -WikiDir $tempDir -GlossaryPath $gPath -DryRun
+
+                $readBack = Get-Content -Path $docPath -Raw -Encoding UTF8
+                $readBack | Should Be $origContent
+            } finally {
+                Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "Merges newly detected glossary terms into tags without destroying existing custom tags" {
+            $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("WikiTagsMerge_" + [Guid]::NewGuid().ToString("N"))
+            $null = New-Item -ItemType Directory -Path $tempDir -Force
+            try {
+                $gPath = Join-Path $tempDir "glossary.md"
+                $docPath = Join-Path $tempDir "test.md"
+
+                Set-Content -Path $gPath -Value "## OKF (Open Knowledge Format)`n`n* **概要**: フォーマット" -Encoding UTF8
+                $origContent = "---\ntags:\n  - status/draft\n  - custom-tag\n---\n\nこの文章には OKF が含まれます。"
+                Set-Content -Path $docPath -Value $origContent -Encoding UTF8
+
+                $updateScript = Join-Path $PSScriptRoot "../Update-WikiTags.ps1"
+                & $updateScript -WikiDir $tempDir -GlossaryPath $gPath
+
+                $readBack = Get-Content -Path $docPath -Raw -Encoding UTF8
+                $readBack | Should Match "status/draft"
+                $readBack | Should Match "custom-tag"
+                $readBack | Should Match "OKF"
+            } finally {
+                Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "Renders glossary box in Get-TagsViewHtml when tag matches a glossary term" {
+            $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("WikiTagView_" + [Guid]::NewGuid().ToString("N"))
+            $null = New-Item -ItemType Directory -Path $tempDir -Force
+            $oldWikiDir = $script:wikiDir
+            try {
+                $gPath = Join-Path $tempDir "glossary.md"
+                Set-Content -Path $gPath -Value "## OKF`n`n* **概要**: 用語解説テストテキスト" -Encoding UTF8
+
+                $script:wikiDir = $tempDir
+                $wikiDir = $tempDir
+                $script:WikiIndex = @(
+                    [PSCustomObject]@{
+                        Title       = "Test Doc"
+                        Description = "Test Desc"
+                        RelPath     = "test.md"
+                        Tags        = @("OKF")
+                        Status      = "active"
+                    }
+                )
+
+                $html = Get-TagsViewHtml -SelectedTag "OKF" -Lang "ja"
+                $html | Should Match "glossary-box"
+                $html | Should Match "用語解説: OKF"
+                $html | Should Match "用語解説テストテキスト"
+
+                $htmlNoGlossary = Get-TagsViewHtml -SelectedTag "NonGlossaryTag" -Lang "ja"
+                $htmlNoGlossary | Should Not Match "glossary-box"
+            } finally {
+                $script:wikiDir = $oldWikiDir
+                Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
 }
