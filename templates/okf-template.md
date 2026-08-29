@@ -1,6 +1,7 @@
 ---
 # OKF (Open Knowledge Format) v0.2 準拠ドキュメントテンプレート
 # ※ すべてのメタデータ項目は任意（欠落しても自動補完・安全に動作）です。
+type: Guide             # Concept / Guide / Architecture / Service / Table / Attested Computation
 title: "ドキュメントタイトル: サブタイトル"
 description: "ドキュメントの概要および目的を記述します。"
 author: "主執筆者名 (所属・チーム)"

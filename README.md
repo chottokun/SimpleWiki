@@ -1,4 +1,4 @@
-﻿# SimpleWiki
+# SimpleWiki
 
 Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作する **100% オフライン対応 Markdown Wiki サーバー ＆ LLM RAG AI チャット ＆ 静的 HTML エキスポートツール** です。
 
@@ -61,8 +61,13 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
     - **Ctrl + C (SIGINT) 即時終了**: `BeginGetContext` による 200ms 非同期ポーリング待機および `[System.Console]::CancelKeyPress` ハンドラにより、バッチファイル (`.bat`) 起動時やコンソールからの `Ctrl + C` でスレッドをブロッキングさせず即座に正常停止。
   - **Google OKF (Open Knowledge Format) v0.2 思想の準拠**: YAML Front Matter からの文脈抽出・自動補完 (フォールバック)・Version / Reviewer / Contributors / Related メタデータカード描画
   - **AI エージェント / LLM 用機械可読 API**: `/api/index.json` (メタデータ), `/api/chunks.json` (自動セマンティック分割チャンク), `/api/chat` (AI チャット), `/api/config` (設定管理), `/api/shutdown` (サーバー停止)
-  - **✏️ Web UI 内蔵 Markdown エディター ＆ 世代管理バックアップ・復元 ＆ OKF 構文検証 ＆ ON/OFF 制御**:
-    - Web ブラウザ上からの Markdown インプレース直接編集・保存機能 (`/api/raw`, `/api/save`)。
+  - **✏️ Web UI 内蔵 Markdown エディター ＆ OKF フォーム・本文分離編集 ＆ 世代管理バックアップ・復元 ＆ ON/OFF 制御**:
+    - **OKF フォーム＆本文 分離編集モーダル**: メタデータ（YAML Front Matter）と本文（Markdown Body）を分離して直感的に編集可能。
+    - **📋 フォーム入力モード**: OKF v0.2 仕様に準拠した項目（`type`, `title`, `status` (`draft` | `stable` | `deprecated`), `version`, `domain`, `author`, `reviewer`, `lastUpdated`, `tags`, `related`, `supersededBy`）を直感的に編集。元のファイル記載値をデフォルト値として忠実に復元・保持。更新日フィールドと「📅 今日をセット」ボタン付き。
+    - **📄 RAW YAML モード**: YAML テキストをそのまま直接編集可能。手動入力時の `---` 囲み記号の自動サニタイズに対応。
+    - **双方向同期**: フォーム入力と RAW YAML 間のタブ切り替えで即座に双方向同期。OKF 仕様外のカスタムプロパティも消失せず安全に保持。
+    - **キーボードショートカット**: `Ctrl+S` / `Cmd+S` による即時保存、`Esc` によるモーダルクローズに対応。
+    - **YAML なし Markdown との完全互換**: YAML がないプレーン Markdown ファイルでも H1 見出しからのタイトル自動抽出や安全なフォールバックにより一切エラーなく動作。
     - 設定画面からのエディター機能 ON/OFF 切替による閲覧専用（読み取り専用モード）制御とサーバーサイド書き込み保護 (`403 Forbidden`)。
     - `config.json` の `editor.maxBackups` (既定値 3) に基づく自動世代バックアップローテーション (`.bak1`, `.bak2`, ...)。
     - エディターモーダル上での過去世代ドロップダウンプレビュー選択 ＆ ワンクリックでのロールバック復元 UI。
@@ -123,7 +128,7 @@ SimpleWiki/
 │   └── activation/
 │       └── index.html       <-- 完全サーバーレス型 Web Crypto API アクティベーションコード生成 Web アプリ
 ├── tests/
-│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全160件)
+│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全163件)
 └── README.md                <-- プロジェクト記録
 ```
 
@@ -216,9 +221,9 @@ SimpleWiki では、API キーを他人に漏洩させずに特定の PC 専用�
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\tests\Start-MarkdigWiki.Tests.ps1"
 ```
-- **検証結果**: 全 160 件の Pester 自動テストが **100% PASS**。
+- **検証結果**: 全 163 件の Pester 自動テストが **100% PASS**。
   - **1. スクリプト構文・AST検証**: 全 `.ps1` ファイルの構文解析・トークン検証に合格
-  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 160 件)**:
+  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 163 件)**:
     - エディター機能 ON/OFF トグル設定およびバックアップ世代数の `/settings` UI レンダリング ＆ `/api/config` 保存・パーステスト
     - `editor.enabled` 無効化（`false`）時の UI トップバー「✏️ 編集」ボタン非表示化テスト
     - `editor.enabled` 無効化時の `/api/save` 書き込みリクエストに対する `403 Forbidden` ガードテスト
