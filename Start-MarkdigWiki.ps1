@@ -1250,19 +1250,20 @@ try {
 
                 <!-- Form Container -->
                 <div id="yamlFormContainer" class="wiki-meta-grid">
-                    <div class="wiki-form-group" style="grid-column: 1 / -1;">
+                    <div class="wiki-form-group">
+                        <label for="metaType">{54}</label>
+                        <input type="text" id="metaType" placeholder="Guide, Concept, Service...">
+                    </div>
+                    <div class="wiki-form-group">
                         <label for="metaTitle">{35}</label>
                         <input type="text" id="metaTitle">
                     </div>
                     <div class="wiki-form-group">
                         <label for="metaStatus">{36}</label>
                         <select id="metaStatus" onchange="onStatusChange()">
-                            <option value="stable">{51}</option>
-                            <option value="active">{37}</option>
                             <option value="draft">{38}</option>
-                            <option value="review">{52}</option>
+                            <option value="stable">{51}</option>
                             <option value="deprecated">{39}</option>
-                            <option value="archived">{53}</option>
                         </select>
                     </div>
                     <div class="wiki-form-group">
@@ -1281,6 +1282,13 @@ try {
                         <label for="metaReviewer">{43}</label>
                         <input type="text" id="metaReviewer">
                     </div>
+                    <div class="wiki-form-group">
+                        <label for="metaLastUpdated">{55}</label>
+                        <div style="display: flex; gap: 4px;">
+                            <input type="text" id="metaLastUpdated" placeholder="YYYY-MM-DD" style="flex: 1;">
+                            <button type="button" onclick="setEditorDateToday()" style="padding: 4px 8px; font-size: 11px; border: 1px solid #ccc; border-radius: 4px; background: #f0f3f6; cursor: pointer;" title="{56}">{56}</button>
+                        </div>
+                    </div>
                     <div class="wiki-form-group" style="grid-column: 1 / -1;">
                         <label for="metaDesc">{44}</label>
                         <input type="text" id="metaDesc">
@@ -1298,7 +1306,7 @@ try {
                         <input type="text" id="metaSupersededBy">
                     </div>
                     <div class="wiki-form-group" style="grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 6px;">
-                        <input type="checkbox" id="metaAutoDate" checked style="margin: 0;">
+                        <input type="checkbox" id="metaAutoDate" style="margin: 0;">
                         <label for="metaAutoDate" style="font-weight: normal; cursor: pointer;">{48}</label>
                     </div>
                 </div>
@@ -1349,9 +1357,10 @@ try {
         function parseMarkdownWithYaml(mdText) {
             var result = {
                 metadata: {
+                    type: "",
                     title: "",
                     description: "",
-                    status: "active",
+                    status: "stable",
                     version: "",
                     author: "",
                     reviewer: "",
@@ -1433,14 +1442,15 @@ try {
                         }
                     } else {
                         var cleanVal = val.replace(/^["']|["']$/g, '');
-                        if (keyLower === "title") result.metadata.title = cleanVal;
+                        if (keyLower === "type") result.metadata.type = cleanVal;
+                        else if (keyLower === "title") result.metadata.title = cleanVal;
                         else if (keyLower === "description" || keyLower === "desc") result.metadata.description = cleanVal;
                         else if (keyLower === "status") result.metadata.status = cleanVal.toLowerCase();
                         else if (keyLower === "version") result.metadata.version = cleanVal;
                         else if (keyLower === "author") result.metadata.author = cleanVal;
                         else if (keyLower === "reviewer") result.metadata.reviewer = cleanVal;
                         else if (keyLower === "domain") result.metadata.domain = cleanVal;
-                        else if (keyLower === "lastupdated" || keyLower === "last_updated") result.metadata.lastUpdated = cleanVal;
+                        else if (keyLower === "lastupdated" || keyLower === "last_updated" || keyLower === "date") result.metadata.lastUpdated = cleanVal;
                         else if (keyLower === "supersededby" || keyLower === "superseded_by") result.metadata.supersededBy = cleanVal;
                         else {
                             result.metadata.customProps[key] = cleanVal;
@@ -1454,6 +1464,7 @@ try {
 
         function populateYamlForm(meta) {
             meta = meta || {};
+            document.getElementById("metaType").value = meta.type || "";
             document.getElementById("metaTitle").value = meta.title || "";
 
             var statusSelect = document.getElementById("metaStatus");
@@ -1478,17 +1489,25 @@ try {
             document.getElementById("metaDomain").value = meta.domain || "";
             document.getElementById("metaAuthor").value = meta.author || "";
             document.getElementById("metaReviewer").value = meta.reviewer || "";
+            document.getElementById("metaLastUpdated").value = meta.lastUpdated || "";
             document.getElementById("metaDesc").value = meta.description || "";
             document.getElementById("metaTags").value = Array.isArray(meta.tags) ? meta.tags.join(", ") : "";
             document.getElementById("metaRelated").value = Array.isArray(meta.related) ? meta.related.join(", ") : "";
             document.getElementById("metaSupersededBy").value = meta.supersededBy || "";
 
             var autoDateCheckbox = document.getElementById("metaAutoDate");
-            autoDateCheckbox.checked = true;
-            autoDateCheckbox.setAttribute("data-prev-date", meta.lastUpdated || "");
+            autoDateCheckbox.checked = false;
 
             window._currentCustomProps = meta.customProps || {};
             onStatusChange();
+        }
+
+        function setEditorDateToday() {
+            var d = new Date();
+            var y = d.getFullYear();
+            var m = String(d.getMonth() + 1).padStart(2, '0');
+            var dt = String(d.getDate()).padStart(2, '0');
+            document.getElementById("metaLastUpdated").value = y + "-" + m + "-" + dt;
         }
 
         function generateMarkdownWithYaml(isRawMode) {
@@ -1502,12 +1521,14 @@ try {
                 return "---\n" + rawYaml + "\n---\n\n" + bodyText.replace(/^\r?\n+/, '');
             }
 
+            var type = document.getElementById("metaType").value.trim();
             var title = document.getElementById("metaTitle").value.trim();
             var status = document.getElementById("metaStatus").value;
             var version = document.getElementById("metaVersion").value.trim();
             var domain = document.getElementById("metaDomain").value.trim();
             var author = document.getElementById("metaAuthor").value.trim();
             var reviewer = document.getElementById("metaReviewer").value.trim();
+            var lastUpdated = document.getElementById("metaLastUpdated").value.trim();
             var desc = document.getElementById("metaDesc").value.trim();
             var tagsStr = document.getElementById("metaTags").value.trim();
             var relatedStr = document.getElementById("metaRelated").value.trim();
@@ -1515,6 +1536,7 @@ try {
             var autoDate = document.getElementById("metaAutoDate").checked;
 
             var yamlLines = [];
+            if (type) yamlLines.push("type: " + JSON.stringify(type));
             if (title) yamlLines.push("title: " + JSON.stringify(title));
             if (desc) yamlLines.push("description: " + JSON.stringify(desc));
             if (status) yamlLines.push("status: " + status);
@@ -1529,9 +1551,8 @@ try {
                 var m = String(d.getMonth() + 1).padStart(2, '0');
                 var dt = String(d.getDate()).padStart(2, '0');
                 yamlLines.push("lastUpdated: " + y + "-" + m + "-" + dt);
-            } else {
-                var prevDate = document.getElementById("metaAutoDate").getAttribute("data-prev-date");
-                if (prevDate) yamlLines.push("lastUpdated: " + prevDate);
+            } else if (lastUpdated) {
+                yamlLines.push("lastUpdated: " + lastUpdated);
             }
 
             if ((status === "deprecated" || status === "archived" || status === "obsolete") && supersededBy) {
@@ -1831,18 +1852,18 @@ try {
                 $edMetaSectionTitle = Get-LocalizedStr -Key "editor_meta_section_title" -Lang $reqLang
                 $edModeForm         = Get-LocalizedStr -Key "editor_mode_form" -Lang $reqLang
                 $edModeRaw          = Get-LocalizedStr -Key "editor_mode_raw" -Lang $reqLang
+                $edFieldType        = Get-LocalizedStr -Key "editor_field_type" -Lang $reqLang
                 $edFieldTitle       = Get-LocalizedStr -Key "editor_field_title" -Lang $reqLang
                 $edFieldStatus      = Get-LocalizedStr -Key "editor_field_status" -Lang $reqLang
-                $edStatusStable     = Get-LocalizedStr -Key "editor_status_stable" -Lang $reqLang
-                $edStatusActive     = Get-LocalizedStr -Key "editor_status_active" -Lang $reqLang
                 $edStatusDraft      = Get-LocalizedStr -Key "editor_status_draft" -Lang $reqLang
-                $edStatusReview     = Get-LocalizedStr -Key "editor_status_review" -Lang $reqLang
+                $edStatusStable     = Get-LocalizedStr -Key "editor_status_stable" -Lang $reqLang
                 $edStatusDeprecated = Get-LocalizedStr -Key "editor_status_deprecated" -Lang $reqLang
-                $edStatusArchived   = Get-LocalizedStr -Key "editor_status_archived" -Lang $reqLang
                 $edFieldVersion     = Get-LocalizedStr -Key "editor_field_version" -Lang $reqLang
                 $edFieldDomain      = Get-LocalizedStr -Key "editor_field_domain" -Lang $reqLang
                 $edFieldAuthor      = Get-LocalizedStr -Key "editor_field_author" -Lang $reqLang
                 $edFieldReviewer    = Get-LocalizedStr -Key "editor_field_reviewer" -Lang $reqLang
+                $edFieldLastUpdated = Get-LocalizedStr -Key "editor_field_last_updated" -Lang $reqLang
+                $edSetToday         = Get-LocalizedStr -Key "editor_set_today" -Lang $reqLang
                 $edFieldDesc        = Get-LocalizedStr -Key "editor_field_desc" -Lang $reqLang
                 $edFieldTags        = Get-LocalizedStr -Key "editor_field_tags" -Lang $reqLang
                 $edFieldRelated     = Get-LocalizedStr -Key "editor_field_related" -Lang $reqLang
@@ -1865,7 +1886,7 @@ try {
 
                 $searchLoadingTxtJs = ConvertTo-JsString (Get-LocalizedStr -Key "indexing_searching" -Lang $reqLang)
 
-                $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{13}", $edTitle).Replace("{14}", $edLatest).Replace("{15}", $edHolder).Replace("{16}", $edCancel).Replace("{17}", $edSave).Replace("{18}", $reqLang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $edLoadingJs).Replace("{26}", $edHistoryLoadingJs).Replace("{27}", $edLoadErrorJs).Replace("{28}", $edBackupLoadErrJs).Replace("{29}", $edSavedWarningJs).Replace("{30}", $edSavedJs).Replace("{31}", $searchLoadingTxtJs).Replace("{32}", $edMetaSectionTitle).Replace("{33}", $edModeForm).Replace("{34}", $edModeRaw).Replace("{35}", $edFieldTitle).Replace("{36}", $edFieldStatus).Replace("{37}", $edStatusActive).Replace("{38}", $edStatusDraft).Replace("{39}", $edStatusDeprecated).Replace("{40}", $edFieldVersion).Replace("{41}", $edFieldDomain).Replace("{42}", $edFieldAuthor).Replace("{43}", $edFieldReviewer).Replace("{44}", $edFieldDesc).Replace("{45}", $edFieldTags).Replace("{46}", $edFieldRelated).Replace("{47}", $edFieldSuperseded).Replace("{48}", $edAutoDate).Replace("{49}", $edBodyPlaceholder).Replace("{50}", $edShortcutHint).Replace("{51}", $edStatusStable).Replace("{52}", $edStatusReview).Replace("{53}", $edStatusArchived)
+                $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{13}", $edTitle).Replace("{14}", $edLatest).Replace("{15}", $edHolder).Replace("{16}", $edCancel).Replace("{17}", $edSave).Replace("{18}", $reqLang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $edLoadingJs).Replace("{26}", $edHistoryLoadingJs).Replace("{27}", $edLoadErrorJs).Replace("{28}", $edBackupLoadErrJs).Replace("{29}", $edSavedWarningJs).Replace("{30}", $edSavedJs).Replace("{31}", $searchLoadingTxtJs).Replace("{32}", $edMetaSectionTitle).Replace("{33}", $edModeForm).Replace("{34}", $edModeRaw).Replace("{35}", $edFieldTitle).Replace("{36}", $edFieldStatus).Replace("{37}", $edStatusActive).Replace("{38}", $edStatusDraft).Replace("{39}", $edStatusDeprecated).Replace("{40}", $edFieldVersion).Replace("{41}", $edFieldDomain).Replace("{42}", $edFieldAuthor).Replace("{43}", $edFieldReviewer).Replace("{44}", $edFieldDesc).Replace("{45}", $edFieldTags).Replace("{46}", $edFieldRelated).Replace("{47}", $edFieldSuperseded).Replace("{48}", $edAutoDate).Replace("{49}", $edBodyPlaceholder).Replace("{50}", $edShortcutHint).Replace("{51}", $edStatusStable).Replace("{54}", $edFieldType).Replace("{55}", $edFieldLastUpdated).Replace("{56}", $edSetToday)
 
                 if (-not [string]::IsNullOrWhiteSpace($chatWidgetHtml)) {
                     $fullHtml = $fullHtml.Replace("</body>", "$chatWidgetHtml`n</body>")
