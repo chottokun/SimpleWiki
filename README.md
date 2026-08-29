@@ -73,6 +73,11 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
     - エディターモーダル上での過去世代ドロップダウンプレビュー選択 ＆ ワンクリックでのロールバック復元 UI。
     - 保存時の OKF (YAML Front Matter) 構文エラー自動検出 ＆ マイルドなアドバイス表示 (ソフトLint)。
     - エディター内の各メッセージ（読込中・保存完了・バックアップ世代ラベル・構文警告）の 100% 多言語化 (i18n) バインド。
+  - **📖 用語連動型タグ・逆リンク拡張 ＆ 自動タグ同期 CLI (`Update-WikiTags.ps1`) ＆ 用語解説 Markdown ボックス**:
+    - **`glossary.md` 用語抽出**: `Get-GlossaryTerms` / `Get-GlossaryTermDefinition` により、見出しやエイリアス表記（例: `OKF (Open Knowledge Format)`）から用語と解説を構造化抽出。
+    - **自動タグ同期 CLI (`Update-WikiTags.ps1`)**: 全ドキュメント本文をスキャンし、検出用語を既存の `tags:` を壊さず重複なく自動マージ。`-DryRun` および `-WhatIf` (ShouldProcess) に対応。
+    - **Web エディタ用語サジェスト**: `/api/glossary-terms` API と連携した `<datalist id="glossaryTagDatalist">` により、タグ入力時に用語候補をサジェスト。
+    - **タグ画面用語解説ボックス**: タグ検索画面（`/tags?tag=...`）の上部に、`glossary.md` 由来の用語解説ボックス（太字・リスト・リンク等のリッチな Markdown レンダリング対応）を表示。
   - **動的ナビゲーション & ビュー**: 最近の更新 (`/recent`), タグ集計/検索 (`/tags`), 品質・メンテナンスダッシュボード (`/maintenance`), 著者ディレクトリ (`/authors`), AND/NOT 検索 (`/search`), システム設定 (`/settings`)
   - **静的エキスポート**: `Export-MarkdigWiki.ps1` による OKF v0.2 メタデータカード同梱型 HTML 一括出力（日英多言語対応）
   - **Markdown レンダリング**: .NET 4.6.2 ビルド版 `Markdig.dll` (GFM テーブル・コードブロック・タスクリスト・YamlFrontMatter 対応)
@@ -92,6 +97,7 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
 SimpleWiki/
 ├── Start-MarkdigWiki.ps1   <-- Web サーバー & RAG AI チャット起動スクリプト (UTF-8 with BOM)
 ├── Start-MarkdigWiki.bat   <-- Web サーバー起動バッチ (UTF-8 No-BOM)
+├── Update-WikiTags.ps1     <-- glossary.md 用語のタグ自動マージ・同期スクリプト (UTF-8 with BOM)
 ├── New-ActivationCode.ps1  <-- マシンバインド/ポータブル アクティベーションコード生成 CLI (UTF-8 with BOM)
 ├── New-ActivationCode.bat  <-- アクティベーションコード生成バッチ (UTF-8 No-BOM)
 ├── Set-ApiKey.ps1          <-- LLM API キー暗号化・設定スクリプト (UTF-8 with BOM)
@@ -109,7 +115,7 @@ SimpleWiki/
 │   ├── Markdig.dll          <-- .NET Framework 4.6.2 ビルド版 Markdig.dll
 │   ├── System.Memory.dll    <-- .NET 4.8 依存アセンブリ
 │   ├── WikiI18n.ps1         <-- 多言語化 (i18n) 辞書 ＆ 言語判定モジュール
-│   ├── WikiMetadata.ps1     <-- OKF メタデータ抽出 & YAML 構文検証
+│   ├── WikiMetadata.ps1     <-- OKF メタデータ抽出 & YAML 構文検証 & 用語集パーサー
 │   ├── WikiSearch.ps1       <-- 検索エンジン・WinRT 形態素解析・NOT構文・インデックスキャッシュ
 │   ├── WikiRag.ps1          <-- LLM RAG (Fast/Agentic) ＆ チャット API
 │   ├── WikiViews.ps1        <-- 各種 HTML ビュー ＆ UI レンダラー
@@ -118,6 +124,7 @@ SimpleWiki/
 ├── markdown_sample/         <-- サンプルドキュメントフォルダ (OKF メタデータ記述例付き)
 │   ├── index.md             <-- トップページ
 │   ├── 概要.md               <-- プロジェクト概要
+│   ├── glossary.md          <-- 社内用語定義集
 │   ├── docs/
 │   │   ├── 詳細仕様.md       <-- サブフォルダ内サンプル
 │   │   └── api/
@@ -128,7 +135,7 @@ SimpleWiki/
 │   └── activation/
 │       └── index.html       <-- 完全サーバーレス型 Web Crypto API アクティベーションコード生成 Web アプリ
 ├── tests/
-│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全163件)
+│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全167件)
 └── README.md                <-- プロジェクト記録
 ```
 
@@ -162,13 +169,14 @@ SimpleWiki/
 #### 提供エンドポイント / 機能
 - **`http://localhost:8080/`**: ホーム・Markdown 閲覧画面 (OKF メタデータ付き)
 - **`http://localhost:8080/recent`**: 最近の更新ドキュメント一覧
-- **`http://localhost:8080/tags`**: タグ目録 / タグクラウド
+- **`http://localhost:8080/tags`**: タグ目録 / タグクラウド（用語解説ボックス表示）
 - **`http://localhost:8080/maintenance`**: 風化ドキュメント (>365日)・下書き・非推奨の管理画面
 - **`http://localhost:8080/authors`**: 著者一覧ディレクトリ
 - **`http://localhost:8080/search?q=キーワード`**: 全文検索 (AND/NOT 検索対応)
 - **`http://localhost:8080/settings`**: システム設定 & インデックス管理画面
 - **`http://localhost:8080/api/index.json`**: AI エージェント / LLM 用機械可読 JSON インデックス
 - **`http://localhost:8080/api/chunks.json`**: RAG 用自動 H2 見出しセマンティック分割済み JSON チャンク API
+- **`http://localhost:8080/api/glossary-terms`**: 用語一覧・タグ・解説取得 API
 - **`http://localhost:8080/api/config`**: 設定情報取得・保存・インデックス再構築 API
 
 ---
@@ -203,6 +211,20 @@ SimpleWiki では、API キーを他人に漏洩させずに特定の PC 専用�
 
 ---
 
+### 5. 用語連動タグの自動同期 (`Update-WikiTags.ps1`)
+
+`glossary.md` で定義された用語を Markdown 本文から自動検出し、YAML Front Matter の `tags:` に安全にマージします。
+
+```powershell
+# 事前確認 (DryRun モード: ファイルを変更せずに更新候補を表示)
+.\Update-WikiTags.ps1 -WikiDir "D:\MyDocs\ProjectWiki" -DryRun
+
+# 実際に同期・更新を実行
+.\Update-WikiTags.ps1 -WikiDir "D:\MyDocs\ProjectWiki"
+```
+
+---
+
 ## 依存ライブラリと Windows 11 互換性について
 
 ### **完全スタンドアロン（追加インストール不要）**
@@ -221,9 +243,12 @@ SimpleWiki では、API キーを他人に漏洩させずに特定の PC 専用�
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\tests\Start-MarkdigWiki.Tests.ps1"
 ```
-- **検証結果**: 全 163 件の Pester 自動テストが **100% PASS**。
+- **検証結果**: 全 167 件の Pester 自動テストが **100% PASS**。
   - **1. スクリプト構文・AST検証**: 全 `.ps1` ファイルの構文解析・トークン検証に合格
-  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 163 件)**:
+  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 167 件)**:
+    - `glossary.md` からの用語・見出し・定義・エイリアス抽出テスト (`Get-GlossaryTerms`, `Get-GlossaryTermDefinition`)
+    - `Update-WikiTags.ps1` の `-DryRun` 非破壊検証および既存タグを保持した自動マージテスト
+    - タグ詳細画面（`/tags?tag=...`）での用語解説ボックス表示および Markdig リッチ Markdown レンダリング検証
     - エディター機能 ON/OFF トグル設定およびバックアップ世代数の `/settings` UI レンダリング ＆ `/api/config` 保存・パーステスト
     - `editor.enabled` 無効化（`false`）時の UI トップバー「✏️ 編集」ボタン非表示化テスト
     - `editor.enabled` 無効化時の `/api/save` 書き込みリクエストに対する `403 Forbidden` ガードテスト
