@@ -568,7 +568,6 @@ function Get-TagsViewHtml {
 
         $defText = Get-GlossaryTermDefinition -Term $SelectedTag -GlossaryPath $gPath
         if (-not [string]::IsNullOrWhiteSpace($defText)) {
-            $encDef = [System.Net.WebUtility]::HtmlEncode($defText)
             # 改行と箇条書きを綺麗に整形
             $formattedDef = ($defText -split '\r?\n' | ForEach-Object { [System.Net.WebUtility]::HtmlEncode($_) }) -join "<br>"
             $glossaryBoxHtml = @"

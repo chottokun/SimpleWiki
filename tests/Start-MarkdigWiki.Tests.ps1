@@ -2515,12 +2515,12 @@ title: "Glossary"
 * **概要**: バックアップツール。
 "@
             $terms = Get-GlossaryTerms -MdText $glossaryMd
-            $terms.Count | Should -Be 2
-            $terms.Contains("K-DAT") | Should -Be $true
-            $terms.Contains("OKF (Open Knowledge Format)") | Should -Be $true
+            $terms.Count | Should Be 2
+            $terms.Contains("K-DAT") | Should Be $true
+            $terms.Contains("OKF (Open Knowledge Format)") | Should Be $true
 
             $defOkf = Get-GlossaryTermDefinition -Term "OKF" -MdText $glossaryMd
-            $defOkf | Should -Match "ドキュメント構造化フォーマット"
+            $defOkf | Should Match "ドキュメント構造化フォーマット"
         }
 
         It "Runs Update-WikiTags.ps1 in DryRun mode without modifying files" {
@@ -2538,7 +2538,7 @@ title: "Glossary"
                 & $updateScript -WikiDir $tempDir -GlossaryPath $gPath -DryRun
 
                 $readBack = Get-Content -Path $docPath -Raw -Encoding UTF8
-                $readBack | Should -Be $origContent
+                $readBack | Should Be $origContent
             } finally {
                 Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
             }
@@ -2588,12 +2588,12 @@ title: "Glossary"
                 )
 
                 $html = Get-TagsViewHtml -SelectedTag "OKF" -Lang "ja"
-                $html | Should -Match "glossary-box"
-                $html | Should -Match "用語解説: OKF"
-                $html | Should -Match "用語解説テストテキスト"
+                $html | Should Match "glossary-box"
+                $html | Should Match "用語解説: OKF"
+                $html | Should Match "用語解説テストテキスト"
 
                 $htmlNoGlossary = Get-TagsViewHtml -SelectedTag "NonGlossaryTag" -Lang "ja"
-                $htmlNoGlossary | Should -Not -Match "glossary-box"
+                $htmlNoGlossary | Should Not Match "glossary-box"
             } finally {
                 $script:wikiDir = $oldWikiDir
                 Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
