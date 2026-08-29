@@ -147,3 +147,4 @@ crtf/*
 # logs
 logs/*
 !logs/.gitkeep
+*.log

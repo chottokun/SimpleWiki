@@ -1476,6 +1476,8 @@ try {
             if (isRawMode) {
                 var rawYaml = document.getElementById("rawYamlTextarea").value.trim();
                 if (!rawYaml) return bodyText;
+                rawYaml = rawYaml.replace(/^---\r?\n?/, '').replace(/\r?\n?---\r?$/, '').trim();
+                if (!rawYaml) return bodyText;
                 return "---\n" + rawYaml + "\n---\n\n" + bodyText.replace(/^\r?\n+/, '');
             }
 
@@ -1501,8 +1503,11 @@ try {
             if (reviewer) yamlLines.push("reviewer: " + JSON.stringify(reviewer));
 
             if (autoDate) {
-                var today = new Date().toISOString().slice(0, 10);
-                yamlLines.push("lastUpdated: " + today);
+                var d = new Date();
+                var y = d.getFullYear();
+                var m = String(d.getMonth() + 1).padStart(2, '0');
+                var dt = String(d.getDate()).padStart(2, '0');
+                yamlLines.push("lastUpdated: " + y + "-" + m + "-" + dt);
             } else {
                 var prevDate = document.getElementById("metaAutoDate").getAttribute("data-prev-date");
                 if (prevDate) yamlLines.push("lastUpdated: " + prevDate);
@@ -1537,6 +1542,10 @@ try {
                 });
             }
 
+            if (yamlLines.length === 0) {
+                return bodyText;
+            }
+
             var yamlHeader = "---\n" + yamlLines.join("\n") + "\n---\n\n";
             return yamlHeader + bodyText.replace(/^\r?\n+/, '');
         }
@@ -1558,8 +1567,9 @@ try {
                 btnRaw.classList.add("active");
                 btnForm.classList.remove("active");
             } else {
-                var rawText = document.getElementById("rawYamlTextarea").value;
-                var fullMd = "---\n" + rawText + "\n---\n";
+                var rawText = document.getElementById("rawYamlTextarea").value.trim();
+                rawText = rawText.replace(/^---\r?\n?/, '').replace(/\r?\n?---\r?$/, '').trim();
+                var fullMd = rawText ? ("---\n" + rawText + "\n---\n") : "";
                 var parsedFromRaw = parseMarkdownWithYaml(fullMd);
                 populateYamlForm(parsedFromRaw.metadata);
 
