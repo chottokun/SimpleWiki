@@ -33,8 +33,10 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
     - **AND 検索 ＆ フレーズ完全一致ボーナス**: 複数キーワードの絞り込みと自然文フレーズ加点。
     - **🚫 NOT 構文（除外検索）**: `-キーワード`, `NOT キーワード`, `!キーワード`, `NOT "フレーズ"` をサポート。単語中ハイフン（`K-DAT`）の誤認を防止する堅牢なパーサー。
     - **⚡ ローカル集約ディスクキャッシュ (`.cache/.index-cache-<hash>.json`)**: 起動元スクリプト配下にフォルダごとのハッシュ付きキャッシュを個別保存。OneDrive等のクラウド同期ドライブや読み取り専用共有フォルダでも競合・汚染を起こさず安全に高速化。ファイル削除・更新を検知してゾンビキャッシュを自動排除。
-  - **⚙️ Web 設定管理画面 (`/settings`) ＆ 3世代バックアップ**:
-    - Web ブラウザ上からの検索キャッシュ・起動時インデックス・RAG 設定の変更・保存。
+  - **⚙️ Web 設定管理画面 (`/settings`) ＆ 編集 ON/OFF トグル ＆ 読み取り専用ガード**:
+    - Web ブラウザ上からのエディター機能 ON/OFF トグル、バックアップ世代数、検索キャッシュ、起動時インデックス、RAG 設定の変更・保存。
+    - エディター機能を無効化（`editor.enabled: false`）することで社内共有フォルダや LAN 公開時の誤操作・ファイル改ざんを防止（読み取り専用モード）。
+    - 読み取り専用モード時は UI 上の「✏️ 編集」ボタンが非表示になり、サーバー API (`/api/save`) でも `403 Forbidden` を返却して書き込みを二重ブロック。
     - `config.json` 保存時の **3世代ローテーションバックアップ (`.bak1` 〜 `.bak3`)** とアトミック安全書き込み。
     - 「今すぐインデックス再生成」および「🗑️ ローカルキャッシュ全消去」ボタンによる一括クリーンアップ ＆ 非同期ローディング UI。
   - **🤖 2モード制 LLM RAG AI チャットアシスタント ＆ POST `/api/chat` API**:
@@ -59,8 +61,9 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
     - **Ctrl + C (SIGINT) 即時終了**: `BeginGetContext` による 200ms 非同期ポーリング待機および `[System.Console]::CancelKeyPress` ハンドラにより、バッチファイル (`.bat`) 起動時やコンソールからの `Ctrl + C` でスレッドをブロッキングさせず即座に正常停止。
   - **Google OKF (Open Knowledge Format) v0.2 思想の準拠**: YAML Front Matter からの文脈抽出・自動補完 (フォールバック)・Version / Reviewer / Contributors / Related メタデータカード描画
   - **AI エージェント / LLM 用機械可読 API**: `/api/index.json` (メタデータ), `/api/chunks.json` (自動セマンティック分割チャンク), `/api/chat` (AI チャット), `/api/config` (設定管理), `/api/shutdown` (サーバー停止)
-  - **✏️ Web UI 内蔵 Markdown エディター ＆ 世代管理バックアップ・復元 ＆ OKF 構文検証**:
+  - **✏️ Web UI 内蔵 Markdown エディター ＆ 世代管理バックアップ・復元 ＆ OKF 構文検証 ＆ ON/OFF 制御**:
     - Web ブラウザ上からの Markdown インプレース直接編集・保存機能 (`/api/raw`, `/api/save`)。
+    - 設定画面からのエディター機能 ON/OFF 切替による閲覧専用（読み取り専用モード）制御とサーバーサイド書き込み保護 (`403 Forbidden`)。
     - `config.json` の `editor.maxBackups` (既定値 3) に基づく自動世代バックアップローテーション (`.bak1`, `.bak2`, ...)。
     - エディターモーダル上での過去世代ドロップダウンプレビュー選択 ＆ ワンクリックでのロールバック復元 UI。
     - 保存時の OKF (YAML Front Matter) 構文エラー自動検出 ＆ マイルドなアドバイス表示 (ソフトLint)。
@@ -120,7 +123,7 @@ SimpleWiki/
 │   └── activation/
 │       └── index.html       <-- 完全サーバーレス型 Web Crypto API アクティベーションコード生成 Web アプリ
 ├── tests/
-│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全123件)
+│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全160件)
 └── README.md                <-- プロジェクト記録
 ```
 
@@ -213,9 +216,12 @@ SimpleWiki では、API キーを他人に漏洩させずに特定の PC 専用�
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\tests\Start-MarkdigWiki.Tests.ps1"
 ```
-- **検証結果**: 全 129 件の Pester 自動テストが **100% PASS**。
+- **検証結果**: 全 160 件の Pester 自動テストが **100% PASS**。
   - **1. スクリプト構文・AST検証**: 全 `.ps1` ファイルの構文解析・トークン検証に合格
-  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 129 件)**:
+  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 160 件)**:
+    - エディター機能 ON/OFF トグル設定およびバックアップ世代数の `/settings` UI レンダリング ＆ `/api/config` 保存・パーステスト
+    - `editor.enabled` 無効化（`false`）時の UI トップバー「✏️ 編集」ボタン非表示化テスト
+    - `editor.enabled` 無効化時の `/api/save` 書き込みリクエストに対する `403 Forbidden` ガードテスト
     - マシン固有 ID（`Get-MachineFingerprint`）生成・16文字フォーマット検証
     - マシンバインド・アクティベーションコード暗号化／復号（同一マシン・同一メールでの復号成功）
     - 異なるマシン ID／誤ったメールアドレスでの復号失敗（防犯性）検証

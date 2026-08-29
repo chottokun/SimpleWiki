@@ -132,7 +132,8 @@ function Get-OkfTopBarHtml {
     param (
         [Parameter(Mandatory = $true)]$Meta,
         [string]$RelPath = "",
-        [string]$Lang = "ja"
+        [string]$Lang = "ja",
+        [bool]$EditorEnabled = $true
     )
 
     $domain = [System.Net.WebUtility]::HtmlEncode($Meta.Domain)
@@ -177,7 +178,7 @@ function Get-OkfTopBarHtml {
     } else { "" }
 
     $editBtnHtml = ""
-    if (-not [string]::IsNullOrWhiteSpace($RelPath)) {
+    if ($EditorEnabled -and -not [string]::IsNullOrWhiteSpace($RelPath)) {
         $safeRel = [System.Net.WebUtility]::HtmlEncode($RelPath.Replace("\", "/"))
         $editBtnText = Get-LocalizedStr -Key "edit_doc_btn" -Lang $Lang
         $editBtnHtml = "<button class='edit-doc-btn' data-relpath='$safeRel' onclick='openWikiEditor(this)'>$editBtnText</button>"
@@ -1282,6 +1283,11 @@ function Get-SettingsViewData {
 
     $config = Get-ConfigJson -TargetScriptDir $scriptDir
 
+    $editorEnabledChecked = if ($config.editor -and $null -ne $config.editor.enabled) {
+        if ($config.editor.enabled -eq $true) { "checked" } else { "" }
+    } else { "checked" }
+    $editorMaxBackups     = if ($config.editor -and $null -ne $config.editor.maxBackups) { [int]$config.editor.maxBackups } else { 3 }
+
     $prebuildChecked   = if ($config.search -and $config.search.prebuildIndex -eq $true) { "checked" } else { "" }
     $useCacheChecked   = if ($config.search -and $config.search.useCache -eq $true) { "checked" } else { "" }
     $cacheFolder       = if ($config.search -and -not [string]::IsNullOrWhiteSpace($config.search.cacheFolder)) { [System.Net.WebUtility]::HtmlEncode($config.search.cacheFolder) } else { ".cache" }
@@ -1300,6 +1306,8 @@ function Get-SettingsViewData {
 
     return [PSCustomObject]@{
         Lang              = $Lang
+        EditorEnabledChecked = $editorEnabledChecked
+        EditorMaxBackups     = $editorMaxBackups
         PrebuildChecked   = $prebuildChecked
         UseCacheChecked   = $useCacheChecked
         CacheFolder       = $cacheFolder
@@ -1311,6 +1319,10 @@ function Get-SettingsViewData {
 
         TitleLbl          = Get-LocalizedStr -Key "settings_title" -Lang $Lang
         DescLbl           = Get-LocalizedStr -Key "settings_desc" -Lang $Lang
+        EditorTitleLbl    = Get-LocalizedStr -Key "settings_editor_title" -Lang $Lang
+        EditorEnableLbl   = Get-LocalizedStr -Key "settings_editor_enable" -Lang $Lang
+        EditorDescLbl     = Get-LocalizedStr -Key "settings_editor_desc" -Lang $Lang
+        EditorMaxBackupsLbl = Get-LocalizedStr -Key "settings_editor_max_backups" -Lang $Lang
         SearchTitleLbl    = Get-LocalizedStr -Key "settings_search_title" -Lang $Lang
         PrebuildLbl       = Get-LocalizedStr -Key "settings_prebuild_label" -Lang $Lang
         DefOffLbl         = Get-LocalizedStr -Key "settings_default_off" -Lang $Lang
@@ -1350,6 +1362,30 @@ function Get-SettingsViewData {
 }
 
 # --- システム設定 UI コンポーネント描画サブ関数 ---
+function Render-SettingsEditorCard {
+    param ([PSCustomObject]$Data)
+
+    return @"
+        <div class="okf-card">
+            <div class="okf-card-header">$($Data.EditorTitleLbl)</div>
+            <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 12px;">
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                    <input type="checkbox" id="editorEnabled" name="editorEnabled" $($Data.EditorEnabledChecked)>
+                    <span><strong>$($Data.EditorEnableLbl)</strong></span>
+                </label>
+                <div style="font-size: 13px; color: #586069; margin-left: 24px;">
+                    $($Data.EditorDescLbl)
+                </div>
+
+                <div style="margin-left: 24px; margin-top: 5px;">
+                    <label for="editorMaxBackups" style="font-size: 13px; font-weight: bold;">$($Data.EditorMaxBackupsLbl)</label><br>
+                    <input type="number" id="editorMaxBackups" name="editorMaxBackups" value="$($Data.EditorMaxBackups)" min="0" max="100" style="width: 120px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px;" required>
+                </div>
+            </div>
+        </div>
+"@
+}
+
 function Render-SettingsSearchCard {
     param ([PSCustomObject]$Data)
 
@@ -1515,6 +1551,10 @@ function saveSettings(e) {
     var userEmailInput = document.getElementById('userEmail');
 
     var payload = {
+        editor: {
+            enabled: document.getElementById('editorEnabled').checked,
+            maxBackups: parseInt(document.getElementById('editorMaxBackups').value, 10) || 0
+        },
         search: {
             prebuildIndex: document.getElementById('prebuildIndex').checked,
             useCache: document.getElementById('useCache').checked,
@@ -1643,6 +1683,7 @@ function Get-SettingsViewHtml {
 
     $data = Get-SettingsViewData -Lang $Lang
 
+    $editorCardHtml = Render-SettingsEditorCard -Data $data
     $searchCardHtml = Render-SettingsSearchCard -Data $data
     $ragCardHtml    = Render-SettingsRagCard -Data $data
     $serverCardHtml = Render-SettingsServerCard -Data $data
@@ -1658,6 +1699,8 @@ function Get-SettingsViewHtml {
     </div>
 
     <form id="settingsForm" onsubmit="saveSettings(event)" style="display: flex; flex-direction: column; gap: 20px;">
+$editorCardHtml
+
 $searchCardHtml
 
 $ragCardHtml

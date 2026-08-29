@@ -214,7 +214,8 @@ function Get-DocumentDomain {
         return $YamlDict["domain"].ToString().Trim()
     }
     if (-not [string]::IsNullOrWhiteSpace($RelPath)) {
-        $dir = [System.IO.Path]::GetDirectoryName($RelPath)
+        $cleanRel = $RelPath.Replace('\', '/')
+        $dir = [System.IO.Path]::GetDirectoryName($cleanRel)
         if ([string]::IsNullOrWhiteSpace($dir)) {
             return "root"
         } else {
