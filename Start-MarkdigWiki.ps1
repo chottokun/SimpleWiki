@@ -1141,13 +1141,22 @@ try {
     .shutdown-btn:hover { background: #da3633; color: #fff; border-color: #da3633; }
 
     /* Editor Modal Styles */
-    .wiki-editor-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; justify-content: center; align-items: center; }
-    .wiki-editor-container { background: #fff; border-radius: 8px; width: 90%; max-width: 1000px; height: 85%; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.2); }
-    .wiki-editor-header { background: #1b1f23; color: #fff; padding: 12px 18px; font-weight: bold; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
-    .wiki-editor-body { flex: 1; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
-    .wiki-editor-textarea { flex: 1; resize: none; font-family: monospace; font-size: 14px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; outline: none; }
+    .wiki-editor-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; }
+    .wiki-editor-container { background: #fff; border-radius: 8px; width: 95%; max-width: 1100px; height: 90%; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+    .wiki-editor-header { background: #1b1f23; color: #fff; padding: 12px 18px; font-weight: bold; font-size: 14px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+    .wiki-meta-accordion { background: #f6f8fa; border-bottom: 1px solid #e1e4e8; padding: 10px 16px; flex-shrink: 0; max-height: 280px; overflow-y: auto; }
+    .wiki-meta-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .wiki-meta-toggle-btn { background: #e1e4e8; border: 1px solid #d1d5da; border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer; }
+    .wiki-meta-toggle-btn.active { background: #0366d6; color: #fff; border-color: #0366d6; font-weight: bold; }
+    .wiki-meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; font-size: 12px; }
+    .wiki-form-group { display: flex; flex-direction: column; gap: 3px; }
+    .wiki-form-group label { font-weight: bold; color: #444; font-size: 11px; }
+    .wiki-form-group input, .wiki-form-group select { padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
+    .wiki-form-group input:focus, .wiki-form-group select:focus { border-color: #0366d6; outline: none; }
+    .wiki-body-container { flex: 1; display: flex; flex-direction: column; padding: 12px 16px; overflow: hidden; }
+    .wiki-editor-textarea { flex: 1; resize: none; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", monospace; font-size: 14px; padding: 12px; border: 1px solid #ddd; border-radius: 6px; outline: none; line-height: 1.5; }
     .wiki-editor-textarea:focus { border-color: #0366d6; }
-    .wiki-editor-footer { padding: 10px 18px; border-top: 1px solid #e1e4e8; display: flex; justify-content: flex-end; gap: 10px; background: #f6f8fa; }
+    .wiki-editor-footer { padding: 10px 18px; border-top: 1px solid #e1e4e8; display: flex; justify-content: flex-end; gap: 10px; background: #f6f8fa; flex-shrink: 0; }
     .wiki-editor-save-btn { background: #28a745; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; }
     .wiki-editor-save-btn:hover { background: #218838; }
     .wiki-editor-cancel-btn { background: #6c757d; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; }
@@ -1228,10 +1237,84 @@ try {
                 </div>
                 <span style="font-size: 12px; color: #ccc;" id="wikiEditorPath"></span>
             </div>
-            <div class="wiki-editor-body">
-                <textarea id="wikiEditorTextarea" class="wiki-editor-textarea" placeholder="{15}"></textarea>
+
+            <!-- Metadata Section Accordion -->
+            <div class="wiki-meta-accordion">
+                <div class="wiki-meta-header">
+                    <span style="font-weight: bold; font-size: 13px; color: #24292e;">{32}</span>
+                    <div style="display: flex; gap: 4px;">
+                        <button id="btnModeForm" type="button" class="wiki-meta-toggle-btn active" onclick="switchYamlMode(false)">{33}</button>
+                        <button id="btnModeRaw" type="button" class="wiki-meta-toggle-btn" onclick="switchYamlMode(true)">{34}</button>
+                    </div>
+                </div>
+
+                <!-- Form Container -->
+                <div id="yamlFormContainer" class="wiki-meta-grid">
+                    <div class="wiki-form-group" style="grid-column: 1 / -1;">
+                        <label for="metaTitle">{35}</label>
+                        <input type="text" id="metaTitle">
+                    </div>
+                    <div class="wiki-form-group">
+                        <label for="metaStatus">{36}</label>
+                        <select id="metaStatus" onchange="onStatusChange()">
+                            <option value="active">{37}</option>
+                            <option value="draft">{38}</option>
+                            <option value="deprecated">{39}</option>
+                        </select>
+                    </div>
+                    <div class="wiki-form-group">
+                        <label for="metaVersion">{40}</label>
+                        <input type="text" id="metaVersion">
+                    </div>
+                    <div class="wiki-form-group">
+                        <label for="metaDomain">{41}</label>
+                        <input type="text" id="metaDomain">
+                    </div>
+                    <div class="wiki-form-group">
+                        <label for="metaAuthor">{42}</label>
+                        <input type="text" id="metaAuthor">
+                    </div>
+                    <div class="wiki-form-group">
+                        <label for="metaReviewer">{43}</label>
+                        <input type="text" id="metaReviewer">
+                    </div>
+                    <div class="wiki-form-group" style="grid-column: 1 / -1;">
+                        <label for="metaDesc">{44}</label>
+                        <input type="text" id="metaDesc">
+                    </div>
+                    <div class="wiki-form-group" style="grid-column: 1 / -1;">
+                        <label for="metaTags">{45}</label>
+                        <input type="text" id="metaTags">
+                    </div>
+                    <div class="wiki-form-group" style="grid-column: 1 / -1;">
+                        <label for="metaRelated">{46}</label>
+                        <input type="text" id="metaRelated">
+                    </div>
+                    <div id="supersededByGroup" class="wiki-form-group" style="grid-column: 1 / -1; display: none;">
+                        <label for="metaSupersededBy">{47}</label>
+                        <input type="text" id="metaSupersededBy">
+                    </div>
+                    <div class="wiki-form-group" style="grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 6px;">
+                        <input type="checkbox" id="metaAutoDate" checked style="margin: 0;">
+                        <label for="metaAutoDate" style="font-weight: normal; cursor: pointer;">{48}</label>
+                    </div>
+                </div>
+
+                <!-- RAW YAML Container -->
+                <div id="yamlRawContainer" style="display: none;">
+                    <textarea id="rawYamlTextarea" style="width: 100%; height: 160px; font-family: monospace; font-size: 12px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
+                </div>
             </div>
+
+            <!-- Body Section -->
+            <div class="wiki-body-container">
+                <textarea id="wikiEditorBodyTextarea" class="wiki-editor-textarea" placeholder="{49}"></textarea>
+            </div>
+
             <div class="wiki-editor-footer">
+                <div style="flex: 1; display: flex; align-items: center; font-size: 12px; color: #6a737d;">
+                    <span>{50}</span>
+                </div>
                 <button class="wiki-editor-cancel-btn" onclick="closeWikiEditor()">{16}</button>
                 <button class="wiki-editor-save-btn" onclick="saveWikiMarkdown()">{17}</button>
             </div>
@@ -1257,11 +1340,255 @@ try {
             if (overlay) { overlay.style.display = 'flex'; }
         }
 
+        var isYamlRawMode = false;
+        window._currentCustomProps = {};
+
+        function parseMarkdownWithYaml(mdText) {
+            var result = {
+                metadata: {
+                    title: "",
+                    description: "",
+                    status: "active",
+                    version: "",
+                    author: "",
+                    reviewer: "",
+                    domain: "",
+                    tags: [],
+                    related: [],
+                    supersededBy: "",
+                    lastUpdated: "",
+                    customProps: {}
+                },
+                rawYaml: "",
+                bodyText: mdText || "",
+                hasYaml: false
+            };
+
+            if (!mdText) return result;
+
+            var match = mdText.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+            if (!match) {
+                var titleMatch = mdText.match(/^#\s+(.+)$/m);
+                if (titleMatch) {
+                    result.metadata.title = titleMatch[1].trim();
+                }
+                return result;
+            }
+
+            result.hasYaml = true;
+            result.rawYaml = match[1];
+            result.bodyText = match[2];
+
+            var lines = result.rawYaml.split(/\r?\n/);
+            var currentListKey = null;
+
+            lines.forEach(function(line) {
+                if (!line.trim() || line.trim().startsWith("#")) return;
+
+                var listMatch = line.match(/^\s*-\s+(.*)$/);
+                if (listMatch && currentListKey) {
+                    var itemVal = listMatch[1].trim().replace(/^["']|["']$/g, '');
+                    if (!Array.isArray(result.metadata[currentListKey])) {
+                        if (currentListKey === "tags" || currentListKey === "related") {
+                            result.metadata[currentListKey] = [];
+                        } else {
+                            if (!result.metadata.customProps[currentListKey]) {
+                                result.metadata.customProps[currentListKey] = [];
+                            }
+                        }
+                    }
+                    if (currentListKey === "tags" || currentListKey === "related") {
+                        result.metadata[currentListKey].push(itemVal);
+                    } else {
+                        result.metadata.customProps[currentListKey].push(itemVal);
+                    }
+                    return;
+                }
+
+                var kvMatch = line.match(/^([a-zA-Z0-9_\-]+)\s*:\s*(.*)$/);
+                if (kvMatch) {
+                    var key = kvMatch[1].trim();
+                    var keyLower = key.toLowerCase();
+                    var val = kvMatch[2].trim();
+                    currentListKey = null;
+
+                    if (val.startsWith("[") && val.endsWith("]")) {
+                        var arr = val.slice(1, -1).split(",").map(function(s) {
+                            return s.trim().replace(/^["']|["']$/g, '');
+                        }).filter(Boolean);
+                        if (keyLower === "tags" || keyLower === "related") {
+                            result.metadata[keyLower] = arr;
+                        } else {
+                            result.metadata.customProps[key] = arr;
+                        }
+                    } else if (val === "") {
+                        currentListKey = (keyLower === "tags" || keyLower === "related") ? keyLower : key;
+                        if (currentListKey === "tags" || currentListKey === "related") {
+                            if (!result.metadata[currentListKey]) result.metadata[currentListKey] = [];
+                        } else {
+                            if (!result.metadata.customProps[currentListKey]) result.metadata.customProps[currentListKey] = [];
+                        }
+                    } else {
+                        var cleanVal = val.replace(/^["']|["']$/g, '');
+                        if (keyLower === "title") result.metadata.title = cleanVal;
+                        else if (keyLower === "description" || keyLower === "desc") result.metadata.description = cleanVal;
+                        else if (keyLower === "status") result.metadata.status = cleanVal.toLowerCase();
+                        else if (keyLower === "version") result.metadata.version = cleanVal;
+                        else if (keyLower === "author") result.metadata.author = cleanVal;
+                        else if (keyLower === "reviewer") result.metadata.reviewer = cleanVal;
+                        else if (keyLower === "domain") result.metadata.domain = cleanVal;
+                        else if (keyLower === "lastupdated" || keyLower === "last_updated") result.metadata.lastUpdated = cleanVal;
+                        else if (keyLower === "supersededby" || keyLower === "superseded_by") result.metadata.supersededBy = cleanVal;
+                        else {
+                            result.metadata.customProps[key] = cleanVal;
+                        }
+                    }
+                }
+            });
+
+            return result;
+        }
+
+        function populateYamlForm(meta) {
+            meta = meta || {};
+            document.getElementById("metaTitle").value = meta.title || "";
+            document.getElementById("metaStatus").value = meta.status || "active";
+            document.getElementById("metaVersion").value = meta.version || "";
+            document.getElementById("metaDomain").value = meta.domain || "";
+            document.getElementById("metaAuthor").value = meta.author || "";
+            document.getElementById("metaReviewer").value = meta.reviewer || "";
+            document.getElementById("metaDesc").value = meta.description || "";
+            document.getElementById("metaTags").value = Array.isArray(meta.tags) ? meta.tags.join(", ") : "";
+            document.getElementById("metaRelated").value = Array.isArray(meta.related) ? meta.related.join(", ") : "";
+            document.getElementById("metaSupersededBy").value = meta.supersededBy || "";
+
+            var autoDateCheckbox = document.getElementById("metaAutoDate");
+            autoDateCheckbox.checked = true;
+            autoDateCheckbox.setAttribute("data-prev-date", meta.lastUpdated || "");
+
+            window._currentCustomProps = meta.customProps || {};
+            onStatusChange();
+        }
+
+        function generateMarkdownWithYaml(isRawMode) {
+            var bodyText = document.getElementById("wikiEditorBodyTextarea").value;
+
+            if (isRawMode) {
+                var rawYaml = document.getElementById("rawYamlTextarea").value.trim();
+                if (!rawYaml) return bodyText;
+                return "---\n" + rawYaml + "\n---\n\n" + bodyText.replace(/^\r?\n+/, '');
+            }
+
+            var title = document.getElementById("metaTitle").value.trim();
+            var status = document.getElementById("metaStatus").value;
+            var version = document.getElementById("metaVersion").value.trim();
+            var domain = document.getElementById("metaDomain").value.trim();
+            var author = document.getElementById("metaAuthor").value.trim();
+            var reviewer = document.getElementById("metaReviewer").value.trim();
+            var desc = document.getElementById("metaDesc").value.trim();
+            var tagsStr = document.getElementById("metaTags").value.trim();
+            var relatedStr = document.getElementById("metaRelated").value.trim();
+            var supersededBy = document.getElementById("metaSupersededBy").value.trim();
+            var autoDate = document.getElementById("metaAutoDate").checked;
+
+            var yamlLines = [];
+            if (title) yamlLines.push("title: " + JSON.stringify(title));
+            if (desc) yamlLines.push("description: " + JSON.stringify(desc));
+            if (status) yamlLines.push("status: " + status);
+            if (version) yamlLines.push("version: " + JSON.stringify(version));
+            if (domain) yamlLines.push("domain: " + JSON.stringify(domain));
+            if (author) yamlLines.push("author: " + JSON.stringify(author));
+            if (reviewer) yamlLines.push("reviewer: " + JSON.stringify(reviewer));
+
+            if (autoDate) {
+                var today = new Date().toISOString().slice(0, 10);
+                yamlLines.push("lastUpdated: " + today);
+            } else {
+                var prevDate = document.getElementById("metaAutoDate").getAttribute("data-prev-date");
+                if (prevDate) yamlLines.push("lastUpdated: " + prevDate);
+            }
+
+            if (status === "deprecated" && supersededBy) {
+                yamlLines.push("supersededBy: " + JSON.stringify(supersededBy));
+            }
+
+            if (tagsStr) {
+                var tags = tagsStr.split(",").map(function(t) { return t.trim(); }).filter(Boolean);
+                if (tags.length > 0) {
+                    yamlLines.push("tags: [" + tags.map(function(t) { return JSON.stringify(t); }).join(", ") + "]");
+                }
+            }
+
+            if (relatedStr) {
+                var rels = relatedStr.split(",").map(function(r) { return r.trim(); }).filter(Boolean);
+                if (rels.length > 0) {
+                    yamlLines.push("related: [" + rels.map(function(r) { return JSON.stringify(r); }).join(", ") + "]");
+                }
+            }
+
+            if (window._currentCustomProps) {
+                Object.keys(window._currentCustomProps).forEach(function(k) {
+                    var v = window._currentCustomProps[k];
+                    if (Array.isArray(v)) {
+                        yamlLines.push(k + ": [" + v.map(function(x) { return JSON.stringify(x); }).join(", ") + "]");
+                    } else {
+                        yamlLines.push(k + ": " + JSON.stringify(v));
+                    }
+                });
+            }
+
+            var yamlHeader = "---\n" + yamlLines.join("\n") + "\n---\n\n";
+            return yamlHeader + bodyText.replace(/^\r?\n+/, '');
+        }
+
+        function switchYamlMode(toRaw) {
+            isYamlRawMode = toRaw;
+            var formEl = document.getElementById("yamlFormContainer");
+            var rawEl = document.getElementById("yamlRawContainer");
+            var btnForm = document.getElementById("btnModeForm");
+            var btnRaw = document.getElementById("btnModeRaw");
+
+            if (toRaw) {
+                var tempMd = generateMarkdownWithYaml(false);
+                var parsed = parseMarkdownWithYaml(tempMd);
+                document.getElementById("rawYamlTextarea").value = parsed.rawYaml;
+
+                formEl.style.display = "none";
+                rawEl.style.display = "block";
+                btnRaw.classList.add("active");
+                btnForm.classList.remove("active");
+            } else {
+                var rawText = document.getElementById("rawYamlTextarea").value;
+                var fullMd = "---\n" + rawText + "\n---\n";
+                var parsedFromRaw = parseMarkdownWithYaml(fullMd);
+                populateYamlForm(parsedFromRaw.metadata);
+
+                rawEl.style.display = "none";
+                formEl.style.display = "block";
+                btnForm.classList.add("active");
+                btnRaw.classList.remove("active");
+            }
+        }
+
+        function onStatusChange() {
+            var st = document.getElementById("metaStatus").value;
+            var supGroup = document.getElementById("supersededByGroup");
+            if (st === "deprecated") {
+                supGroup.style.display = "flex";
+            } else {
+                supGroup.style.display = "none";
+            }
+        }
+
         function openWikiEditor(btn) {
             const relPath = btn.getAttribute("data-relpath");
             document.getElementById("wikiEditorPath").textContent = relPath;
-            document.getElementById("wikiEditorTextarea").value = "{25}";
+            document.getElementById("wikiEditorBodyTextarea").value = "{25}";
+            document.getElementById("rawYamlTextarea").value = "";
             document.getElementById("wikiEditorModal").style.display = "flex";
+
+            isYamlRawMode = false;
+            switchYamlMode(false);
 
             const selectEl = document.getElementById("wikiEditorHistorySelect");
             selectEl.innerHTML = '<option value="">{14}</option>';
@@ -1271,13 +1598,16 @@ try {
                 .then(data => {
                     if (data.markdown !== undefined) {
                         const mdVal = (typeof data.markdown === "object" && data.markdown !== null) ? (data.markdown.value || "") : data.markdown;
-                        document.getElementById("wikiEditorTextarea").value = mdVal;
+                        var parsed = parseMarkdownWithYaml(mdVal);
+                        populateYamlForm(parsed.metadata);
+                        document.getElementById("rawYamlTextarea").value = parsed.rawYaml;
+                        document.getElementById("wikiEditorBodyTextarea").value = parsed.bodyText;
                     } else {
-                        document.getElementById("wikiEditorTextarea").value = "{27}";
+                        document.getElementById("wikiEditorBodyTextarea").value = "{27}";
                     }
                 })
                 .catch(err => {
-                    document.getElementById("wikiEditorTextarea").value = "{27} " + err;
+                    document.getElementById("wikiEditorBodyTextarea").value = "{27} " + err;
                 });
 
             fetch("/api/backups?relPath=" + encodeURIComponent(relPath))
@@ -1298,7 +1628,7 @@ try {
         function loadWikiHistoryVersion(selectEl) {
             const relPath = document.getElementById("wikiEditorPath").textContent;
             const version = selectEl.value;
-            document.getElementById("wikiEditorTextarea").value = "{26}";
+            document.getElementById("wikiEditorBodyTextarea").value = "{26}";
 
             let url = "/api/raw?relPath=" + encodeURIComponent(relPath);
             if (version) {
@@ -1310,13 +1640,16 @@ try {
                 .then(data => {
                     if (data.markdown !== undefined) {
                         const mdVal = (typeof data.markdown === "object" && data.markdown !== null) ? (data.markdown.value || "") : data.markdown;
-                        document.getElementById("wikiEditorTextarea").value = mdVal;
+                        var parsed = parseMarkdownWithYaml(mdVal);
+                        populateYamlForm(parsed.metadata);
+                        document.getElementById("rawYamlTextarea").value = parsed.rawYaml;
+                        document.getElementById("wikiEditorBodyTextarea").value = parsed.bodyText;
                     } else {
-                        document.getElementById("wikiEditorTextarea").value = "{28}";
+                        document.getElementById("wikiEditorBodyTextarea").value = "{28}";
                     }
                 })
                 .catch(err => {
-                    document.getElementById("wikiEditorTextarea").value = "{28} " + err;
+                    document.getElementById("wikiEditorBodyTextarea").value = "{28} " + err;
                 });
         }
 
@@ -1331,12 +1664,12 @@ try {
 
         function saveWikiMarkdown() {
             const relPath = document.getElementById("wikiEditorPath").textContent;
-            const markdown = document.getElementById("wikiEditorTextarea").value;
+            const finalMarkdown = generateMarkdownWithYaml(isYamlRawMode);
 
             fetch("/api/save", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ relPath: relPath, markdown: markdown })
+                body: JSON.stringify({ relPath: relPath, markdown: finalMarkdown })
             })
             .then(res => res.json())
             .then(data => {
@@ -1355,6 +1688,19 @@ try {
                 alert("通信エラー: " + err);
             });
         }
+
+        document.addEventListener("keydown", function(e) {
+            var modal = document.getElementById("wikiEditorModal");
+            if (!modal || modal.style.display !== "flex") return;
+
+            if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) {
+                e.preventDefault();
+                saveWikiMarkdown();
+            } else if (e.key === "Escape") {
+                e.preventDefault();
+                closeWikiEditor();
+            }
+        });
 
         document.addEventListener("DOMContentLoaded", function() {
             // -- Start of Sidebar Auto-Expand & Active Highlight --
@@ -1450,6 +1796,27 @@ try {
                 $edCancel     = Get-LocalizedStr -Key "editor_cancel_btn" -Lang $reqLang
                 $edSave       = Get-LocalizedStr -Key "editor_save_btn" -Lang $reqLang
 
+                $todayStr           = (Get-Date).ToString("yyyy-MM-dd")
+                $edMetaSectionTitle = Get-LocalizedStr -Key "editor_meta_section_title" -Lang $reqLang
+                $edModeForm         = Get-LocalizedStr -Key "editor_mode_form" -Lang $reqLang
+                $edModeRaw          = Get-LocalizedStr -Key "editor_mode_raw" -Lang $reqLang
+                $edFieldTitle       = Get-LocalizedStr -Key "editor_field_title" -Lang $reqLang
+                $edFieldStatus      = Get-LocalizedStr -Key "editor_field_status" -Lang $reqLang
+                $edStatusActive     = Get-LocalizedStr -Key "editor_status_active" -Lang $reqLang
+                $edStatusDraft      = Get-LocalizedStr -Key "editor_status_draft" -Lang $reqLang
+                $edStatusDeprecated = Get-LocalizedStr -Key "editor_status_deprecated" -Lang $reqLang
+                $edFieldVersion     = Get-LocalizedStr -Key "editor_field_version" -Lang $reqLang
+                $edFieldDomain      = Get-LocalizedStr -Key "editor_field_domain" -Lang $reqLang
+                $edFieldAuthor      = Get-LocalizedStr -Key "editor_field_author" -Lang $reqLang
+                $edFieldReviewer    = Get-LocalizedStr -Key "editor_field_reviewer" -Lang $reqLang
+                $edFieldDesc        = Get-LocalizedStr -Key "editor_field_desc" -Lang $reqLang
+                $edFieldTags        = Get-LocalizedStr -Key "editor_field_tags" -Lang $reqLang
+                $edFieldRelated     = Get-LocalizedStr -Key "editor_field_related" -Lang $reqLang
+                $edFieldSuperseded  = Get-LocalizedStr -Key "editor_field_superseded" -Lang $reqLang
+                $edAutoDate         = Get-LocalizedStr -Key "editor_auto_date" -Lang $reqLang -FormatArgs @($todayStr)
+                $edBodyPlaceholder  = Get-LocalizedStr -Key "editor_body_placeholder" -Lang $reqLang
+                $edShortcutHint     = Get-LocalizedStr -Key "editor_shortcut_hint" -Lang $reqLang
+
                 $langOptionsHtml = foreach ($k in ($script:I18n.Keys | Sort-Object)) {
                     $sel = if ($k -eq $reqLang) { "selected" } else { "" }
                     $label = switch ($k) {
@@ -1464,7 +1831,7 @@ try {
 
                 $searchLoadingTxtJs = ConvertTo-JsString (Get-LocalizedStr -Key "indexing_searching" -Lang $reqLang)
 
-                $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{13}", $edTitle).Replace("{14}", $edLatest).Replace("{15}", $edHolder).Replace("{16}", $edCancel).Replace("{17}", $edSave).Replace("{18}", $reqLang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $edLoadingJs).Replace("{26}", $edHistoryLoadingJs).Replace("{27}", $edLoadErrorJs).Replace("{28}", $edBackupLoadErrJs).Replace("{29}", $edSavedWarningJs).Replace("{30}", $edSavedJs).Replace("{31}", $searchLoadingTxtJs)
+                $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{13}", $edTitle).Replace("{14}", $edLatest).Replace("{15}", $edHolder).Replace("{16}", $edCancel).Replace("{17}", $edSave).Replace("{18}", $reqLang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $edLoadingJs).Replace("{26}", $edHistoryLoadingJs).Replace("{27}", $edLoadErrorJs).Replace("{28}", $edBackupLoadErrJs).Replace("{29}", $edSavedWarningJs).Replace("{30}", $edSavedJs).Replace("{31}", $searchLoadingTxtJs).Replace("{32}", $edMetaSectionTitle).Replace("{33}", $edModeForm).Replace("{34}", $edModeRaw).Replace("{35}", $edFieldTitle).Replace("{36}", $edFieldStatus).Replace("{37}", $edStatusActive).Replace("{38}", $edStatusDraft).Replace("{39}", $edStatusDeprecated).Replace("{40}", $edFieldVersion).Replace("{41}", $edFieldDomain).Replace("{42}", $edFieldAuthor).Replace("{43}", $edFieldReviewer).Replace("{44}", $edFieldDesc).Replace("{45}", $edFieldTags).Replace("{46}", $edFieldRelated).Replace("{47}", $edFieldSuperseded).Replace("{48}", $edAutoDate).Replace("{49}", $edBodyPlaceholder).Replace("{50}", $edShortcutHint)
 
                 if (-not [string]::IsNullOrWhiteSpace($chatWidgetHtml)) {
                     $fullHtml = $fullHtml.Replace("</body>", "$chatWidgetHtml`n</body>")

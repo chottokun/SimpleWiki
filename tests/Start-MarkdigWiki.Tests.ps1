@@ -3,7 +3,10 @@
 #  Encoding: UTF-8 with BOM
 # ==============================================================================
 
-$projectRoot = (Resolve-Path "$PSScriptRoot\..").Path
+if (-not $script:projectRoot) {
+    $script:projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+}
+$projectRoot = $script:projectRoot
 $libDll      = Join-Path $projectRoot "lib\Markdig.dll"
 
 Describe 'Markdig Assembly and Pipeline Tests' {
@@ -1890,15 +1893,45 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
 
     It "Start-MarkdigWiki.ps1 binds all editor i18n variables into template and JS" {
         $scriptContent = [System.IO.File]::ReadAllText((Join-Path $projectRoot "Start-MarkdigWiki.ps1"), [System.Text.Encoding]::UTF8)
-        $scriptContent | Should Match 'editor_gen_prefix'
-        $scriptContent | Should Match 'editor_warning_yaml'
-        $scriptContent | Should Match 'editor_loading'
-        $scriptContent | Should Match 'editor_history_loading'
-        $scriptContent | Should Match 'editor_load_error'
-        $scriptContent | Should Match 'editor_backup_load_err'
-        $scriptContent | Should Match 'editor_saved_warning'
-        $scriptContent | Should Match 'editor_saved'
-        $scriptContent | Should Match 'indexing_searching'
+        $scriptContent | Should -Match 'editor_gen_prefix'
+        $scriptContent | Should -Match 'editor_warning_yaml'
+        $scriptContent | Should -Match 'editor_loading'
+        $scriptContent | Should -Match 'editor_history_loading'
+        $scriptContent | Should -Match 'editor_load_error'
+        $scriptContent | Should -Match 'editor_backup_load_err'
+        $scriptContent | Should -Match 'editor_saved_warning'
+        $scriptContent | Should -Match 'editor_saved'
+        $scriptContent | Should -Match 'indexing_searching'
+        $scriptContent | Should -Match 'editor_meta_section_title'
+        $scriptContent | Should -Match 'editor_mode_form'
+        $scriptContent | Should -Match 'editor_mode_raw'
+        $scriptContent | Should -Match 'editor_field_title'
+        $scriptContent | Should -Match 'editor_field_status'
+        $scriptContent | Should -Match 'editor_status_active'
+        $scriptContent | Should -Match 'editor_status_draft'
+        $scriptContent | Should -Match 'editor_status_deprecated'
+        $scriptContent | Should -Match 'editor_field_version'
+        $scriptContent | Should -Match 'editor_field_domain'
+        $scriptContent | Should -Match 'editor_field_author'
+        $scriptContent | Should -Match 'editor_field_reviewer'
+        $scriptContent | Should -Match 'editor_field_desc'
+        $scriptContent | Should -Match 'editor_field_tags'
+        $scriptContent | Should -Match 'editor_field_related'
+        $scriptContent | Should -Match 'editor_field_superseded'
+        $scriptContent | Should -Match 'editor_auto_date'
+        $scriptContent | Should -Match 'editor_body_placeholder'
+        $scriptContent | Should -Match 'editor_shortcut_hint'
+    }
+
+    It "Start-MarkdigWiki.ps1 contains Form & RAW YAML separated editor modal HTML and JS functions" {
+        $scriptContent = [System.IO.File]::ReadAllText((Join-Path $projectRoot "Start-MarkdigWiki.ps1"), [System.Text.Encoding]::UTF8)
+        $scriptContent | Should -Match 'id="yamlFormContainer"'
+        $scriptContent | Should -Match 'id="yamlRawContainer"'
+        $scriptContent | Should -Match 'id="wikiEditorBodyTextarea"'
+        $scriptContent | Should -Match 'function parseMarkdownWithYaml'
+        $scriptContent | Should -Match 'function generateMarkdownWithYaml'
+        $scriptContent | Should -Match 'function switchYamlMode'
+        $scriptContent | Should -Match 'function onStatusChange'
     }
 
     It "/api/config handles OrderedDictionary and saves config.json without errors" {
