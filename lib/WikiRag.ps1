@@ -163,16 +163,16 @@ function Invoke-ToolGetLinkedDocs {
     }
 
     $mdText = Get-Content -Path $full -Raw -Encoding UTF8
-    $matches = [regex]::Matches($mdText, '\[([^\]]+)\]\(([^)]+\.md)(?:#[^)]*)?\)')
+    $foundMatches = [regex]::Matches($mdText, '\[([^\]]+)\]\(([^)]+\.md)(?:#[^)]*)?\)')
 
-    if ($matches.Count -eq 0) {
+    if ($foundMatches.Count -eq 0) {
         return @()
     }
 
     $linkedItems = [System.Collections.Generic.List[PSCustomObject]]::new()
     $baseDir = [System.IO.Path]::GetDirectoryName($cleanRel)
 
-    foreach ($m in $matches) {
+    foreach ($m in $foundMatches) {
         $linkText = $m.Groups[1].Value
         $linkTarget = $m.Groups[2].Value
 
@@ -247,7 +247,7 @@ function Invoke-OpenAiChatCompletions {
 
     $executeRequest = {
         param([bool]$UseStreamPayload)
-        
+
         $currentPayload = @{
             model       = $Model
             temperature = 0.3

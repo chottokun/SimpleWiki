@@ -16,9 +16,9 @@ $libDir    = Join-Path $scriptDir "lib"
 # --- モジュールのロード (lib/WikiSecurity.ps1) ---
 . (Join-Path $libDir "WikiSecurity.ps1")
 
-Write-Host "==========================================================" -ForegroundColor Green
-Write-Host "  SimpleWiki アクティベーションコード生成ツール" -ForegroundColor Green
-Write-Host "==========================================================" -ForegroundColor Green
+Write-Output "==========================================================" -ForegroundColor Green
+Write-Output "  SimpleWiki アクティベーションコード生成ツール" -ForegroundColor Green
+Write-Output "==========================================================" -ForegroundColor Green
 
 # 1. API キーの入力（未指定時に対話取得）
 if ([string]::IsNullOrWhiteSpace($ApiKey)) {
@@ -32,7 +32,9 @@ if ([string]::IsNullOrWhiteSpace($ApiKey)) {
                 $resolved = Get-ResolvedSecret -SecretValue $cfg.rag.apiKey
                 if ($resolved) { $defaultKey = $resolved }
             }
-        } catch {}
+        } catch {
+            # Suppressed intentionally
+        }
     }
 
     if ($defaultKey) {
@@ -53,9 +55,9 @@ $MachineId = if ([string]::IsNullOrWhiteSpace($MachineId)) { "" } else { $Machin
 $Email = if ([string]::IsNullOrWhiteSpace($Email)) { "" } else { $Email.Trim() }
 
 if (-not $isLegacy -and [string]::IsNullOrWhiteSpace($MachineId)) {
-    Write-Host "`n発行タイプを選択してください:" -ForegroundColor Cyan
-    Write-Host "  [1] マシン固有ロック形式 (推奨: 指定PC専用)" -ForegroundColor White
-    Write-Host "  [2] 従来ポータブル形式 (どのPCでも動作する共通コード)" -ForegroundColor White
+    Write-Output "`n発行タイプを選択してください:" -ForegroundColor Cyan
+    Write-Output "  [1] マシン固有ロック形式 (推奨: 指定PC専用)" -ForegroundColor White
+    Write-Output "  [2] 従来ポータブル形式 (どのPCでも動作する共通コード)" -ForegroundColor White
     $typeChoice = Read-Host "選択 (1 または 2 / 既定値: 1)"
     if ($typeChoice -eq "2") {
         $isLegacy = $true
@@ -72,7 +74,7 @@ if (-not $isLegacy -and [string]::IsNullOrWhiteSpace($MachineId)) {
 $activationCode = ""
 if ($isLegacy -or $MachineId -eq "PORTABLE" -or $MachineId -eq "ALL") {
     $activationCode = Protect-StringAes -PlainText $ApiKey
-    $typeLabel = "従来ポータブル形式 (共通)"
+    $null = "従来ポータブル形式 (共通)"
     $MachineId = "ALL (どのPCでも動作可能)"
 } else {
     # 3. メールアドレスの入力（任意）
@@ -81,7 +83,7 @@ if ($isLegacy -or $MachineId -eq "PORTABLE" -or $MachineId -eq "ALL") {
         $Email = if ([string]::IsNullOrWhiteSpace($inputEmail)) { "" } else { $inputEmail.Trim() }
     }
     $activationCode = Protect-ActivationCode -ApiKey $ApiKey -MachineId $MachineId -Email $Email
-    $typeLabel = "マシン固有ロック形式"
+    $null = "マシン固有ロック形式"
 }
 
 # クリップボードへのコピー試行
@@ -93,12 +95,12 @@ try {
     $clipMsg = ""
 }
 
-Write-Host "`n----------------------------------------------------------" -ForegroundColor Yellow
-Write-Host "  対象マシンID : $MachineId" -ForegroundColor Cyan
+Write-Output "`n----------------------------------------------------------" -ForegroundColor Yellow
+Write-Output "  対象マシンID : $MachineId" -ForegroundColor Cyan
 if ($Email) {
-    Write-Host "  対象メール   : $Email" -ForegroundColor Cyan
+    Write-Output "  対象メール   : $Email" -ForegroundColor Cyan
 }
-Write-Host "  発行コード   : $activationCode$clipMsg" -ForegroundColor Green
-Write-Host "----------------------------------------------------------" -ForegroundColor Yellow
-Write-Host "※ ユーザーにこの『発行コード』をお伝えください。" -ForegroundColor White
-Write-Host "   ユーザー側の設定画面で入力すると自動でアクティベーションされます。`n" -ForegroundColor White
+Write-Output "  発行コード   : $activationCode$clipMsg" -ForegroundColor Green
+Write-Output "----------------------------------------------------------" -ForegroundColor Yellow
+Write-Output "※ ユーザーにこの『発行コード』をお伝えください。" -ForegroundColor White
+Write-Output "   ユーザー側の設定画面で入力すると自動でアクティベーションされます。`n" -ForegroundColor White

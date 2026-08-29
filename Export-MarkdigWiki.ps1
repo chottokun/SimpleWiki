@@ -28,7 +28,9 @@ if ([string]::IsNullOrWhiteSpace($exportLang)) {
             $cfg = (Get-Content $configPath -Raw -Encoding UTF8) | ConvertFrom-Json
             if ($cfg -and $cfg.defaultLanguage) { $exportLang = $cfg.defaultLanguage }
             elseif ($cfg -and $cfg.language) { $exportLang = $cfg.language }
-        } catch {}
+        } catch {
+            # Suppressed intentionally
+        }
     }
 }
 if ([string]::IsNullOrWhiteSpace($exportLang) -or -not $script:I18n.ContainsKey($exportLang)) {
@@ -49,12 +51,12 @@ if (-not (Test-Path $targetDistDir)) {
     New-Item -ItemType Directory -Path $targetDistDir -Force | Out-Null
 }
 
-Write-Host "==========================================================" -ForegroundColor Green
-Write-Host "  Markdig Wiki 静的 HTML エキスポート開始" -ForegroundColor Green
-Write-Host "  入力元: $wikiDir" -ForegroundColor Yellow
-Write-Host "  出力先: $targetDistDir" -ForegroundColor Cyan
-Write-Host "  言語:   $exportLang" -ForegroundColor Cyan
-Write-Host "==========================================================" -ForegroundColor Green
+Write-Output "==========================================================" -ForegroundColor Green
+Write-Output "  Markdig Wiki 静的 HTML エキスポート開始" -ForegroundColor Green
+Write-Output "  入力元: $wikiDir" -ForegroundColor Yellow
+Write-Output "  出力先: $targetDistDir" -ForegroundColor Cyan
+Write-Output "  言語:   $exportLang" -ForegroundColor Cyan
+Write-Output "==========================================================" -ForegroundColor Green
 
 # --- 1. Markdig.dll および依存ライブラリのロード ---
 $markdigDll = Join-Path $libDir "Markdig.dll"
@@ -172,7 +174,7 @@ function Get-ExportSidebarHtml {
 }
 
 # --- 3. マークダウンファイルの抽出と HTML 変換 ---
-$allMdFiles = Get-ChildItem -Path $wikiDir -Recurse -Filter "*.md" | 
+$allMdFiles = Get-ChildItem -Path $wikiDir -Recurse -Filter "*.md" |
     Where-Object { $_.FullName -notmatch '[\\/]\.(git|lib|tests|dist)[\\/]' } |
     Sort-Object FullName
 
@@ -294,15 +296,15 @@ foreach ($file in $allMdFiles) {
     $fullHtml = $fullHtml -replace "\r?\n", "`r`n"
 
     [System.IO.File]::WriteAllText($destFile, $fullHtml, [System.Text.Encoding]::UTF8)
-    Write-Host "  [HTML 変換] $relPath -> $htmlRel" -ForegroundColor Green
+    Write-Output "  [HTML 変換] $relPath -> $htmlRel" -ForegroundColor Green
 }
 
 # --- 4. 静的アセット (画像、CSS、JS 等) のコピー ---
-$assetFiles = Get-ChildItem -Path $wikiDir -Recurse | 
-    Where-Object { 
-        -not $_.PSIsContainer -and 
-        $_.Extension -ne ".md" -and 
-        $_.FullName -notmatch '[\\/]\.(git|lib|tests|dist)[\\/]' 
+$assetFiles = Get-ChildItem -Path $wikiDir -Recurse |
+    Where-Object {
+        -not $_.PSIsContainer -and
+        $_.Extension -ne ".md" -and
+        $_.FullName -notmatch '[\\/]\.(git|lib|tests|dist)[\\/]'
     }
 
 foreach ($asset in $assetFiles) {
@@ -315,7 +317,7 @@ foreach ($asset in $assetFiles) {
     }
 
     Copy-Item -Path $asset.FullName -Destination $destFile -Force
-    Write-Host "  [アセット コピー] $relPath" -ForegroundColor DarkGray
+    Write-Output "  [アセット コピー] $relPath" -ForegroundColor DarkGray
 }
 
 # 100% オフライン用に lib/mermaid.min.js をコピー
@@ -324,10 +326,10 @@ if (Test-Path $scriptMermaid) {
     $distLib = Join-Path $targetDistDir "lib"
     if (-not (Test-Path $distLib)) { New-Item -ItemType Directory -Path $distLib -Force | Out-Null }
     Copy-Item -Path $scriptMermaid -Destination (Join-Path $distLib "mermaid.min.js") -Force
-    Write-Host "  [オフライン JS コピー] lib\mermaid.min.js" -ForegroundColor DarkGray
+    Write-Output "  [オフライン JS コピー] lib\mermaid.min.js" -ForegroundColor DarkGray
 }
 
-Write-Host "==========================================================" -ForegroundColor Green
-Write-Host "  エキスポート完了! 静的ファイル出力先:" -ForegroundColor Green
-Write-Host "  $targetDistDir" -ForegroundColor Cyan
-Write-Host "==========================================================" -ForegroundColor Green
+Write-Output "==========================================================" -ForegroundColor Green
+Write-Output "  エキスポート完了! 静的ファイル出力先:" -ForegroundColor Green
+Write-Output "  $targetDistDir" -ForegroundColor Cyan
+Write-Output "==========================================================" -ForegroundColor Green
