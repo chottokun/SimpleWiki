@@ -340,7 +340,9 @@ function Get-LocalizedStr {
     if ($null -ne $FormatArgs -and $FormatArgs.Count -gt 0) {
         try {
             $text = [string]::Format([System.Globalization.CultureInfo]::InvariantCulture, $text, [object[]]$FormatArgs)
-        } catch {}
+        } catch {
+            # Suppressed intentionally
+        }
     }
     return $text
 }

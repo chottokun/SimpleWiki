@@ -188,7 +188,9 @@ function Unprotect-ActivationCode {
             if ($decStr.StartsWith("SWACT:")) {
                 return $decStr.Substring(6)
             }
-        } catch {}
+        } catch {
+            # Suppressed intentionally
+        }
     }
 
     # 3. 後方互換性: 旧固定鍵での復号試行

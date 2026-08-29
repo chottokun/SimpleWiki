@@ -92,13 +92,12 @@ if ($initCfg.search -and $initCfg.search.prebuildIndex -eq $true) {
         if (-not (Load-WikiIndexCache -TargetWikiDir $wikiDir -TargetScriptDir $scriptDir)) {
             Write-Host "インデックスをバックグラウンドで事前生成中..." -ForegroundColor Cyan
             $bgIndexingJob = Start-Job -ScriptBlock {
-                param($targetDir, $baseScriptDir)
-                $searchLib = Join-Path $baseScriptDir "lib\WikiSearch.ps1"
-                $i18nLib   = Join-Path $baseScriptDir "lib\WikiI18n.ps1"
+                $searchLib = Join-Path $using:scriptDir "lib\WikiSearch.ps1"
+                $i18nLib   = Join-Path $using:scriptDir "lib\WikiI18n.ps1"
                 if (Test-Path $i18nLib) { . $i18nLib }
                 if (Test-Path $searchLib) { . $searchLib }
-                Build-WikiIndex -TargetWikiDir $targetDir -TargetScriptDir $baseScriptDir | Out-Null
-            } -ArgumentList $wikiDir, $scriptDir
+                Build-WikiIndex -TargetWikiDir $using:wikiDir -TargetScriptDir $using:scriptDir | Out-Null
+            }
         } else {
             Write-Host "インデックスキャッシュを読み込みました ($($script:WikiIndex.Count) 件)" -ForegroundColor Green
         }
@@ -123,7 +122,7 @@ $mimeTypes = @{
 $cancelHandler = $null
 try {
     $cancelHandler = [System.ConsoleCancelEventHandler]{
-        param($sender, $e)
+        param($evtSender, $evtArgs)
         if ($bgIndexingJob) {
             try { Stop-Job -Job $bgIndexingJob -ErrorAction SilentlyContinue } catch {}
             try { Remove-Job -Job $bgIndexingJob -Force -ErrorAction SilentlyContinue } catch {}
@@ -415,7 +414,7 @@ try {
                 $backups = [System.Collections.Generic.List[PSObject]]::new()
                 $config = Get-ConfigJson -TargetScriptDir $scriptDir
                 $maxBackups = 3
-                if ($config.editor -and $config.editor.maxBackups -ne $null) {
+                if ($config.editor -and $null -ne $config.editor.maxBackups) {
                     $maxBackups = [int]$config.editor.maxBackups
                 }
                 for ($i = 1; $i -le $maxBackups; $i++) {
@@ -476,7 +475,7 @@ try {
                 $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
                 $bodyText = $reader.ReadToEnd()
                 $reqObj = try { $bodyText | ConvertFrom-Json } catch { $null }
-                if (-not $reqObj -or [string]::IsNullOrWhiteSpace($reqObj.relPath) -or $reqObj.markdown -eq $null) {
+                if (-not $reqObj -or [string]::IsNullOrWhiteSpace($reqObj.relPath) -or $null -eq $reqObj.markdown) {
                     $jsonRes = @{ error = "INVALID_REQUEST"; message = "リクエストデータが不正です。" } | ConvertTo-Json
                     Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 400
                     continue
@@ -493,7 +492,7 @@ try {
                 # バックアップ(世代管理)設定の取得
                 $config = Get-ConfigJson -TargetScriptDir $scriptDir
                 $maxBackups = 3
-                if ($config.editor -and $config.editor.maxBackups -ne $null) {
+                if ($config.editor -and $null -ne $config.editor.maxBackups) {
                     $maxBackups = [int]$config.editor.maxBackups
                 }
 
@@ -562,11 +561,11 @@ try {
 
                 # 会話履歴 (history) と設定パラメータの取得
                 $maxHistoryTurns = 3
-                if ($config.rag -and $config.rag.maxHistoryTurns -ne $null) {
+                if ($config.rag -and $null -ne $config.rag.maxHistoryTurns) {
                     $maxHistoryTurns = [Math]::Max(0, [Math]::Min(10, [int]$config.rag.maxHistoryTurns))
                 }
                 $maxHistoryChars = 4000
-                if ($config.rag -and $config.rag.maxHistoryChars -ne $null) {
+                if ($config.rag -and $null -ne $config.rag.maxHistoryChars) {
                     $maxHistoryChars = [Math]::Max(500, [int]$config.rag.maxHistoryChars)
                 }
 
@@ -577,7 +576,7 @@ try {
                     if ($rawHist.Count -gt $maxMsgs) {
                         $rawHist = $rawHist[($rawHist.Count - $maxMsgs)..($rawHist.Count - 1)]
                     }
-                    
+
                     $currentTotalChars = 0
                     $validHist = [System.Collections.Generic.List[PSObject]]::new()
                     for ($hIdx = $rawHist.Count - 1; $hIdx -ge 0; $hIdx--) {
@@ -1011,7 +1010,7 @@ try {
             $fullPath = [System.IO.Path]::GetFullPath($filePath)
             $fullScriptLibDir = (Join-Path $scriptDir "lib\").TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
             $isAllowed = $fullPath.StartsWith($fullWikiDir, [System.StringComparison]::OrdinalIgnoreCase) -or $fullPath.StartsWith($fullScriptLibDir, [System.StringComparison]::OrdinalIgnoreCase)
-            
+
             if (-not $isDynamicView -and -not $isAllowed) {
                 $forbiddenBytes = [System.Text.Encoding]::UTF8.GetBytes("<h1>403 Forbidden</h1>")
                 Write-SafeHttpResponse -Response $response -Bytes $forbiddenBytes -StatusCode 403
@@ -1097,7 +1096,7 @@ try {
     table th, table td { border: 1px solid #dfe2e5; padding: 8px 13px; }
     table th { background: #f6f8fa; }
     img { max-width: 100%; }
-    
+
     /* OKF Custom Components */
     .edit-doc-btn { background: #0366d6; color: #fff; border: none; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; margin-left: 10px; }
     .edit-doc-btn:hover { background: #0255b3; }
@@ -1334,7 +1333,7 @@ try {
                     if (activeLink) {
                         activeLink.classList.add("active");
                         activeLink.scrollIntoView({ block: "nearest" });
-                        
+
                         var parent = activeLink.parentElement;
                         while (parent && parent !== sidebar) {
                             if (parent.tagName === "DETAILS") {

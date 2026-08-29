@@ -205,7 +205,7 @@ function Get-OkfFooterCardHtml {
 
     $desc    = [System.Net.WebUtility]::HtmlEncode($Meta.Description)
     $author  = [System.Net.WebUtility]::HtmlEncode($Meta.Author)
-    
+
     $lastUpd = if ($Meta.LastUpdated -and $Meta.LastUpdated -ne [DateTime]::MinValue) {
         $Meta.LastUpdated.ToString("yyyy-MM-dd")
     } else {
@@ -260,7 +260,7 @@ function Get-OkfFooterCardHtml {
         "<div style='margin-top:8px; font-size:12px; color:#586069;'>$relatedLbl" + ($rLinks -join " &nbsp;|&nbsp; ") + "</div>"
     } else { "" }
 
-    $descHtml = if (-not [string]::IsNullOrWhiteSpace($desc)) {
+    $null = if (-not [string]::IsNullOrWhiteSpace($desc)) {
         "<p class='okf-desc'>$desc</p>"
     } else { "" }
 

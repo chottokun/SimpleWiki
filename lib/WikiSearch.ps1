@@ -73,14 +73,16 @@ function Clear-AllWikiCaches {
 
     $removedCount = 0
     if (Test-Path $cacheDir) {
-        $cacheFiles = Get-ChildItem -Path $cacheDir -Filter ".index-cache-*.json" -File -ErrorAction SilentlyContinue
+        $cacheFiles = Get-ChildItem -Path $cacheDir -Force -ErrorAction SilentlyContinue | Where-Object { -not $_.PSIsContainer -and $_.Name -like ".index-cache-*.json" }
         foreach ($cf in $cacheFiles) {
             try {
                 Remove-Item -LiteralPath $cf.FullName -Force -ErrorAction Stop
                 $removedCount++
-            } catch {}
+            } catch {
+                # Suppressed intentionally
+            }
         }
-        $statusFiles = Get-ChildItem -Path $cacheDir -Filter ".index-status-*.json" -File -ErrorAction SilentlyContinue
+        $statusFiles = Get-ChildItem -Path $cacheDir -Force -ErrorAction SilentlyContinue | Where-Object { -not $_.PSIsContainer -and $_.Name -like ".index-status-*.json" }
         foreach ($sf in $statusFiles) {
             try { Remove-Item -LiteralPath $sf.FullName -Force -ErrorAction SilentlyContinue } catch {}
         }
@@ -270,7 +272,9 @@ function Get-WikiIndexingStatus {
                 }
             }
         }
-    } catch {}
+    } catch {
+        # Suppressed intentionally
+    }
 
     if ($null -eq $script:IndexingStatus) {
         return [PSCustomObject]@{
@@ -298,7 +302,9 @@ function Save-WikiIndexingStatusFile {
         if (-not (Test-Path $statusDir)) { New-Item -ItemType Directory -Path $statusDir -Force | Out-Null }
         $json = $StatusObj | ConvertTo-Json
         [System.IO.File]::WriteAllText($statusFilePath, $json, [System.Text.Encoding]::UTF8)
-    } catch {}
+    } catch {
+        # Suppressed intentionally
+    }
 }
 
 function Build-WikiIndex {
