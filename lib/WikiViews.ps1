@@ -261,7 +261,7 @@ function Get-OkfFooterCardHtml {
         "<div style='margin-top:8px; font-size:12px; color:#586069;'>$relatedLbl" + ($rLinks -join " &nbsp;|&nbsp; ") + "</div>"
     } else { "" }
 
-    $null = if (-not [string]::IsNullOrWhiteSpace($desc)) {
+    $descHtml = if (-not [string]::IsNullOrWhiteSpace($desc)) {
         "<p class='okf-desc'>$desc</p>"
     } else { "" }
 
@@ -652,18 +652,6 @@ function Get-MaintenanceViewHtml {
     $maintDraft   = Get-LocalizedStr -Key "maint_drafts" -Lang $Lang
     $maintDep     = Get-LocalizedStr -Key "maint_deprecated" -Lang $Lang
     $maintNoDocs  = Get-LocalizedStr -Key "maint_no_docs" -Lang $Lang
-
-    function Render-DocList ($docArray, $emptyMsg) {
-        $arr = @($docArray)
-        if ($arr.Count -eq 0) { return "<p class='empty-msg'>$emptyMsg</p>" }
-        $items = foreach ($item in $arr) {
-            $relUri  = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
-            $title   = [System.Net.WebUtility]::HtmlEncode($item.Title)
-            $lastUpd = $item.LastUpdated.ToString("yyyy-MM-dd")
-            "<li><a href='$relUri'>$title</a> <span class='muted'>($lastUpd)</span></li>"
-        }
-        return "<ul>" + ($items -join "") + "</ul>"
-    }
 
     return @"
 <h1>$maintTitle</h1>

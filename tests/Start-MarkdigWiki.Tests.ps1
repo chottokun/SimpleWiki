@@ -2605,3 +2605,40 @@ title: "Glossary"
         }
     }
 }
+
+Describe "Refactoring Specific Behavior Tests" {
+    BeforeAll {
+        . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -DotSourceOnly
+    }
+
+    It "Get-OkfFooterCardHtml correctly renders description paragraph when Description property is provided" {
+        $meta = [PSCustomObject]@{
+            Title       = "Test Card Doc"
+            Description = "This is a test description paragraph."
+            Author      = "Card Author"
+            Domain      = "test-domain"
+            LastUpdated = (Get-Date "2026-08-10")
+            Tags        = @("test")
+        }
+
+        $html = Get-OkfFooterCardHtml -Meta $meta -Lang "ja"
+        $html | Should Match "<p class='okf-desc'"
+        $html | Should Match "This is a test description paragraph\."
+    }
+
+    It "Get-MaintenanceViewHtml uses top-level Render-DocList to format document lists" {
+        $script:WikiIndex = @(
+            [PSCustomObject]@{
+                Title       = "Outdated Manual"
+                RelPath     = "docs/outdated.md"
+                Status      = "active"
+                LastUpdated = (Get-Date "2020-01-01")
+            }
+        )
+
+        $html = Get-MaintenanceViewHtml -Lang "ja"
+        $html | Should Match "Outdated Manual"
+        $html | Should Match "/docs/outdated.md"
+        $html | Should Match "\(2020-01-01\)"
+    }
+}
