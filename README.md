@@ -135,7 +135,7 @@ SimpleWiki/
 │   └── activation/
 │       └── index.html       <-- 完全サーバーレス型 Web Crypto API アクティベーションコード生成 Web アプリ
 ├── tests/
-│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全167件)
+│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全169件)
 └── README.md                <-- プロジェクト記録
 ```
 
@@ -243,9 +243,10 @@ SimpleWiki では、API キーを他人に漏洩させずに特定の PC 専用�
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\tests\Start-MarkdigWiki.Tests.ps1"
 ```
-- **検証結果**: 全 167 件の Pester 自動テストが **100% PASS**。
+- **検証結果**: 全 169 件の Pester 自動テストが **100% PASS**。
   - **1. スクリプト構文・AST検証**: 全 `.ps1` ファイルの構文解析・トークン検証に合格
-  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 167 件)**:
+  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 169 件)**:
+    - View コンポーネントリファクタリング検証（`Get-OkfFooterCardHtml` の Description 描画、`Get-MaintenanceViewHtml` のリストレンダラー共通化）
     - `glossary.md` からの用語・見出し・定義・エイリアス抽出テスト (`Get-GlossaryTerms`, `Get-GlossaryTermDefinition`)
     - `Update-WikiTags.ps1` の `-DryRun` 非破壊検証および既存タグを保持した自動マージテスト
     - タグ詳細画面（`/tags?tag=...`）での用語解説ボックス表示および Markdig リッチ Markdown レンダリング検証
