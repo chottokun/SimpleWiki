@@ -5,6 +5,7 @@
 #  文字コード: UTF-8 with BOM
 # ==============================================================================
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingWriteHost", "")]
 [CmdletBinding(SupportsShouldProcess = $true)]
 param (
     [string]$WikiDir = "",

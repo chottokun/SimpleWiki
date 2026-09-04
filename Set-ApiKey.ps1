@@ -3,6 +3,7 @@
 #  対応: Windows PowerShell 5.1 / PowerShell 7+
 #  文字コード: UTF-8 with BOM
 # ==============================================================================
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingWriteHost", "")]
 param (
     [string]$ApiKey = "",
     [string]$ApiUrl = "",
@@ -30,7 +31,7 @@ if (Test-Path $targetConfig) {
         $jsonRaw = Get-Content -Path $targetConfig -Raw -Encoding UTF8
         $configObj = $jsonRaw | ConvertFrom-Json
     } catch {
-        # Suppressed intentionally
+        $null = $_ # Suppressed intentionally
     }
 }
 

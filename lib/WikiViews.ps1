@@ -612,6 +612,7 @@ $glossaryBoxHtml
 
 # --- 品質・メンテナンスダッシュボード生成関数 ---
 function Render-DocList {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param (
         $docArray,
         [string]$emptyMsg
@@ -1385,6 +1386,7 @@ function Get-SettingsViewData {
 
 # --- システム設定 UI コンポーネント描画サブ関数 ---
 function Render-SettingsEditorCard {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param ([PSCustomObject]$Data)
 
     return @"
@@ -1409,6 +1411,7 @@ function Render-SettingsEditorCard {
 }
 
 function Render-SettingsSearchCard {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param ([PSCustomObject]$Data)
 
     return @"
@@ -1458,6 +1461,7 @@ function Render-SettingsSearchCard {
 }
 
 function Render-SettingsRagCard {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param ([PSCustomObject]$Data)
 
     return @"
@@ -1510,6 +1514,7 @@ function Render-SettingsRagCard {
 }
 
 function Render-SettingsServerCard {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param ([PSCustomObject]$Data)
 
     return @"
@@ -1528,6 +1533,7 @@ function Render-SettingsServerCard {
 }
 
 function Render-SettingsScript {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param ([PSCustomObject]$Data)
 
     return @"

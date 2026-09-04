@@ -1,4 +1,7 @@
-﻿$psFiles = Get-ChildItem -Path $PSScriptRoot -Recurse -Include "*.ps1", "*.psm1", "*.psd1" |
+﻿[Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingWriteHost", "")]
+param()
+
+$psFiles = Get-ChildItem -Path $PSScriptRoot -Recurse -Include "*.ps1", "*.psm1", "*.psd1" |
     Where-Object { $_.FullName -notmatch '[\\/]\.(git|cache)[\\/]' }
 
 $utf8Bom = New-Object System.Text.UTF8Encoding($true)

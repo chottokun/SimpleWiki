@@ -3,6 +3,10 @@
 #  Encoding: UTF-8 with BOM
 # ==============================================================================
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseDeclaredVarsMoreThanAssignments", "")]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingInvokeExpression", "")]
+param()
+
 if (-not $script:projectRoot) {
     $script:projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 }
@@ -412,7 +416,7 @@ Describe 'OKF Dynamic View and API Endpoint Tests' {
         $json | Should Match "ChunkId"
         $json | Should Match "EnrichedText"
         $json | Should Match "Section"
-        
+
         $chunksObj = $json | ConvertFrom-Json
         $chunksObj.Count | Should BeGreaterThan 0
         $chunksObj[0].ChunkId | Should Match "#chunk-"
@@ -1454,11 +1458,11 @@ Describe 'Directory Listing and Fallback Tests (Get-DirectoryListingHtml)' {
     It "空の Markdown ファイルを読み込んでも例外をスローせずレンダリングできる" {
         $emptyMdPath = Join-Path $testRoot "empty-file.md"
         New-Item -Path $emptyMdPath -ItemType File -Force | Out-Null
-        
+
         {
             $mdText = Get-Content -Path $emptyMdPath -Raw -Encoding UTF8
             if ($null -eq $mdText) { $mdText = "" }
-            
+
             $builder  = New-Object Markdig.MarkdownPipelineBuilder
             $null     = [Markdig.MarkdownExtensions]::UseAdvancedExtensions($builder)
             $pipeline = $builder.Build()
@@ -1589,7 +1593,7 @@ Describe 'Index Cache and Settings View Tests' {
     It "Clear-AllWikiCaches removes all index-cache files and resets in-memory cache" {
         $cacheDir = Join-Path $testProjectRoot ".cache"
         if (-not (Test-Path $cacheDir)) { New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null }
-        
+
         $dummy1 = Join-Path $cacheDir ".index-cache-test111.json"
         $dummy2 = Join-Path $cacheDir ".index-cache-test222.json"
         "test1" | Out-File -FilePath $dummy1 -Encoding UTF8

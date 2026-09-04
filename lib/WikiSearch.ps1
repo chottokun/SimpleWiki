@@ -63,6 +63,7 @@ function Get-WikiStatusPath {
 }
 
 function Clear-AllWikiCaches {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]
     param (
         [string]$TargetScriptDir = $scriptDir
     )
@@ -79,12 +80,12 @@ function Clear-AllWikiCaches {
                 Remove-Item -LiteralPath $cf.FullName -Force -ErrorAction Stop
                 $removedCount++
             } catch {
-                # Suppressed intentionally
+                $null = $_ # Suppressed intentionally
             }
         }
         $statusFiles = Get-ChildItem -Path $cacheDir -Force -ErrorAction SilentlyContinue | Where-Object { -not $_.PSIsContainer -and $_.Name -like ".index-status-*.json" }
         foreach ($sf in $statusFiles) {
-            try { Remove-Item -LiteralPath $sf.FullName -Force -ErrorAction SilentlyContinue } catch {}
+            try { Remove-Item -LiteralPath $sf.FullName -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
         }
     }
 
@@ -145,6 +146,7 @@ function Save-WikiIndexCache {
 }
 
 function Load-WikiIndexCache {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param (
         [string]$TargetWikiDir = $script:wikiDir,
         [string]$TargetScriptDir = $scriptDir
@@ -273,7 +275,7 @@ function Get-WikiIndexingStatus {
             }
         }
     } catch {
-        # Suppressed intentionally
+        $null = $_ # Suppressed intentionally
     }
 
     if ($null -eq $script:IndexingStatus) {
@@ -303,11 +305,12 @@ function Save-WikiIndexingStatusFile {
         $json = $StatusObj | ConvertTo-Json
         [System.IO.File]::WriteAllText($statusFilePath, $json, [System.Text.Encoding]::UTF8)
     } catch {
-        # Suppressed intentionally
+        $null = $_ # Suppressed intentionally
     }
 }
 
 function Build-WikiIndex {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param (
         [string]$TargetWikiDir = $script:wikiDir,
         [string]$TargetScriptDir = $scriptDir,
@@ -381,6 +384,7 @@ function Build-WikiIndex {
 # --- Sidebar Tree Generation Functions ---
 
 function Build-FileTreeNode {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param(
         [Parameter(Mandatory = $false)][string]$wikiDir = "",
         [Parameter(Mandatory = $false)][string]$baseDir = "",
@@ -501,6 +505,7 @@ function Test-ExportNodeHasActiveFile {
 }
 
 function Render-FileTreeHtml {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param(
         [Parameter(Mandatory = $true)]$node,
         [Parameter(Mandatory = $true)][string]$pageRelPath,
@@ -537,6 +542,7 @@ function Render-FileTreeHtml {
 }
 
 function Build-ServerFileTreeNode {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param(
         [Parameter(Mandatory = $false)][string]$wikiDir = "",
         [Parameter(Mandatory = $false)][string]$baseDir = "",
@@ -654,6 +660,7 @@ function Test-ServerNodeHasActiveFile {
 }
 
 function Render-ServerFolderTreeHtml {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param(
         [Parameter(Mandatory = $true)]$node,
         [Parameter(Mandatory = $false)][string]$currentRelPath = "",
@@ -784,6 +791,7 @@ function Get-HighlightText {
 }
 
 function Split-SearchQueryTerms {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]
     param (
         [string]$RawQuery = "",
         [string]$Query = ""
@@ -832,6 +840,7 @@ function Split-SearchQueryTerms {
 }
 
 function Get-QueryParams {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]
     param ([Parameter(Mandatory = $true)][object]$Request)
     $queryDict = @{}
     $rawQuery = if ($Request -and $Request.Url) { $Request.Url.Query } else { "" }
@@ -1039,6 +1048,7 @@ function Get-OkfDocSnippet {
 }
 
 function Search-OkfDocs {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]
     param (
         [string]$Query = "",
         [string]$StatusFilter = "active",

@@ -3,6 +3,7 @@
 #  対応: Windows PowerShell 5.1 / PowerShell 7+
 #  文字コード: UTF-8 with BOM
 # ==============================================================================
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingWriteHost", "")]
 param (
     [string]$ApiKey = "",
     [string]$MachineId = "",
@@ -33,7 +34,7 @@ if ([string]::IsNullOrWhiteSpace($ApiKey)) {
                 if ($resolved) { $defaultKey = $resolved }
             }
         } catch {
-            # Suppressed intentionally
+            $null = $_ # Suppressed intentionally
         }
     }
 

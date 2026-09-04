@@ -16,6 +16,7 @@
 .EXAMPLE
     .\Test-OkfBundle.ps1 -Path ".\docs" -CheckBrokenLinks
 #>
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingWriteHost", "")]
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]
@@ -39,6 +40,7 @@ $conceptCount = 0
 $allMdFiles = Get-ChildItem -Path $bundleRoot -Filter "*.md" -Recurse -File
 
 function Parse-Frontmatter {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param([string]$FilePath)
     $content = [System.IO.File]::ReadAllText($FilePath, [System.Text.Encoding]::UTF8)
     if ($content -match '^\s*---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)') {

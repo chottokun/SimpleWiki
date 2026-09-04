@@ -38,6 +38,7 @@
     Generates a single self-contained "Diagnostics.bat".
 #>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingWriteHost", "")]
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]

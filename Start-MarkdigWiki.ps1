@@ -3,6 +3,7 @@
 #  対応: Windows PowerShell 5.1 / PowerShell 7+
 #  文字コード: UTF-8 with BOM
 # ==============================================================================
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingWriteHost", "")]
 param (
     [int]$Port = 8080,
     [string]$RootFolder = "",
@@ -60,7 +61,7 @@ function Write-SafeHttpResponse {
         $Response.ContentLength64 = $Bytes.Length
         $Response.OutputStream.Write($Bytes, 0, $Bytes.Length)
     } catch [System.Net.HttpListenerException], [System.IO.IOException], [System.ObjectDisposedException] {
-        # クライアントが応答完了前に接続を切断・再読み込みした場合の不必要なエラー出力を安全に抑制
+        $null = $_ # クライアントが応答完了前に接続を切断・再読み込みした場合の不必要なエラー出力を安全に抑制
     } catch {
         Write-Warning "HTTP応答送信エラー: $_"
     }
@@ -129,17 +130,19 @@ $cancelHandler = $null
 try {
     $cancelHandler = [System.ConsoleCancelEventHandler]{
         param($evtSender, $evtArgs)
+        $null = $evtSender
+        $null = $evtArgs
         if ($bgIndexingJob) {
-            try { Stop-Job -Job $bgIndexingJob -ErrorAction SilentlyContinue } catch {}
-            try { Remove-Job -Job $bgIndexingJob -Force -ErrorAction SilentlyContinue } catch {}
+            try { Stop-Job -Job $bgIndexingJob -ErrorAction SilentlyContinue } catch { $null = $_ }
+            try { Remove-Job -Job $bgIndexingJob -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
         }
         if ($listener -and $listener.IsListening) {
-            try { $listener.Stop() } catch {}
+            try { $listener.Stop() } catch { $null = $_ }
         }
     }
     [System.Console]::add_CancelKeyPress($cancelHandler)
 } catch {
-    # 非コンソール環境やリダイレクト環境での add_CancelKeyPress 例外を安全に無視
+    $null = $_ # 非コンソール環境やリダイレクト環境での add_CancelKeyPress 例外を安全に無視
 }
 
 try {
@@ -175,14 +178,14 @@ try {
                 $shutdownMsg = Get-LocalizedStr -Key "shutdown_done_desc" -Lang $reqLang
                 $jsonRes = @{ success = $true; message = $shutdownMsg } | ConvertTo-Json
                 Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
-                try { $response.Close() } catch {}
+                try { $response.Close() } catch { $null = $_ }
                 Write-Host "UIからのシャットダウン要求を受信しました。サーバーを終了します..." -ForegroundColor Yellow
                 if ($bgIndexingJob) {
-                    try { Stop-Job -Job $bgIndexingJob -ErrorAction SilentlyContinue } catch {}
-                    try { Remove-Job -Job $bgIndexingJob -Force -ErrorAction SilentlyContinue } catch {}
+                    try { Stop-Job -Job $bgIndexingJob -ErrorAction SilentlyContinue } catch { $null = $_ }
+                    try { Remove-Job -Job $bgIndexingJob -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
                 }
                 if ($listener.IsListening) {
-                    try { $listener.Stop() } catch {}
+                    try { $listener.Stop() } catch { $null = $_ }
                 }
                 break
             }
@@ -712,7 +715,7 @@ try {
                             $sseBytes = [System.Text.Encoding]::UTF8.GetBytes("data: $jsonStr`n`n")
                             $response.OutputStream.Write($sseBytes, 0, $sseBytes.Length)
                             $response.OutputStream.Flush()
-                        } catch { }
+                        } catch { $null = $_ }
                     }
 
                     if ($reqMode -eq "agentic") {
@@ -861,7 +864,7 @@ try {
                     try {
                         $response.OutputStream.Close()
                         $response.Close()
-                    } catch { }
+                    } catch { $null = $_ }
                     continue
                 }
 
@@ -1953,18 +1956,18 @@ try {
                 Write-SafeHttpResponse -Response $response -Bytes $notFoundBytes -StatusCode 404
             }
         } finally {
-            try { $response.Close() } catch {}
+            try { $response.Close() } catch { $null = $_ }
         }
     }
 } finally {
     if ($null -ne $cancelHandler) {
-        try { [System.Console]::remove_CancelKeyPress($cancelHandler) } catch {}
+        try { [System.Console]::remove_CancelKeyPress($cancelHandler) } catch { $null = $_ }
     }
     if ($listener) {
         if ($listener.IsListening) {
-            try { $listener.Stop() } catch {}
+            try { $listener.Stop() } catch { $null = $_ }
         }
-        try { $listener.Close() } catch {}
+        try { $listener.Close() } catch { $null = $_ }
     }
 }
 

@@ -5,6 +5,7 @@
 # ==============================================================================
 
 function Protect-StringAes {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]
     param ([string]$PlainText)
     $salt = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-OKF-RAG-2026-Salt")
     $pass = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-Portable-Secret-Key-2026")
@@ -31,6 +32,7 @@ function Protect-StringDpapi {
 }
 
 function Unprotect-StringAes {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]
     param ([string]$EncryptedText)
     if ([string]::IsNullOrWhiteSpace($EncryptedText) -or -not $EncryptedText.StartsWith("ENC:")) { return "" }
     try {
@@ -167,7 +169,7 @@ function Unprotect-ActivationCode {
             return $decStr.Substring(6)
         }
     } catch {
-        # マシンバインド復号が不一致
+        $null = $_ # マシンバインド復号が不一致
     }
 
     # 2. メールアドレスなしの同一マシンID試行（Email が指定されていた場合のフォールバック）
@@ -189,7 +191,7 @@ function Unprotect-ActivationCode {
                 return $decStr.Substring(6)
             }
         } catch {
-            # Suppressed intentionally
+            $null = $_ # Suppressed intentionally
         }
     }
 

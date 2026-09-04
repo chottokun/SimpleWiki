@@ -22,6 +22,7 @@
 .PARAMETER Runtime
     Runtime environment for Attested Computation concepts (e.g., bigquery, postgres, python, dbt).
 #>
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingWriteHost", "")]
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]

@@ -257,7 +257,7 @@ function Get-DocumentMetadata {
         try {
             $lastUpdated = [DateTime]::Parse($yamlDict["last_updated"])
         } catch {
-            # Keep file time on parse failure
+            $null = $_ # Keep file time on parse failure
         }
     }
 
@@ -313,6 +313,7 @@ function Get-DocumentMetadata {
 }
 
 function Get-GlossaryTerms {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]
     param (
         [string]$GlossaryPath = "",
         [string]$MdText = ""

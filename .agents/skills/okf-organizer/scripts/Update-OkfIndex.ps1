@@ -13,6 +13,7 @@
 .PARAMETER LogType
     Log category: Update, Creation, Deprecation, Refactor (default: Update).
 #>
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingWriteHost", "")]
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]
@@ -37,6 +38,7 @@ if (-not (Test-Path $targetDir)) {
 }
 
 function Parse-FrontmatterMetadata {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param([string]$FilePath)
     $content = [System.IO.File]::ReadAllText($FilePath, [System.Text.Encoding]::UTF8)
     $title = $null
@@ -70,6 +72,7 @@ function Parse-FrontmatterMetadata {
 }
 
 function Update-SingleDirectoryIndex {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseShouldProcessForStateChangingFunctions", "")]
     param([string]$DirectoryPath, [bool]$IsRoot)
 
     $indexFile = Join-Path $DirectoryPath "index.md"

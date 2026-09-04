@@ -395,7 +395,7 @@ function Get-LocalizedStr {
         try {
             $text = [string]::Format([System.Globalization.CultureInfo]::InvariantCulture, $text, [object[]]$FormatArgs)
         } catch {
-            # Suppressed intentionally
+            $null = $_ # Suppressed intentionally
         }
     }
     return $text
@@ -461,6 +461,7 @@ function Get-RequestLanguage {
 
 function ConvertTo-JsString {
     [CmdletBinding()]
+    [OutputType([string])]
     param(
         [Parameter(Mandatory = $false)]
         [string]$InputString = ""

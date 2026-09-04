@@ -13,6 +13,7 @@
     .\Test-ModuleReadiness.ps1 -Path ".\MyModule"
 #>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingWriteHost", "")]
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]
@@ -38,7 +39,7 @@ $passed = 0
 if ($isDir) {
     # Module Directory Check
     $manifestFiles = Get-ChildItem -Path $Path -Filter "*.psd1" -File
-    
+
     if ($manifestFiles.Count -eq 0) {
         $issues += "[WARNING] No .psd1 manifest found in directory. Standalone modules should have a manifest."
     } else {
@@ -65,12 +66,11 @@ if ($isDir) {
     # Single Script Check
     $script = Get-Item $Path
     Write-Host "Checking Script: $($script.Name)..." -ForegroundColor Yellow
-    
+
     # Check syntax using AST
     $tokens = $null
     $errors = $null
-    $ast = [System.Management.Automation.Language.Parser]::ParseFile($script.FullName, [ref]$tokens, [ref]$errors)
-    
+    $null = [System.Management.Automation.Language.Parser]::ParseFile($script.FullName, [ref]$tokens, [ref]$errors)
     if ($errors.Count -gt 0) {
         foreach ($err in $errors) {
             $issues += "[ERROR] Parse error at line $($err.Extent.StartLineNumber): $($err.Message)"

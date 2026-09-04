@@ -15,6 +15,7 @@
 .EXAMPLE
     .\New-OkfBundle.ps1 -Path ".\docs" -Preset "system-docs" -BundleTitle "System Architecture Docs"
 #>
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingWriteHost", "")]
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]

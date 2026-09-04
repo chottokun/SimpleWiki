@@ -16,6 +16,7 @@
     .\New-PowerShellProject.ps1 -ProjectPath "C:\Projects\MyNewTool" -Type Tool
 #>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingWriteHost", "")]
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]

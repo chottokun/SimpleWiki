@@ -147,6 +147,7 @@ function Invoke-ToolLookupGlossary {
 }
 
 function Invoke-ToolGetLinkedDocs {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]
     param (
         [string]$RelPath = "",
         [string]$WikiDir = ""
@@ -203,6 +204,7 @@ function Invoke-ToolGetLinkedDocs {
 # --- 検索結果ビュー生成関数 (OKF 文脈検索エンジン) ---
 
 function Invoke-OpenAiChatCompletions {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]
     param (
         [string]$ApiUrl,
         [string]$ApiKey,

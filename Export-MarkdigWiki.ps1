@@ -3,6 +3,7 @@
 #  対応: Windows PowerShell 5.1 / PowerShell 7+
 #  文字コード: UTF-8 with BOM
 # ==============================================================================
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingWriteHost", "")]
 param (
     [string]$RootFolder = "",
     [string]$OutputDir  = "",
@@ -29,7 +30,7 @@ if ([string]::IsNullOrWhiteSpace($exportLang)) {
             if ($cfg -and $cfg.defaultLanguage) { $exportLang = $cfg.defaultLanguage }
             elseif ($cfg -and $cfg.language) { $exportLang = $cfg.language }
         } catch {
-            # Suppressed intentionally
+            $null = $_ # Suppressed intentionally
         }
     }
 }
@@ -71,6 +72,7 @@ Get-ChildItem -Path $libDir -Filter "*.dll" | ForEach-Object {
 }
 
 function Build-FileTreeNode {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param ($allMdFiles, $wikiDir)
 
     $rootNode = [PSCustomObject]@{
@@ -121,6 +123,7 @@ function Test-ExportNodeHasActiveFile {
 }
 
 function Render-ExportFolderTreeHtml {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param ($node, $currentFile, $currentUri)
 
     $html = "<ul>`n"
