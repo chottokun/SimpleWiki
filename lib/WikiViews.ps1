@@ -769,7 +769,6 @@ function Get-SearchViewHtml {
         $relUri = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
 
         $titleHtml = Get-HighlightText -Text $item.Title -Keywords $keywords
-        $descHtml  = Get-HighlightText -Text $item.Description -Keywords $keywords
         $snipHtml  = Get-HighlightText -Text $r.Snippet -Keywords $keywords
 
         $domainEnc = [System.Net.WebUtility]::HtmlEncode($item.Domain)

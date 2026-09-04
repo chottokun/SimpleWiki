@@ -16,9 +16,9 @@ $libDir    = Join-Path $scriptDir "lib"
 # --- モジュールのロード (lib/WikiSecurity.ps1) ---
 . (Join-Path $libDir "WikiSecurity.ps1")
 
-Write-Output "==========================================================" -ForegroundColor Green
-Write-Output "  SimpleWiki アクティベーションコード生成ツール" -ForegroundColor Green
-Write-Output "==========================================================" -ForegroundColor Green
+Write-Host "==========================================================" -ForegroundColor Green
+Write-Host "  SimpleWiki アクティベーションコード生成ツール" -ForegroundColor Green
+Write-Host "==========================================================" -ForegroundColor Green
 
 # 1. API キーの入力（未指定時に対話取得）
 if ([string]::IsNullOrWhiteSpace($ApiKey)) {
@@ -55,9 +55,9 @@ $MachineId = if ([string]::IsNullOrWhiteSpace($MachineId)) { "" } else { $Machin
 $Email = if ([string]::IsNullOrWhiteSpace($Email)) { "" } else { $Email.Trim() }
 
 if (-not $isLegacy -and [string]::IsNullOrWhiteSpace($MachineId)) {
-    Write-Output "`n発行タイプを選択してください:" -ForegroundColor Cyan
-    Write-Output "  [1] マシン固有ロック形式 (推奨: 指定PC専用)" -ForegroundColor White
-    Write-Output "  [2] 従来ポータブル形式 (どのPCでも動作する共通コード)" -ForegroundColor White
+    Write-Host "`n発行タイプを選択してください:" -ForegroundColor Cyan
+    Write-Host "  [1] マシン固有ロック形式 (推奨: 指定PC専用)" -ForegroundColor White
+    Write-Host "  [2] 従来ポータブル形式 (どのPCでも動作する共通コード)" -ForegroundColor White
     $typeChoice = Read-Host "選択 (1 または 2 / 既定値: 1)"
     if ($typeChoice -eq "2") {
         $isLegacy = $true
@@ -95,12 +95,12 @@ try {
     $clipMsg = ""
 }
 
-Write-Output "`n----------------------------------------------------------" -ForegroundColor Yellow
-Write-Output "  対象マシンID : $MachineId" -ForegroundColor Cyan
+Write-Host "`n----------------------------------------------------------" -ForegroundColor Yellow
+Write-Host "  対象マシンID : $MachineId" -ForegroundColor Cyan
 if ($Email) {
-    Write-Output "  対象メール   : $Email" -ForegroundColor Cyan
+    Write-Host "  対象メール   : $Email" -ForegroundColor Cyan
 }
-Write-Output "  発行コード   : $activationCode$clipMsg" -ForegroundColor Green
-Write-Output "----------------------------------------------------------" -ForegroundColor Yellow
-Write-Output "※ ユーザーにこの『発行コード』をお伝えください。" -ForegroundColor White
-Write-Output "   ユーザー側の設定画面で入力すると自動でアクティベーションされます。`n" -ForegroundColor White
+Write-Host "  発行コード   : $activationCode$clipMsg" -ForegroundColor Green
+Write-Host "----------------------------------------------------------" -ForegroundColor Yellow
+Write-Host "※ ユーザーにこの『発行コード』をお伝えください。" -ForegroundColor White
+Write-Host "   ユーザー側の設定画面で入力すると自動でアクティベーションされます。`n" -ForegroundColor White

@@ -76,12 +76,12 @@ $configObj.rag.enabled = $true
 $jsonOutput = $configObj | ConvertTo-Json -Depth 5
 [System.IO.File]::WriteAllText($targetConfig, $jsonOutput, [System.Text.Encoding]::UTF8)
 
-Write-Output "==========================================================" -ForegroundColor Green
-Write-Output "  LLM / RAG 設定の保存が完了しました" -ForegroundColor Green
-Write-Output "  設定ファイル: $targetConfig" -ForegroundColor Yellow
-Write-Output "  Base URL    : $($configObj.rag.apiUrl)" -ForegroundColor Cyan
-Write-Output "  Model       : $($configObj.rag.model)" -ForegroundColor Cyan
+Write-Host "==========================================================" -ForegroundColor Green
+Write-Host "  LLM / RAG 設定の保存が完了しました" -ForegroundColor Green
+Write-Host "  設定ファイル: $targetConfig" -ForegroundColor Yellow
+Write-Host "  Base URL    : $($configObj.rag.apiUrl)" -ForegroundColor Cyan
+Write-Host "  Model       : $($configObj.rag.model)" -ForegroundColor Cyan
 if (-not [string]::IsNullOrWhiteSpace($configObj.rag.apiKey)) {
-    Write-Output "  API Key     : $($configObj.rag.apiKey.Substring(0, [Math]::Min(12, $configObj.rag.apiKey.Length)))..." -ForegroundColor Cyan
+    Write-Host "  API Key     : $($configObj.rag.apiKey.Substring(0, [Math]::Min(12, $configObj.rag.apiKey.Length)))..." -ForegroundColor Cyan
 }
-Write-Output "==========================================================" -ForegroundColor Green
+Write-Host "==========================================================" -ForegroundColor Green

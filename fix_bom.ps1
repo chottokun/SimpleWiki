@@ -9,6 +9,6 @@ foreach ($file in $psFiles) {
     if (-not $hasBom) {
         $text = [System.IO.File]::ReadAllText($file.FullName, [System.Text.Encoding]::UTF8)
         [System.IO.File]::WriteAllText($file.FullName, $text, $utf8Bom)
-        Write-Output "Added UTF-8 BOM: $($file.Name)" -ForegroundColor Green
+        Write-Host "Added UTF-8 BOM: $($file.Name)" -ForegroundColor Green
     }
 }
