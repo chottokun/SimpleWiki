@@ -246,6 +246,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\te
 - **検証結果**: 全 169 件の Pester 自動テストが **100% PASS**。
   - **1. スクリプト構文・AST検証**: 全 `.ps1` ファイルの構文解析・トークン検証に合格
   - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 169 件)**:
+    - PSScriptAnalyzer 警告クリーンアップおよび Write-Host 引数修正検証（PR #39: `Export-MarkdigWiki.ps1`, `New-ActivationCode.ps1`, `Set-ApiKey.ps1`, `fix_bom.ps1` のコンソール出力修正および `lib/WikiRag.ps1` の未使用変数・パラメータ・$null比較順序・例外ハンドリング改善）
     - View コンポーネントリファクタリング検証（`Get-OkfFooterCardHtml` の Description 描画、`Get-MaintenanceViewHtml` のリストレンダラー共通化）
     - `glossary.md` からの用語・見出し・定義・エイリアス抽出テスト (`Get-GlossaryTerms`, `Get-GlossaryTermDefinition`)
     - `Update-WikiTags.ps1` の `-DryRun` 非破壊検証および既存タグを保持した自動マージテスト
