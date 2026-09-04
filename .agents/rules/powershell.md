@@ -35,3 +35,9 @@
 ## 7. Testing & Quality Assurance
 - **PSScriptAnalyzer**: Run script analysis to catch code smells, rule violations, and security issues.
 - **Pester Unit Testing**: Provide Pester unit tests (`*.Tests.ps1`) for all reusable scripts and modules following a TDD approach.
+- **Standard Windows 11 / PowerShell 5.1 Compatibility**:
+  - Target execution environment assumes **vanilla Windows 11 without external module installations**.
+  - All tests must pass cleanly under the **built-in Pester (v3.4.0)** bundled with Windows PowerShell 5.1.
+  - **Strictly prohibit hyphenated Pester 5 assertion operators**: Use `Should Be`, `Should Match`, `Should Not Be`, `Should Throw`. **Never use** `Should -Be`, `Should -Match` etc., as they cause fatal runtime exceptions in Pester 3.4.0.
+  - Do not introduce dependencies on `Install-Module` for test execution.
+
