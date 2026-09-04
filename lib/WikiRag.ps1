@@ -242,11 +242,9 @@ function Invoke-OpenAiChatCompletions {
     if ($Stream) {
         $payloadObj["stream"] = $true
     }
-    $jsonBody = $payloadObj | ConvertTo-Json -Depth 5
-    $reqBytes = [System.Text.Encoding]::UTF8.GetBytes($jsonBody)
 
     $executeRequest = {
-        param([bool]$UseStreamPayload)
+        param([bool]$UseStreamPayload, [int]$TimeoutVal)
 
         $currentPayload = @{
             model       = $Model
@@ -262,7 +260,7 @@ function Invoke-OpenAiChatCompletions {
         $webReq = [System.Net.HttpWebRequest]::Create($endpointUrl)
         $webReq.Method = "POST"
         $webReq.ContentType = "application/json; charset=utf-8"
-        $webReq.Timeout = $TimeoutSec * 1000
+        $webReq.Timeout = $TimeoutVal * 1000
         if (-not [string]::IsNullOrWhiteSpace($resolvedKey)) {
             $webReq.Headers["Authorization"] = "Bearer $resolvedKey"
         }
@@ -278,13 +276,13 @@ function Invoke-OpenAiChatCompletions {
         $webRes = $null
         $isStreamMode = [bool]$Stream
         try {
-            $webRes = & $executeRequest $isStreamMode
+            $webRes = & $executeRequest $isStreamMode $TimeoutSec
         } catch [System.Net.WebException] {
             # ストリーム要求で失敗した場合、ストリーム非対応APIへのフォールバックとして非ストリームで再試行
             if ($isStreamMode) {
                 try {
                     $isStreamMode = $false
-                    $webRes = & $executeRequest $false
+                    $webRes = & $executeRequest $false $TimeoutSec
                 } catch {
                     if ($_.Response) {
                         $errStream = $_.Response.GetResponseStream()
@@ -316,7 +314,7 @@ function Invoke-OpenAiChatCompletions {
                 $firstLine = $true
                 $isActualSse = $false
 
-                while (($line = $reader.ReadLine()) -ne $null) {
+                while ($null -ne ($line = $reader.ReadLine())) {
                     if ($firstLine) {
                         $firstLine = $false
                         # 最初の行が { で始まるなら通常の JSON レスポンスと判定してフォールバック
@@ -406,10 +404,10 @@ function Invoke-AgenticRagChat {
     $visitedPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
     $logStep = {
-        param([string]$Message)
+        param([string]$Message, [scriptblock]$Cb)
         [void]$thinkingLog.Add($Message)
-        if ($OnThinkingCallback) {
-            try { & $OnThinkingCallback $Message } catch { }
+        if ($Cb) {
+            try { & $Cb $Message } catch { $null = $_ }
         }
     }
 
@@ -589,7 +587,7 @@ function Invoke-AgenticRagChat {
                 $webRes.Close()
             }
         } catch {
-            & $logStep "⚠️ LLM API Tool Calling 通信エラー。Fast モードへフォールバックします。"
+            & $logStep "⚠️ LLM API Tool Calling 通信エラー。Fast モードへフォールバックします。" $OnThinkingCallback
             break
         }
 
@@ -613,7 +611,7 @@ function Invoke-AgenticRagChat {
                     "search_okf" {
                         $q = if ($argsObj.query) { $argsObj.query } else { "" }
                         $d = if ($argsObj.domain) { $argsObj.domain } else { "" }
-                        & $logStep "🔍 Tool Call: search_okf (query: '$q', domain: '$d')"
+                        & $logStep "🔍 Tool Call: search_okf (query: '$q', domain: '$d')" $OnThinkingCallback
                         $toolResult = Invoke-ToolSearchOkf -Query $q -Domain $d -WikiDir $targetDir
                         # 検索ヒット候補を visitedPaths にも記録
                         $rawHits = Search-OkfDocs -Query $q -DomainFilter $d -StatusFilter "active" -WikiDir $targetDir -MaxResults 5
@@ -627,12 +625,12 @@ function Invoke-AgenticRagChat {
                     }
                     "lookup_glossary" {
                         $t = if ($argsObj.term) { $argsObj.term } else { "" }
-                        & $logStep "📖 Tool Call: lookup_glossary (term: '$t')"
+                        & $logStep "📖 Tool Call: lookup_glossary (term: '$t')" $OnThinkingCallback
                         $toolResult = Invoke-ToolLookupGlossary -Term $t -WikiDir $targetDir
                     }
                     "read_doc" {
                         $p = if ($argsObj.relPath) { $argsObj.relPath } else { "" }
-                        & $logStep "📄 Tool Call: read_doc (relPath: '$p')"
+                        & $logStep "📄 Tool Call: read_doc (relPath: '$p')" $OnThinkingCallback
                         $toolResult = Invoke-ToolReadDoc -RelPath $p -WikiDir $targetDir -MaxChars $MaxDocChars
                         if ($p -and -not $visitedPaths.Contains($p)) {
                             [void]$visitedPaths.Add($p)
@@ -640,7 +638,7 @@ function Invoke-AgenticRagChat {
                     }
                     "get_linked_docs" {
                         $p = if ($argsObj.relPath) { $argsObj.relPath } else { "" }
-                        & $logStep "🔗 Tool Call: get_linked_docs (relPath: '$p')"
+                        & $logStep "🔗 Tool Call: get_linked_docs (relPath: '$p')" $OnThinkingCallback
                         $links = Invoke-ToolGetLinkedDocs -RelPath $p -WikiDir $targetDir
                         if ($links -and $links.Count -gt 0) {
                             $linkStrList = foreach ($l in $links) { "・[$($l.LinkText)]($($l.RelPath)) [Status: $($l.Status)]" }
@@ -691,7 +689,7 @@ function Invoke-AgenticRagChat {
 
     if ([string]::IsNullOrWhiteSpace($finalAnswer)) {
         $maxTurnsLog = if ($isEn) { "⏱️ Reached turn limit ($MaxTurns); generating summarized answer from gathered knowledge." } else { "⏱️ ターン上限 ($MaxTurns) に達したため、収集情報から要約回答を生成します。" }
-        & $logStep $maxTurnsLog
+        & $logStep $maxTurnsLog $OnThinkingCallback
         $fallbackUserPrompt = if ($isEn) {
             "※Output your final conclusion as text based on the information gathered so far without making further tool calls. Even if there is no direct answer, clearly present related knowledge, specifications, and helpful information gathered from the explored documents in English."
         } else {
@@ -733,7 +731,7 @@ function Invoke-AgenticRagChat {
                     $sb = [System.Text.StringBuilder]::new()
                     $firstLine = $true
                     $isActualSse = $false
-                    while (($line = $reader.ReadLine()) -ne $null) {
+                    while ($null -ne ($line = $reader.ReadLine())) {
                         if ($firstLine) {
                             $firstLine = $false
                             if ($line.Trim().StartsWith("{")) {
@@ -776,7 +774,7 @@ function Invoke-AgenticRagChat {
                 $webRes.Close()
             }
         } catch {
-            # 通信例外等のキャッチ
+            $null = $_ # 通信例外等のキャッチ
         }
 
         if ([string]::IsNullOrWhiteSpace($finalAnswer)) {
