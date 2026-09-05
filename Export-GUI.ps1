@@ -20,7 +20,7 @@ $initialOutputDir = Join-Path $scriptDir "dist"
 # --- Form 作成 ---
 $form               = New-Object System.Windows.Forms.Form
 $form.Text          = "SimpleWiki - 静的 HTML エキスポート"
-$form.Size          = New-Object System.Drawing.Size(560, 290)
+$form.Size          = New-Object System.Drawing.Size(560, 360)
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedSingle
 $form.MaximizeBox   = $false
@@ -87,18 +87,44 @@ $btnBrowseOutput.Add_Click({
 })
 $form.Controls.Add($btnBrowseOutput)
 
+# 3. オプション設定 (SingleFile & MermaidMode)
+$chkSingleFile          = New-Object System.Windows.Forms.CheckBox
+$chkSingleFile.Location = New-Object System.Drawing.Point(20, 140)
+$chkSingleFile.Size     = New-Object System.Drawing.Size(260, 24)
+$chkSingleFile.Text     = "単一 HTML ファイル（SPAモード）"
+$chkSingleFile.Font     = $fontLabel
+$chkSingleFile.Checked  = $false
+$form.Controls.Add($chkSingleFile)
+
+$labelMermaid          = New-Object System.Windows.Forms.Label
+$labelMermaid.Location = New-Object System.Drawing.Point(290, 142)
+$labelMermaid.Size     = New-Object System.Drawing.Size(100, 20)
+$labelMermaid.Text     = "Mermaid モード:"
+$labelMermaid.Font     = $fontLabel
+$form.Controls.Add($labelMermaid)
+
+$cmbMermaid          = New-Object System.Windows.Forms.ComboBox
+$cmbMermaid.Location = New-Object System.Drawing.Point(390, 139)
+$cmbMermaid.Size     = New-Object System.Drawing.Size(130, 23)
+$cmbMermaid.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+$cmbMermaid.Font     = $fontLabel
+$null = $cmbMermaid.Items.Add("Runtime")
+$null = $cmbMermaid.Items.Add("Svg")
+$cmbMermaid.SelectedIndex = 0
+$form.Controls.Add($cmbMermaid)
+
 # ステータスメッセージ
 $lblStatus          = New-Object System.Windows.Forms.Label
-$lblStatus.Location = New-Object System.Drawing.Point(20, 145)
+$lblStatus.Location = New-Object System.Drawing.Point(20, 185)
 $lblStatus.Size     = New-Object System.Drawing.Size(500, 20)
-$lblStatus.Text     = "準備完了。フォルダを選択して [エキスポート実行] を押してください。"
+$lblStatus.Text     = "準備完了。フォルダとオプションを選択して [エキスポート実行] を押してください。"
 $lblStatus.Font     = $fontLabel
 $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
 $form.Controls.Add($lblStatus)
 
 # エキスポート実行ボタン
 $btnExport          = New-Object System.Windows.Forms.Button
-$btnExport.Location = New-Object System.Drawing.Point(170, 180)
+$btnExport.Location = New-Object System.Drawing.Point(170, 230)
 $btnExport.Size     = New-Object System.Drawing.Size(180, 40)
 $btnExport.Text     = "🚀 エキスポート実行"
 $btnExport.Font     = $fontBold
@@ -108,8 +134,10 @@ $btnExport.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $btnExport.FlatAppearance.BorderSize = 0
 
 $btnExport.Add_Click({
-    $inputPath  = $txtInput.Text.Trim()
-    $outputPath = $txtOutput.Text.Trim()
+    $inputPath   = $txtInput.Text.Trim()
+    $outputPath  = $txtOutput.Text.Trim()
+    $isSingle    = $chkSingleFile.Checked
+    $mermaidMode = $cmbMermaid.SelectedItem.ToString()
 
     if (-not (Test-Path $inputPath)) {
         [System.Windows.Forms.MessageBox]::Show("入力フォルダが見つかりません:`n$inputPath", "エラー", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
@@ -123,7 +151,16 @@ $btnExport.Add_Click({
 
     try {
         $exportScript = Join-Path $scriptDir "Export-MarkdigWiki.ps1"
-        & $exportScript -RootFolder $inputPath -OutputDir $outputPath
+        $params = @{
+            RootFolder  = $inputPath
+            OutputDir   = $outputPath
+            MermaidMode = $mermaidMode
+        }
+        if ($isSingle) {
+            $params["SingleFile"] = $true
+        }
+
+        & $exportScript @params
 
         $lblStatus.Text      = "完了いたしました！"
         $lblStatus.ForeColor = [System.Drawing.Color]::Green

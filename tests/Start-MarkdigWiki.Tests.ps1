@@ -137,6 +137,14 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
         $htmlContent | Should Match "class=""okf-footer-card"""
     }
 
+    It "Defines CSS style block cleanly without duplication" {
+        $indexHtmlPath = Join-Path $testExportDir "index.html"
+        $htmlContent   = [System.IO.File]::ReadAllText($indexHtmlPath)
+
+        $styleMatches = [regex]::Matches($htmlContent, '<style>')
+        $styleMatches.Count | Should Be 1
+    }
+
     It "-SingleFile switch exports monolith SPA HTML with inline styles and JS routing" {
         $singleExportDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestSingleFileExport"
         if (Test-Path $singleExportDir) { Remove-Item -Path $singleExportDir -Recurse -Force }
@@ -855,6 +863,15 @@ Describe 'Export-GUI.ps1 GUI Component and Syntax Validation' {
         (Test-Path $guiBat) | Should Be $true
         $content = Get-Content -Path $guiBat -Raw
         $content | Should Match "Export-GUI\.ps1"
+    }
+
+    It 'Export-GUI.ps1 contains controls for SingleFile and MermaidMode' {
+        $guiScript = Join-Path $projectRoot "Export-GUI.ps1"
+        $content   = Get-Content -Path $guiScript -Raw
+        $content | Should Match 'chkSingleFile'
+        $content | Should Match 'cmbMermaid'
+        $content | Should Match 'SingleFile'
+        $content | Should Match 'MermaidMode'
     }
 }
 
