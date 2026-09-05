@@ -1309,6 +1309,7 @@ function Get-SettingsViewData {
     $editorEnabledChecked = if ($config.editor -and $null -ne $config.editor.enabled) {
         if ($config.editor.enabled -eq $true) { "checked" } else { "" }
     } else { "checked" }
+    $editorType           = if ($config.editor -and $config.editor.type) { [string]$config.editor.type } else { "toastui" }
     $editorMaxBackups     = if ($config.editor -and $null -ne $config.editor.maxBackups) { [int]$config.editor.maxBackups } else { 3 }
 
     $prebuildChecked   = if ($config.search -and $config.search.prebuildIndex -eq $true) { "checked" } else { "" }
@@ -1330,6 +1331,7 @@ function Get-SettingsViewData {
     return [PSCustomObject]@{
         Lang              = $Lang
         EditorEnabledChecked = $editorEnabledChecked
+        EditorType           = $editorType
         EditorMaxBackups     = $editorMaxBackups
         PrebuildChecked   = $prebuildChecked
         UseCacheChecked   = $useCacheChecked
@@ -1345,6 +1347,10 @@ function Get-SettingsViewData {
         EditorTitleLbl    = Get-LocalizedStr -Key "settings_editor_title" -Lang $Lang
         EditorEnableLbl   = Get-LocalizedStr -Key "settings_editor_enable" -Lang $Lang
         EditorDescLbl     = Get-LocalizedStr -Key "settings_editor_desc" -Lang $Lang
+        EditorTypeLbl     = Get-LocalizedStr -Key "settings_editor_type" -Lang $Lang
+        EditorTypeDescLbl = Get-LocalizedStr -Key "settings_editor_type_desc" -Lang $Lang
+        EditorTypeToastUiLbl  = Get-LocalizedStr -Key "settings_editor_type_toastui" -Lang $Lang
+        EditorTypeTextAreaLbl = Get-LocalizedStr -Key "settings_editor_type_textarea" -Lang $Lang
         EditorMaxBackupsLbl = Get-LocalizedStr -Key "settings_editor_max_backups" -Lang $Lang
         SearchTitleLbl    = Get-LocalizedStr -Key "settings_search_title" -Lang $Lang
         PrebuildLbl       = Get-LocalizedStr -Key "settings_prebuild_label" -Lang $Lang
@@ -1389,6 +1395,9 @@ function Render-SettingsEditorCard {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param ([PSCustomObject]$Data)
 
+    $selToastUi  = if ($Data.EditorType -eq "toastui") { "selected" } else { "" }
+    $selTextarea = if ($Data.EditorType -eq "textarea") { "selected" } else { "" }
+
     return @"
         <div class="okf-card">
             <div class="okf-card-header">$($Data.EditorTitleLbl)</div>
@@ -1399,6 +1408,15 @@ function Render-SettingsEditorCard {
                 </label>
                 <div style="font-size: 13px; color: #586069; margin-left: 24px;">
                     $($Data.EditorDescLbl)
+                </div>
+
+                <div style="margin-left: 24px; margin-top: 5px;">
+                    <label for="editorType" style="font-size: 13px; font-weight: bold;">$($Data.EditorTypeLbl)</label><br>
+                    <select id="editorType" name="editorType" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px; font-size: 13px;">
+                        <option value="toastui" $selToastUi>$($Data.EditorTypeToastUiLbl)</option>
+                        <option value="textarea" $selTextarea>$($Data.EditorTypeTextAreaLbl)</option>
+                    </select>
+                    <div style="font-size: 12px; color: #666; margin-top: 2px;">$($Data.EditorTypeDescLbl)</div>
                 </div>
 
                 <div style="margin-left: 24px; margin-top: 5px;">
@@ -1581,6 +1599,7 @@ function saveSettings(e) {
     var payload = {
         editor: {
             enabled: document.getElementById('editorEnabled').checked,
+            type: document.getElementById('editorType').value,
             maxBackups: parseInt(document.getElementById('editorMaxBackups').value, 10) || 0
         },
         search: {
@@ -1801,6 +1820,9 @@ function Get-MainViewHtml {
 <head>
 <meta charset="UTF-8">
 <title>{0} - {20} OKF</title>
+<!-- TOAST UI Editor CDN Assets -->
+<link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/toastui-editor.min.css" />
+<script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
 <style>
     * { box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; color: #24292e; background-color: #fff; }
@@ -1853,21 +1875,23 @@ function Get-MainViewHtml {
     .warning-banner { background-color: #fff3cd; color: #856404; padding: 10px 15px; border-radius: 6px; border: 1px solid #ffeeba; margin-bottom: 20px; font-size: 13px; }
     .edit-doc-btn { background: #28a745; color: #fff; border: none; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; margin-left: 10px; }
     .edit-doc-btn:hover { background: #218838; }
-    .wiki-editor-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 10000; justify-content: center; align-items: center; }
-    .wiki-editor-container { background: #fff; width: 90vw; max-width: 960px; height: 85vh; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
-    .wiki-editor-header { background: #1b1f23; color: #fff; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
-    .wiki-meta-accordion { background: #f6f8fa; border-bottom: 1px solid #e1e4e8; }
-    .wiki-meta-header { padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+    .wiki-editor-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 10000; justify-content: center; align-items: center; padding: 16px; box-sizing: border-box; }
+    .wiki-editor-container { background: #fff; width: 92vw; max-width: 1040px; height: 90vh; max-height: calc(100vh - 32px); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+    .wiki-editor-header { background: #1b1f23; color: #fff; padding: 10px 18px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; flex-shrink: 0; }
+    .wiki-meta-accordion { background: #f6f8fa; border-bottom: 1px solid #e1e4e8; flex-shrink: 0; }
+    .wiki-meta-header { padding: 8px 16px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; }
+    .wiki-meta-header:hover { background: #eef1f4; }
     .wiki-meta-toggle-btn { background: #e1e4e8; border: none; padding: 3px 10px; font-size: 11px; border-radius: 4px; cursor: pointer; color: #24292e; }
     .wiki-meta-toggle-btn.active { background: #0366d6; color: #fff; font-weight: bold; }
-    .wiki-meta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; padding: 12px 16px; }
-    .wiki-form-group { display: flex; flex-direction: column; gap: 4px; }
+    .wiki-meta-body { max-height: 240px; overflow-y: auto; }
+    .wiki-meta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; padding: 10px 16px; }
+    .wiki-form-group { display: flex; flex-direction: column; gap: 3px; }
     .wiki-form-group.full-width { grid-column: 1 / -1; }
     .wiki-form-group label { font-size: 11px; font-weight: bold; color: #586069; }
-    .wiki-form-group input, .wiki-form-group select { padding: 4px 8px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; }
-    .wiki-raw-yaml-textarea { width: 100%; height: 120px; font-family: monospace; font-size: 12px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
-    .wiki-editor-textarea { flex: 1; padding: 16px; font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace; font-size: 13px; line-height: 1.5; border: none; resize: none; outline: none; }
-    .wiki-editor-footer { background: #f6f8fa; padding: 10px 20px; border-top: 1px solid #e1e4e8; display: flex; justify-content: space-between; align-items: center; }
+    .wiki-form-group input, .wiki-form-group select { padding: 3px 6px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; }
+    .wiki-raw-yaml-textarea { width: 100%; height: 120px; font-family: monospace; font-size: 12px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    .wiki-editor-textarea { flex: 1; min-height: 0; padding: 16px; font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace; font-size: 13px; line-height: 1.5; border: none; resize: none; outline: none; }
+    .wiki-editor-footer { background: #f6f8fa; padding: 8px 18px; border-top: 1px solid #e1e4e8; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
     .wiki-editor-cancel-btn { background: #6c757d; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; }
     .wiki-editor-save-btn { background: #28a745; color: #fff; border: none; padding: 6px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; }
     .shutdown-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); color: #fff; z-index: 20000; flex-direction: column; justify-content: center; align-items: center; text-align: center; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }

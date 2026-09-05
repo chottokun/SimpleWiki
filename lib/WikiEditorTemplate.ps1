@@ -14,6 +14,7 @@ function Get-WikiEditorModalHtml {
     $edCancel           = Get-LocalizedStr -Key "editor_cancel_btn" -Lang $Lang
     $edSave             = Get-LocalizedStr -Key "editor_save_btn" -Lang $Lang
     $edMetaSectionTitle = Get-LocalizedStr -Key "editor_meta_section_title" -Lang $Lang
+    $edMetaToggleHint   = Get-LocalizedStr -Key "editor_meta_toggle_hint" -Lang $Lang
     $edModeForm         = Get-LocalizedStr -Key "editor_mode_form" -Lang $Lang
     $edModeRaw          = Get-LocalizedStr -Key "editor_mode_raw" -Lang $Lang
     $edFieldType        = Get-LocalizedStr -Key "editor_field_type" -Lang $Lang
@@ -59,85 +60,94 @@ function Get-WikiEditorModalHtml {
 
             <!-- Metadata Section Accordion -->
             <div class="wiki-meta-accordion">
-                <div class="wiki-meta-header">
-                    <span style="font-weight: bold; font-size: 13px; color: #24292e;">$edMetaSectionTitle</span>
-                    <div style="display: flex; gap: 4px;">
+                <div class="wiki-meta-header" onclick="toggleMetaAccordion()" title="$edMetaToggleHint">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span id="metaAccordionIcon" style="font-size: 11px; font-weight: bold; color: #586069;">▶</span>
+                        <span style="font-weight: bold; font-size: 13px; color: #24292e;">$edMetaSectionTitle</span>
+                        <span style="font-size: 11px; color: #6a737d;">$edMetaToggleHint</span>
+                        <span id="metaAccordionSummary" style="font-size: 11px; color: #0366d6; background: #e1e4e8; padding: 1px 6px; border-radius: 10px; display: none;"></span>
+                    </div>
+                    <div style="display: flex; gap: 4px;" onclick="event.stopPropagation()">
                         <button id="btnModeForm" type="button" class="wiki-meta-toggle-btn active" onclick="switchYamlMode(false)">$edModeForm</button>
                         <button id="btnModeRaw" type="button" class="wiki-meta-toggle-btn" onclick="switchYamlMode(true)">$edModeRaw</button>
                     </div>
                 </div>
 
-                <!-- Form Container -->
-                <div id="yamlFormContainer" class="wiki-meta-grid">
-                    <div class="wiki-form-group">
-                        <label for="metaType">$edFieldType</label>
-                        <input type="text" id="metaType" placeholder="Guide, Concept, Service...">
-                    </div>
-                    <div class="wiki-form-group">
-                        <label for="metaTitle">$edFieldTitle</label>
-                        <input type="text" id="metaTitle">
-                    </div>
-                    <div class="wiki-form-group">
-                        <label for="metaStatus">$edFieldStatus</label>
-                        <select id="metaStatus" onchange="onStatusChange()">
-                            <option value="draft">$edStatusDraft</option>
-                            <option value="stable" selected>$edStatusStable</option>
-                            <option value="deprecated">$edStatusDeprecated</option>
-                        </select>
-                    </div>
-                    <div class="wiki-form-group">
-                        <label for="metaVersion">$edFieldVersion</label>
-                        <input type="text" id="metaVersion" placeholder="1.0.0">
-                    </div>
-                    <div class="wiki-form-group">
-                        <label for="metaDomain">$edFieldDomain</label>
-                        <input type="text" id="metaDomain" placeholder="infrastructure, api...">
-                    </div>
-                    <div class="wiki-form-group">
-                        <label for="metaAuthor">$edFieldAuthor</label>
-                        <input type="text" id="metaAuthor">
-                    </div>
-                    <div class="wiki-form-group">
-                        <label for="metaReviewer">$edFieldReviewer</label>
-                        <input type="text" id="metaReviewer">
-                    </div>
-                    <div class="wiki-form-group">
-                        <label for="metaLastUpdated">$edFieldLastUpdated</label>
-                        <div style="display: flex; gap: 4px;">
-                            <input type="text" id="metaLastUpdated" placeholder="YYYY-MM-DD" style="flex: 1;">
-                            <button type="button" onclick="setEditorDateToday()" style="padding: 2px 8px; font-size: 11px; background: #e1e4e8; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">$edSetToday</button>
+                <!-- Collapsible Body Container -->
+                <div id="wikiMetaBody" class="wiki-meta-body" style="display: none;">
+                    <!-- Form Container -->
+                    <div id="yamlFormContainer" class="wiki-meta-grid">
+                        <div class="wiki-form-group">
+                            <label for="metaType">$edFieldType</label>
+                            <input type="text" id="metaType" placeholder="Guide, Concept, Service...">
+                        </div>
+                        <div class="wiki-form-group">
+                            <label for="metaTitle">$edFieldTitle</label>
+                            <input type="text" id="metaTitle" oninput="updateMetaSummary()">
+                        </div>
+                        <div class="wiki-form-group">
+                            <label for="metaStatus">$edFieldStatus</label>
+                            <select id="metaStatus" onchange="onStatusChange(); updateMetaSummary();">
+                                <option value="draft">$edStatusDraft</option>
+                                <option value="stable" selected>$edStatusStable</option>
+                                <option value="deprecated">$edStatusDeprecated</option>
+                            </select>
+                        </div>
+                        <div class="wiki-form-group">
+                            <label for="metaVersion">$edFieldVersion</label>
+                            <input type="text" id="metaVersion" placeholder="1.0.0">
+                        </div>
+                        <div class="wiki-form-group">
+                            <label for="metaDomain">$edFieldDomain</label>
+                            <input type="text" id="metaDomain" placeholder="infrastructure, api...">
+                        </div>
+                        <div class="wiki-form-group">
+                            <label for="metaAuthor">$edFieldAuthor</label>
+                            <input type="text" id="metaAuthor">
+                        </div>
+                        <div class="wiki-form-group">
+                            <label for="metaReviewer">$edFieldReviewer</label>
+                            <input type="text" id="metaReviewer">
+                        </div>
+                        <div class="wiki-form-group">
+                            <label for="metaLastUpdated">$edFieldLastUpdated</label>
+                            <div style="display: flex; gap: 4px;">
+                                <input type="text" id="metaLastUpdated" placeholder="YYYY-MM-DD" style="flex: 1;">
+                                <button type="button" onclick="setEditorDateToday()" style="padding: 2px 8px; font-size: 11px; background: #e1e4e8; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">$edSetToday</button>
+                            </div>
+                        </div>
+                        <div class="wiki-form-group full-width">
+                            <label for="metaDesc">$edFieldDesc</label>
+                            <input type="text" id="metaDesc">
+                        </div>
+                        <div class="wiki-form-group full-width">
+                            <label for="metaTags">$edFieldTags</label>
+                            <input type="text" id="metaTags" list="glossaryTagDatalist" placeholder="tag1, tag2 (カンマ区切り)">
+                            <datalist id="glossaryTagDatalist"></datalist>
+                        </div>
+                        <div class="wiki-form-group full-width">
+                            <label for="metaRelated">$edFieldRelated</label>
+                            <input type="text" id="metaRelated" placeholder="docs/api/index.md, guides/setup.md (カンマ区切り)">
+                        </div>
+                        <div id="supersededByGroup" class="wiki-form-group full-width" style="display: none;">
+                            <label for="metaSupersededBy" style="color: #856404;">$edFieldSuperseded</label>
+                            <input type="text" id="metaSupersededBy" placeholder="docs/new-version.md" style="border-color: #ffeeba; background: #fff3cd;">
+                        </div>
+                        <div class="wiki-form-group full-width" style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
+                            <input type="checkbox" id="metaAutoDate" checked>
+                            <label for="metaAutoDate" style="font-weight: normal; font-size: 12px; color: #586069; cursor: pointer;">$edAutoDate</label>
                         </div>
                     </div>
-                    <div class="wiki-form-group full-width">
-                        <label for="metaDesc">$edFieldDesc</label>
-                        <input type="text" id="metaDesc">
-                    </div>
-                    <div class="wiki-form-group full-width">
-                        <label for="metaTags">$edFieldTags</label>
-                        <input type="text" id="metaTags" list="glossaryTagDatalist" placeholder="tag1, tag2 (カンマ区切り)">
-                        <datalist id="glossaryTagDatalist"></datalist>
-                    </div>
-                    <div class="wiki-form-group full-width">
-                        <label for="metaRelated">$edFieldRelated</label>
-                        <input type="text" id="metaRelated" placeholder="docs/api/index.md, guides/setup.md (カンマ区切り)">
-                    </div>
-                    <div id="supersededByGroup" class="wiki-form-group full-width" style="display: none;">
-                        <label for="metaSupersededBy" style="color: #856404;">$edFieldSuperseded</label>
-                        <input type="text" id="metaSupersededBy" placeholder="docs/new-version.md" style="border-color: #ffeeba; background: #fff3cd;">
-                    </div>
-                    <div class="wiki-form-group full-width" style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
-                        <input type="checkbox" id="metaAutoDate" checked>
-                        <label for="metaAutoDate" style="font-weight: normal; font-size: 12px; color: #586069; cursor: pointer;">$edAutoDate</label>
-                    </div>
-                </div>
 
-                <!-- RAW YAML Container -->
-                <div id="yamlRawContainer" style="display: none; padding: 10px 14px;">
-                    <textarea id="rawYamlTextarea" class="wiki-raw-yaml-textarea" placeholder="key: value..."></textarea>
+                    <!-- RAW YAML Container -->
+                    <div id="yamlRawContainer" style="display: none; padding: 10px 14px;">
+                        <textarea id="rawYamlTextarea" class="wiki-raw-yaml-textarea" placeholder="key: value..."></textarea>
+                    </div>
                 </div>
             </div>
 
-            <!-- Markdown Body Textarea -->
+            <!-- Markdown Body Editor (TOAST UI Editor Container & Fallback Textarea) -->
+            <div id="wikiEditorToastUiContainer" style="flex: 1; height: 100%; min-height: 0; display: none; overflow: hidden;"></div>
             <textarea id="wikiEditorBodyTextarea" class="wiki-editor-textarea" placeholder="$edBodyPlaceholder"></textarea>
 
             <div class="wiki-editor-footer">
@@ -153,6 +163,77 @@ function Get-WikiEditorModalHtml {
     </div>
     <script>
         var isYamlRawMode = false;
+        var toastEditorInstance = null;
+        var currentEditorType = "toastui";
+
+        function toggleMetaAccordion(forceOpen) {
+            var body = document.getElementById("wikiMetaBody");
+            var icon = document.getElementById("metaAccordionIcon");
+            var isCurrentlyOpen = (body.style.display !== "none");
+            var targetOpen = (typeof forceOpen === "boolean") ? forceOpen : !isCurrentlyOpen;
+
+            if (targetOpen) {
+                body.style.display = "block";
+                icon.textContent = "▼";
+                var summaryEl = document.getElementById("metaAccordionSummary");
+                if (summaryEl) summaryEl.style.display = "none";
+            } else {
+                body.style.display = "none";
+                icon.textContent = "▶";
+                updateMetaSummary();
+            }
+        }
+
+        function updateMetaSummary() {
+            var title = (document.getElementById("metaTitle").value || "").trim();
+            var status = document.getElementById("metaStatus").value;
+            var summaryEl = document.getElementById("metaAccordionSummary");
+            if (!summaryEl) return;
+            if (title || status) {
+                summaryEl.textContent = (status ? "[" + status + "] " : "") + (title || "Untitled");
+                summaryEl.style.display = "inline-block";
+            } else {
+                summaryEl.style.display = "none";
+            }
+        }
+
+        function initToastEditor(initialContent) {
+            var toastContainer = document.getElementById("wikiEditorToastUiContainer");
+            var textareaContainer = document.getElementById("wikiEditorBodyTextarea");
+
+            if (currentEditorType === "toastui" && window.toastui && window.toastui.Editor) {
+                textareaContainer.style.display = "none";
+                toastContainer.style.display = "block";
+
+                if (!toastEditorInstance) {
+                    toastEditorInstance = new toastui.Editor({
+                        el: toastContainer,
+                        height: '100%',
+                        initialEditType: 'markdown',
+                        previewStyle: 'vertical',
+                        initialValue: initialContent || ""
+                    });
+                } else {
+                    toastEditorInstance.setMarkdown(initialContent || "");
+                }
+            } else {
+                toastContainer.style.display = "none";
+                textareaContainer.style.display = "block";
+                textareaContainer.value = initialContent || "";
+            }
+        }
+
+        function getEditorContent() {
+            if (currentEditorType === "toastui" && toastEditorInstance) {
+                return toastEditorInstance.getMarkdown();
+            }
+            return document.getElementById("wikiEditorBodyTextarea").value;
+        }
+
+        function setEditorContent(text) {
+            initToastEditor(text);
+        }
+
         function parseMarkdownWithYaml(mdText) {
             var result = {
                 rawYaml: "",
@@ -266,6 +347,7 @@ function Get-WikiEditorModalHtml {
             }
 
             onStatusChange();
+            updateMetaSummary();
         }
 
         function setEditorDateToday() {
@@ -277,7 +359,7 @@ function Get-WikiEditorModalHtml {
         }
 
         function generateMarkdownWithYaml(isRawMode) {
-            var bodyText = document.getElementById("wikiEditorBodyTextarea").value;
+            var bodyText = getEditorContent();
 
             if (isRawMode) {
                 var rawYaml = document.getElementById("rawYamlTextarea").value.trim();
@@ -378,6 +460,7 @@ function Get-WikiEditorModalHtml {
                 rawEl.style.display = "block";
                 btnForm.classList.remove("active");
                 btnRaw.classList.add("active");
+                toggleMetaAccordion(true);
             } else {
                 var rawText = document.getElementById("rawYamlTextarea").value.trim();
                 var cleanRawText = rawText.replace(/^---\r?\n?/, '').replace(/\r?\n?---\r?$/, '');
@@ -407,12 +490,35 @@ function Get-WikiEditorModalHtml {
             if (!relPath) return;
 
             document.getElementById("wikiEditorPath").textContent = relPath;
-            document.getElementById("wikiEditorBodyTextarea").value = "$edLoadingJs";
+            toggleMetaAccordion(false);
+            setEditorContent("$edLoadingJs");
             document.getElementById("rawYamlTextarea").value = "";
             switchYamlMode(false);
 
             const selectEl = document.getElementById("wikiEditorHistorySelect");
             selectEl.innerHTML = '<option value="">' + "$edLatest" + '</option>';
+
+            fetch("/api/config")
+                .then(r => r.json())
+                .then(cfg => {
+                    if (cfg && cfg.editor && cfg.editor.type) {
+                        currentEditorType = cfg.editor.type;
+                    }
+                }).catch(() => {})
+                .finally(() => {
+                    fetch("/api/raw?relPath=" + encodeURIComponent(relPath))
+                        .then(r => r.json())
+                        .then(data => {
+                            const mdVal = (typeof data.markdown === "object" && data.markdown !== null) ? (data.markdown.value || "") : (data.markdown || "");
+                            var parsed = parseMarkdownWithYaml(mdVal);
+                            populateYamlForm(parsed.meta);
+                            setEditorContent(parsed.bodyText);
+                            document.getElementById("rawYamlTextarea").value = parsed.rawYaml;
+                        })
+                        .catch(err => {
+                            setEditorContent("$edLoadErrorJs" + err);
+                        });
+                });
 
             fetch("/api/history?relPath=" + encodeURIComponent(relPath))
                 .then(r => r.json())
@@ -441,19 +547,6 @@ function Get-WikiEditorModalHtml {
                     }
                 }).catch(() => {});
 
-            fetch("/api/raw?relPath=" + encodeURIComponent(relPath))
-                .then(r => r.json())
-                .then(data => {
-                    const mdVal = (typeof data.markdown === "object" && data.markdown !== null) ? (data.markdown.value || "") : (data.markdown || "");
-                    var parsed = parseMarkdownWithYaml(mdVal);
-                    populateYamlForm(parsed.meta);
-                    document.getElementById("wikiEditorBodyTextarea").value = parsed.bodyText;
-                    document.getElementById("rawYamlTextarea").value = parsed.rawYaml;
-                })
-                .catch(err => {
-                    document.getElementById("wikiEditorBodyTextarea").value = "$edLoadErrorJs" + err;
-                });
-
             document.getElementById("wikiEditorModal").style.display = "flex";
         }
 
@@ -467,18 +560,18 @@ function Get-WikiEditorModalHtml {
                 url += "&version=" + encodeURIComponent(version);
             }
 
-            document.getElementById("wikiEditorBodyTextarea").value = "$edHistoryLoadingJs";
+            setEditorContent("$edHistoryLoadingJs");
             fetch(url)
                 .then(r => r.json())
                 .then(data => {
                     const mdVal = (typeof data.markdown === "object" && data.markdown !== null) ? (data.markdown.value || "") : (data.markdown || "");
                     var parsed = parseMarkdownWithYaml(mdVal);
                     populateYamlForm(parsed.meta);
-                    document.getElementById("wikiEditorBodyTextarea").value = parsed.bodyText;
+                    setEditorContent(parsed.bodyText);
                     document.getElementById("rawYamlTextarea").value = parsed.rawYaml;
                 })
                 .catch(err => {
-                    document.getElementById("wikiEditorBodyTextarea").value = "$edBackupLoadErrJs" + err;
+                    setEditorContent("$edBackupLoadErrJs" + err);
                 });
         }
 
@@ -541,6 +634,7 @@ function Get-WikiEditorModalHtml {
         '$edCancel'           = $edCancel
         '$edSave'             = $edSave
         '$edMetaSectionTitle' = $edMetaSectionTitle
+        '$edMetaToggleHint'   = $edMetaToggleHint
         '$edModeForm'         = $edModeForm
         '$edModeRaw'          = $edModeRaw
         '$edFieldType'        = $edFieldType

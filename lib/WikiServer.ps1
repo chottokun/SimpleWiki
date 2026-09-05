@@ -103,10 +103,12 @@ function Invoke-WikiRouteRequest {
 
                 $currCfg = Get-ConfigJson -TargetScriptDir $targetScriptDir
                 $editorEnabled = if ($currCfg.editor -and $null -ne $currCfg.editor.enabled) { [bool]$currCfg.editor.enabled } else { $true }
+                $editorType    = if ($currCfg.editor -and $currCfg.editor.type) { [string]$currCfg.editor.type } else { "toastui" }
                 $editorMaxBackups = if ($currCfg.editor -and $null -ne $currCfg.editor.maxBackups) { [int]$currCfg.editor.maxBackups } else { 3 }
                 $safeCfg = [ordered]@{
                     editor = @{
                         enabled    = $editorEnabled
+                        type       = $editorType
                         maxBackups = $editorMaxBackups
                     }
                     search = if ($currCfg.search) { $currCfg.search } else { @{ prebuildIndex = $false; useCache = $false; cacheFolder = ".cache" } }
@@ -192,10 +194,11 @@ function Invoke-WikiRouteRequest {
                 }
 
                 if (-not $cfgDict.Contains("editor")) {
-                    $cfgDict["editor"] = [ordered]@{ enabled = $true; maxBackups = 3 }
+                    $cfgDict["editor"] = [ordered]@{ enabled = $true; type = "toastui"; maxBackups = 3 }
                 }
                 if ($reqObj.editor) {
                     if ($null -ne $reqObj.editor.enabled) { $cfgDict["editor"]["enabled"] = [bool]$reqObj.editor.enabled }
+                    if (-not [string]::IsNullOrWhiteSpace($reqObj.editor.type)) { $cfgDict["editor"]["type"] = [string]$reqObj.editor.type }
                     if ($null -ne $reqObj.editor.maxBackups) { $cfgDict["editor"]["maxBackups"] = [int]$reqObj.editor.maxBackups }
                 }
 

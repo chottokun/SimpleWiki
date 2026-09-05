@@ -1431,11 +1431,36 @@ Describe 'Editor Settings and Read-Only Guard Tests' {
         $dataEn.EditorTitleLbl | Should Match "Editor Settings"
     }
 
-    It "Get-SettingsViewHtml renders editor settings card and enable checkbox" {
+    It "Get-SettingsViewHtml renders editor settings card, enable checkbox, and editor type selector" {
         $html = Get-SettingsViewHtml -Lang "ja"
         $html | Should Match "editorEnabled"
+        $html | Should Match "editorType"
+        $html | Should Match "toastui"
+        $html | Should Match "textarea"
         $html | Should Match "editorMaxBackups"
         $html | Should Match "エディター設定"
+        $html | Should Match "エディタエンジン:"
+    }
+
+    It "Get-WikiEditorModalHtml renders TOAST UI Editor container and JavaScript helpers" {
+        $html = Get-WikiEditorModalHtml -Lang "ja"
+        $html | Should Match 'id="wikiEditorToastUiContainer"'
+        $html | Should Match 'function initToastEditor'
+        $html | Should Match 'function getEditorContent'
+        $html | Should Match 'function setEditorContent'
+    }
+
+    It "Get-WikiEditorModalHtml renders collapsible metadata accordion and toggle functions" {
+        $htmlJa = Get-WikiEditorModalHtml -Lang "ja"
+        $htmlJa | Should Match 'id="wikiMetaBody"'
+        $htmlJa | Should Match 'id="metaAccordionIcon"'
+        $htmlJa | Should Match 'id="metaAccordionSummary"'
+        $htmlJa | Should Match 'function toggleMetaAccordion'
+        $htmlJa | Should Match 'function updateMetaSummary'
+        $htmlJa | Should Match 'クリックで開閉'
+
+        $htmlEn = Get-WikiEditorModalHtml -Lang "en"
+        $htmlEn | Should Match 'Click to toggle'
     }
 
     It "Get-OkfTopBarHtml hides edit button when EditorEnabled is false" {
