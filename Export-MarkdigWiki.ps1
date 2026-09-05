@@ -439,6 +439,11 @@ window.addEventListener('popstate', () => {
     showPage(hash);
 });
 
+window.addEventListener('hashchange', () => {
+    const hash = location.hash.replace('#', '') || 'index';
+    showPage(hash);
+});
+
 document.addEventListener("DOMContentLoaded", () => {
     const hash = location.hash.replace('#', '') || 'index';
     showPage(hash);
