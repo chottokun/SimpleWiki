@@ -204,6 +204,15 @@ function Load-WikiIndexCache {
             if (-not [DateTime]::TryParse($item.LastUpdated, [ref]$lastUpdated)) {
                 $lastUpdated = Get-Date
             }
+            $createdAt = [DateTime]::MinValue
+            if (-not [DateTime]::TryParse($item.CreatedAt, [ref]$createdAt)) {
+                $createdAt = $lastUpdated
+            }
+            $updatedAt = [DateTime]::MinValue
+            if (-not [DateTime]::TryParse($item.UpdatedAt, [ref]$updatedAt)) {
+                $updatedAt = $lastUpdated
+            }
+
             $psObj = [PSCustomObject]@{
                 Title        = $item.Title
                 Description  = $item.Description
@@ -211,6 +220,8 @@ function Load-WikiIndexCache {
                 Domain       = $item.Domain
                 Tags         = @($item.Tags)
                 LastUpdated  = $lastUpdated
+                CreatedAt    = $createdAt
+                UpdatedAt    = $updatedAt
                 Status       = $item.Status
                 Version      = $item.Version
                 Reviewer     = $item.Reviewer
@@ -220,10 +231,13 @@ function Load-WikiIndexCache {
                 Computations = $item.Computations
                 Contributors = $item.Contributors
                 Related      = $item.Related
+                Links        = @($item.Links)
                 HasYaml      = [bool]$item.HasYaml
                 RelPath      = $item.RelPath
                 FullPath     = $item.FullPath
                 BodyText     = $item.BodyText
+                X            = if ($null -ne $item.X) { [int]$item.X } else { 0 }
+                Y            = if ($null -ne $item.Y) { [int]$item.Y } else { 0 }
             }
             $itemList.Add($psObj)
         }
@@ -362,7 +376,8 @@ function Build-WikiIndex {
             }
         }
     } finally {
-        $script:WikiIndex = $indexList.ToArray()
+        $placedIndex = Calculate-WikiNodeCoordinates -DocList $indexList.ToArray()
+        $script:WikiIndex = $placedIndex
         $script:WikiIndexDirWriteTime = $currentWriteTime
         $script:WikiIndexLastScan = Get-Date
 
