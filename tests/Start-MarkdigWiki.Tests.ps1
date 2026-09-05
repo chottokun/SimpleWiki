@@ -1837,6 +1837,12 @@ Describe 'Index Cache and Settings View Tests' {
         (Test-Path $dummy2) | Should Be $false
         $script:WikiIndex.Count | Should Be 0
         $script:SidebarCachedHtml | Should Be $null
+
+        # Clear-WikiIndexCache wrapper validation
+        $script:WikiIndex = @([PSCustomObject]@{ Title = "MemoryCache2" })
+        $clearResult2 = Clear-WikiIndexCache -TargetScriptDir $testProjectRoot
+        $clearResult2.success | Should Be $true
+        $script:WikiIndex.Count | Should Be 0
     }
 
     It "Get-SettingsViewHtml renders settings form, cache folder, and clear all cache button" {
@@ -1875,10 +1881,43 @@ Describe 'Index Cache and Settings View Tests' {
         $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
         $scriptContent | Should Match 'indexing-status'
     }
+
+    It "Get-SidebarHtml ensures index is loaded and caches sidebar tree on initial request" {
+        $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("SimpleWiki_SidebarCache_" + [System.Guid]::NewGuid().ToString("N"))
+        New-Item -ItemType Directory -Path (Join-Path $tempDir "docs") -Force | Out-Null
+        New-Item -ItemType Directory -Path (Join-Path $tempDir "empty_folder") -Force | Out-Null
+        try {
+            Set-Content -Path (Join-Path $tempDir "index.md") -Value "# Index" -Encoding UTF8
+            Set-Content -Path (Join-Path $tempDir "docs\guide.md") -Value "# Guide" -Encoding UTF8
+
+            $script:WikiIndex = @()
+            $script:CachedSidebarTree = $null
+            $script:wikiDir = $tempDir
+
+            $html = Get-SidebarHtml -currentRelPath "index.md"
+            $html | Should Not BeNullOrEmpty
+            $html | Should Match "guide"
+            $html | Should Not Match "empty_folder"
+            $html | Should Not Match "refreshWikiSidebarCache"
+
+            $script:WikiIndex.Count | Should Be 2
+            $script:CachedSidebarTree | Should Not BeNullOrEmpty
+
+            $cachedTreeBefore = $script:CachedSidebarTree
+            $html2 = Get-SidebarHtml -currentRelPath "docs\guide.md"
+            $script:CachedSidebarTree | Should Be $cachedTreeBefore
+        } finally {
+            $script:wikiDir = $null
+            $script:WikiIndex = @()
+            $script:CachedSidebarTree = $null
+            Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 Describe "Multi-Language (i18n) & Localization Tests" {
     BeforeAll {
+        Add-Type -AssemblyName System.Web -ErrorAction SilentlyContinue
         $serverScript = Join-Path $projectRoot "Start-MarkdigWiki.ps1"
         . $serverScript -DotSourceOnly
     }
@@ -1952,7 +1991,8 @@ Describe "Multi-Language (i18n) & Localization Tests" {
         $chatWidgetHtml | Should Match "chat-widget-btn"
 
         $sidebarHtml = Get-SidebarHtml -currentRelPath "" -Lang "en"
-        $sidebarHtml | Should Match "🔄 Clear Cache"
+        $sidebarHtml | Should Not Match "🔄 Clear Cache"
+        $sidebarHtml | Should Match "nav-file"
     }
 
     It "Static HTML exporter supports -Language en parameter and localizes metadata cards" {
@@ -2565,6 +2605,30 @@ This is body text.
 
             $notActive = Test-ServerNodeHasActiveFile -node $tree -currentRelPath "other\path.md" -wikiDir $wikiDir
             $notActive | Should Be $false
+        }
+
+        It "Build-ServerFileTreeNode excludes empty folders and folders containing only non-md assets during disk scan" {
+            $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("SimpleWiki_TreeTest_" + [System.Guid]::NewGuid().ToString("N"))
+            New-Item -ItemType Directory -Path (Join-Path $tempDir "docs") -Force | Out-Null
+            New-Item -ItemType Directory -Path (Join-Path $tempDir "images") -Force | Out-Null
+            New-Item -ItemType Directory -Path (Join-Path $tempDir "empty_folder") -Force | Out-Null
+            New-Item -ItemType Directory -Path (Join-Path $tempDir "nested\sub_empty") -Force | Out-Null
+            try {
+                Set-Content -Path (Join-Path $tempDir "index.md") -Value "# Top" -Encoding UTF8
+                Set-Content -Path (Join-Path $tempDir "docs\guide.md") -Value "# Guide" -Encoding UTF8
+                Set-Content -Path (Join-Path $tempDir "images\logo.png") -Value "fake binary" -Encoding UTF8
+                Set-Content -Path (Join-Path $tempDir "nested\sub_empty\photo.jpg") -Value "fake binary" -Encoding UTF8
+
+                $tree = Build-ServerFileTreeNode -wikiDir $tempDir
+                $tree.Files.Count | Should Be 1
+                $tree.SubFolders.Contains("docs") | Should Be $true
+                $tree.SubFolders["docs"].Files.Count | Should Be 1
+                $tree.SubFolders.Contains("images") | Should Be $false
+                $tree.SubFolders.Contains("empty_folder") | Should Be $false
+                $tree.SubFolders.Contains("nested") | Should Be $false
+            } finally {
+                Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
 
         It "Render-ServerFolderTreeHtml renders valid HTML folder details" {

@@ -109,6 +109,14 @@ function Clear-AllWikiCaches {
     }
 }
 
+function Clear-WikiIndexCache {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]
+    param (
+        [string]$TargetScriptDir = $scriptDir
+    )
+    return Clear-AllWikiCaches -TargetScriptDir $TargetScriptDir
+}
+
 function Save-WikiIndexCache {
     param (
         [string]$TargetWikiDir = $script:wikiDir,
@@ -617,7 +625,10 @@ function Build-ServerFileTreeNode {
         if ($item.PSIsContainer) {
             $subBase = $item.FullName
             $subRel  = if ([string]::IsNullOrWhiteSpace($currentRelPath)) { $item.Name } else { "$currentRelPath/$($item.Name)" }
-            $node.SubFolders[$item.Name] = Build-ServerFileTreeNode -wikiDir $wikiDir -baseDir $subBase -currentRelPath $subRel
+            $subTree = Build-ServerFileTreeNode -wikiDir $wikiDir -baseDir $subBase -currentRelPath $subRel
+            if ($subTree.Files.Count -gt 0 -or $subTree.SubFolders.Count -gt 0) {
+                $node.SubFolders[$item.Name] = $subTree
+            }
         } else {
             if ($item.Extension -eq ".md") {
                 $docRel = if ([string]::IsNullOrWhiteSpace($currentRelPath)) { $item.Name } else { "$currentRelPath/$($item.Name)" }

@@ -5,6 +5,7 @@
 # ==============================================================================
 
 function Get-SidebarHtml {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSReviewUnusedParameter", "")]
     param (
         $currentRelPath,
         [string]$Lang = "ja"
@@ -12,9 +13,9 @@ function Get-SidebarHtml {
 
     $targetWiki = if ($wikiDir) { $wikiDir } elseif ($script:wikiDir) { $script:wikiDir } else { $PWD.Path }
 
-    # Load cache from disk if WikiIndex is currently empty
+    # Ensure index is loaded (from memory, disk cache, or synchronous build)
     if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
-        Load-WikiIndexCache -TargetWikiDir $targetWiki | Out-Null
+        Ensure-WikiIndexLoaded -TargetWikiDir $targetWiki
     }
 
     # Retrieve tree: from index if available, otherwise full recursive scan from disk
@@ -33,42 +34,7 @@ function Get-SidebarHtml {
 
     $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath $currentRelPath -wikiDir $targetWiki
 
-    $clearCacheText = Get-LocalizedStr -Key "sidebar_clear_cache" -Lang $Lang
-    $procText       = Get-LocalizedStr -Key "sidebar_processing" -Lang $Lang
-    $failText       = Get-LocalizedStr -Key "sidebar_clear_failed" -Lang $Lang
-    $errText        = Get-LocalizedStr -Key "sidebar_error" -Lang $Lang
-
-    $refreshButtonHtml = @"
-<div style="margin-top: 20px; padding: 10px; border-top: 1px solid #e1e4e8;">
-    <button onclick="refreshWikiSidebarCache(this)" style="width: 100%; padding: 6px 12px; font-size: 12px; background: #fff; border: 1px solid #d1d5da; border-radius: 6px; cursor: pointer; color: #586069; display: flex; align-items: center; justify-content: center; gap: 4px;">
-        $clearCacheText
-    </button>
-</div>
-<script>
-function refreshWikiSidebarCache(btn) {
-    btn.disabled = true;
-    btn.innerText = "$procText";
-    fetch('/api/clear-cache')
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                location.reload();
-            } else {
-                alert("$failText");
-                btn.disabled = false;
-                btn.innerText = "$clearCacheText";
-            }
-        })
-        .catch(err => {
-            alert("$errText");
-            btn.disabled = false;
-            btn.innerText = "$clearCacheText";
-        });
-}
-</script>
-"@
-
-    return $treeHtml + $refreshButtonHtml
+    return $treeHtml
 }
 function Get-DirectoryListingHtml {
     param (
@@ -795,7 +761,8 @@ function Get-SearchViewHtml {
         $tagsHtml = ""
         if ($item.Tags -and $item.Tags.Count -gt 0) {
             $badges = foreach ($t in $item.Tags) {
-                $encT = [System.Net.WebUtility]::HtmlEncode($t)
+                if ([string]::IsNullOrWhiteSpace($t)) { continue }
+                $encT = [System.Net.WebUtility]::HtmlEncode([string]$t)
                 "<span class='tag-badge'>🏷️ $encT</span>"
             }
             $tagsHtml = "<div class='okf-tags' style='margin-top:4px;'>" + ($badges -join " ") + "</div>"
