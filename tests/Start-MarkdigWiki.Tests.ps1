@@ -1280,6 +1280,7 @@ Describe 'Editor Settings and Read-Only Guard Tests' {
         $html | Should Match "textarea"
         $html | Should Match "editorMaxBackups"
         $html | Should Match "エディター設定"
+        $html | Should Match "エディタエンジン:"
     }
 
     It "Get-WikiEditorModalHtml renders TOAST UI Editor container and JavaScript helpers" {
@@ -1288,6 +1289,19 @@ Describe 'Editor Settings and Read-Only Guard Tests' {
         $html | Should Match 'function initToastEditor'
         $html | Should Match 'function getEditorContent'
         $html | Should Match 'function setEditorContent'
+    }
+
+    It "Get-WikiEditorModalHtml renders collapsible metadata accordion and toggle functions" {
+        $htmlJa = Get-WikiEditorModalHtml -Lang "ja"
+        $htmlJa | Should Match 'id="wikiMetaBody"'
+        $htmlJa | Should Match 'id="metaAccordionIcon"'
+        $htmlJa | Should Match 'id="metaAccordionSummary"'
+        $htmlJa | Should Match 'function toggleMetaAccordion'
+        $htmlJa | Should Match 'function updateMetaSummary'
+        $htmlJa | Should Match 'クリックで開閉'
+
+        $htmlEn = Get-WikiEditorModalHtml -Lang "en"
+        $htmlEn | Should Match 'Click to toggle'
     }
 
     It "Get-OkfTopBarHtml hides edit button when EditorEnabled is false" {
