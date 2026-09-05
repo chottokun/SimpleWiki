@@ -1311,7 +1311,8 @@ Describe 'Editor Settings and Read-Only Guard Tests' {
         } | ConvertTo-Json -Depth 5 | Out-File -FilePath $isolatedConfig -Encoding UTF8
 
         $port = 8095
-        $proc = Start-Process "powershell.exe" -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $tempIsolatedDir "Start-MarkdigWiki.ps1"), "-RootFolder", (Join-Path $tempIsolatedDir "markdown_sample"), "-Port", $port -PassThru
+        $psExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { (Get-Command pwsh).Source } elseif (Get-Command powershell -ErrorAction SilentlyContinue) { (Get-Command powershell).Source } else { (Get-Process -Id $PID).Path }
+        $proc = Start-Process $psExe -ArgumentList "-File", (Join-Path $tempIsolatedDir "Start-MarkdigWiki.ps1"), "-RootFolder", (Join-Path $tempIsolatedDir "markdown_sample"), "-Port", $port -PassThru
         Start-Sleep -Seconds 3
         try {
             # 1. /api/config POST with editor.enabled = false
@@ -1643,7 +1644,7 @@ Describe 'Index Cache and Settings View Tests' {
     }
 
     It "Start-MarkdigWiki.ps1 includes /api/indexing-status endpoint" {
-        $scriptContent = Get-Content -Path (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -Raw -Encoding UTF8
+        $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
         $scriptContent | Should Match 'indexing-status'
     }
 }
@@ -1877,7 +1878,7 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
     }
 
     It "Start-MarkdigWiki.ps1 includes /api/shutdown endpoint and brand_title placeholder" {
-        $scriptContent = [System.IO.File]::ReadAllText((Join-Path $projectRoot "Start-MarkdigWiki.ps1"), [System.Text.Encoding]::UTF8)
+        $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
         $scriptContent | Should Match '/api/shutdown'
         $scriptContent | Should Match 'shutdown-btn'
         $scriptContent | Should Match 'shutdownWikiServer'
@@ -1896,7 +1897,7 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
     }
 
     It "Start-MarkdigWiki.ps1 binds all editor i18n variables into template and JS" {
-        $scriptContent = [System.IO.File]::ReadAllText((Join-Path $projectRoot "Start-MarkdigWiki.ps1"), [System.Text.Encoding]::UTF8)
+        $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
         $scriptContent | Should Match 'editor_gen_prefix'
         $scriptContent | Should Match 'editor_warning_yaml'
         $scriptContent | Should Match 'editor_loading'
@@ -1931,7 +1932,7 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
     }
 
     It "Start-MarkdigWiki.ps1 contains Form & RAW YAML separated editor modal HTML and JS functions" {
-        $scriptContent = [System.IO.File]::ReadAllText((Join-Path $projectRoot "Start-MarkdigWiki.ps1"), [System.Text.Encoding]::UTF8)
+        $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
         $scriptContent | Should Match 'id="yamlFormContainer"'
         $scriptContent | Should Match 'id="yamlRawContainer"'
         $scriptContent | Should Match 'id="wikiEditorBodyTextarea"'
@@ -1948,15 +1949,15 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
     }
 
     It "Start-MarkdigWiki.ps1 includes keyboard shortcuts for editor modal (Ctrl+S save and Esc cancel)" {
-        $scriptContent = [System.IO.File]::ReadAllText((Join-Path $projectRoot "Start-MarkdigWiki.ps1"), [System.Text.Encoding]::UTF8)
+        $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
         $scriptContent | Should Match 'addEventListener\("keydown"'
         $scriptContent | Should Match 'saveWikiMarkdown\(\)'
         $scriptContent | Should Match 'closeWikiEditor\(\)'
     }
 
     It "Start-MarkdigWiki.ps1 sanitizes RAW YAML delimiters and uses local date generation" {
-        $scriptContent = [System.IO.File]::ReadAllText((Join-Path $projectRoot "Start-MarkdigWiki.ps1"), [System.Text.Encoding]::UTF8)
-        $scriptContent | Should Match 'rawYaml\.replace\(\/\^---\\r\?\\n\?\/, \x27\x27\)\.replace\(\/\\r\?\\n\?---\\r\?\$\/, \x27\x27\)'
+        $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
+        $scriptContent | Should Match 'replace\(\/\^---\\r\?\\n\?\/, \x27\x27\)\.replace\(\/\\r\?\\n\?---\\r\?\$\/, \x27\x27\)'
         $scriptContent | Should Match 'd\.getFullYear\(\)'
         $scriptContent | Should Match 'd\.getMonth\(\) \+ 1'
         $scriptContent | Should Match 'd\.getDate\(\)'
@@ -1979,7 +1980,7 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
         } | ConvertTo-Json -Depth 5 | Out-File -FilePath $isolatedConfig -Encoding UTF8
 
         $port = 8094
-                $psExe = (Get-Process -Id $PID).Path
+        $psExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { (Get-Command pwsh).Source } elseif (Get-Command powershell -ErrorAction SilentlyContinue) { (Get-Command powershell).Source } else { (Get-Process -Id $PID).Path }
         $proc = Start-Process $psExe -ArgumentList "-File", (Join-Path $tempIsolatedDir "Start-MarkdigWiki.ps1"), "-RootFolder", (Join-Path $tempIsolatedDir "markdown_sample"), "-Port", $port -PassThru
         Start-Sleep -Seconds 3
         try {
@@ -2645,4 +2646,4 @@ Describe "Refactoring Specific Behavior Tests" {
         $html | Should Match "/docs/outdated.md"
         $html | Should Match "\(2020-01-01\)"
     }
-}
+}
