@@ -1746,3 +1746,223 @@ $serverCardHtml
 $scriptHtml
 "@
 }
+
+# --- 完全レイアウト & エディタモーダル描画メイン関数 ---
+function Get-MainViewHtml {
+    param (
+        [string]$PageTitle = "",
+        [string]$BodyContent = "",
+        [string]$RelPath = "",
+        [string]$Lang = "ja",
+        [hashtable]$Config = @{}
+    )
+
+    $sidebarHtml     = Get-SidebarHtml -currentRelPath $RelPath -Lang $Lang
+    $editorModalHtml = Get-WikiEditorModalHtml -Lang $Lang
+
+    $chatWidgetHtml = ""
+    if ($Config.rag -and $Config.rag.enabled) {
+        $chatWidgetHtml = Get-ChatWidgetHtml -Lang $Lang
+    }
+
+    $navBrand     = Get-LocalizedStr -Key "brand_title" -Lang $Lang
+    $navShutdown  = Get-LocalizedStr -Key "shutdown_btn" -Lang $Lang
+    $shutdownConfirmJs = ConvertTo-JsString (Get-LocalizedStr -Key "shutdown_confirm" -Lang $Lang)
+    $shutdownDoneTitleJs = ConvertTo-JsString (Get-LocalizedStr -Key "shutdown_done_title" -Lang $Lang)
+    $shutdownDoneDescJs = ConvertTo-JsString (Get-LocalizedStr -Key "shutdown_done_desc" -Lang $Lang)
+
+    $navHome      = Get-LocalizedStr -Key "home" -Lang $Lang
+    $navRecent    = Get-LocalizedStr -Key "recent_updates" -Lang $Lang
+    $navTags      = Get-LocalizedStr -Key "tags" -Lang $Lang
+    $navMaint     = Get-LocalizedStr -Key "maintenance" -Lang $Lang
+    $navAuthors   = Get-LocalizedStr -Key "authors" -Lang $Lang
+    $navSettings  = Get-LocalizedStr -Key "settings" -Lang $Lang
+    $navApi       = Get-LocalizedStr -Key "api_json" -Lang $Lang
+    $searchHolder = Get-LocalizedStr -Key "search_placeholder" -Lang $Lang
+    $searchBtnTxt = Get-LocalizedStr -Key "search_btn" -Lang $Lang
+    $docListTitle = Get-LocalizedStr -Key "doc_list_title" -Lang $Lang
+
+    $langOptionsHtml = foreach ($k in ($script:I18n.Keys | Sort-Object)) {
+        $sel = if ($k -eq $Lang) { "selected" } else { "" }
+        $label = switch ($k) {
+            "ja" { "日本語 (JP)" }
+            "en" { "English (EN)" }
+            default { $k.ToUpper() }
+        }
+        "<option value='$k' $sel>$label</option>"
+    }
+    $langOptionsStr = $langOptionsHtml -join ""
+
+    $searchLoadingTxtJs = ConvertTo-JsString (Get-LocalizedStr -Key "indexing_searching" -Lang $Lang)
+
+    $template = @'
+<!DOCTYPE html>
+<html lang="{18}">
+<head>
+<meta charset="UTF-8">
+<title>{0} - {20} OKF</title>
+<style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; color: #24292e; background-color: #fff; }
+    header.top-header { background: #1b1f23; color: #fff; padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+    header.top-header a.brand { color: #fff; font-weight: bold; font-size: 16px; text-decoration: none; display: flex; align-items: center; gap: 8px; }
+    header.top-header nav.top-nav { display: flex; gap: 15px; align-items: center; }
+    header.top-header nav.top-nav a { color: #d1d5da; text-decoration: none; font-size: 13px; padding: 4px 8px; border-radius: 4px; }
+    header.top-header nav.top-nav a:hover { color: #fff; background: rgba(255,255,255,0.1); }
+    header.top-header form.search-form { display: flex; gap: 4px; }
+    header.top-header form.search-form input { padding: 4px 8px; font-size: 12px; border: 1px solid #444; border-radius: 4px; background: #2f363d; color: #fff; }
+    header.top-header form.search-form button { padding: 4px 8px; font-size: 12px; border: none; border-radius: 4px; background: #0366d6; color: #fff; cursor: pointer; }
+    .layout-container { display: flex; flex: 1; overflow: hidden; }
+    nav.sidebar { width: 260px; background-color: #f6f8fa; border-right: 1px solid #e1e4e8; padding: 20px 10px; overflow-y: auto; flex-shrink: 0; }
+    nav.sidebar h2 { font-size: 13px; text-transform: uppercase; color: #586069; margin: 0 0 10px 10px; letter-spacing: 0.5px; }
+    nav.sidebar ul { list-style: none; padding: 0; margin: 0; }
+    nav.sidebar ul ul { padding-left: 12px; margin-top: 2px; }
+    nav.sidebar li.nav-folder { margin-top: 4px; margin-bottom: 4px; }
+    nav.sidebar summary.folder-title { font-weight: bold; font-size: 13px; color: #586069; padding: 4px 6px; cursor: pointer; user-select: none; }
+    nav.sidebar summary.folder-title:hover { color: #0366d6; }
+    nav.sidebar li.nav-file a { display: block; padding: 4px 8px; color: #0366d6; text-decoration: none; border-radius: 6px; font-size: 13px; word-break: break-all; }
+    nav.sidebar li.nav-file a:hover { background-color: #f0f3f6; text-decoration: none; }
+    nav.sidebar li.nav-file.active > a { background-color: #0366d6; color: #ffffff !important; font-weight: bold; }
+    main.main-content { flex: 1; padding: 30px 40px; overflow-y: auto; background-color: #fff; }
+    main.main-content h1 { font-size: 24px; margin-top: 0; border-bottom: 1px solid #e1e4e8; padding-bottom: 8px; color: #24292e; }
+    main.main-content h2 { font-size: 20px; border-bottom: 1px solid #e1e4e8; padding-bottom: 6px; color: #24292e; margin-top: 24px; }
+    main.main-content p { line-height: 1.6; color: #24292e; }
+    main.main-content code { background-color: #f6f8fa; padding: 2px 6px; border-radius: 3px; font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace; font-size: 85%; }
+    main.main-content pre { background-color: #f6f8fa; padding: 16px; border-radius: 6px; overflow: auto; line-height: 1.45; }
+    main.main-content pre code { background-color: transparent; padding: 0; }
+    main.main-content table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+    main.main-content table th, main.main-content table td { border: 1px solid #dfe2e5; padding: 6px 13px; }
+    main.main-content table th { background-color: #f6f8fa; font-weight: bold; }
+    main.main-content table tr:nth-child(2n) { background-color: #f8f9fa; }
+    main.main-content blockquote { padding: 0 1em; color: #6a737d; border-left: 0.25em solid #dfe2e5; margin: 0 0 16px 0; }
+    .badge { display: inline-block; padding: 2px 8px; font-size: 11px; font-weight: bold; border-radius: 12px; margin-left: 8px; vertical-align: middle; }
+    .badge-active { background-color: #dcffe4; color: #155724; border: 1px solid #c3e6cb; }
+    .badge-draft { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+    .badge-deprecated { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    .okf-top-bar { display: flex; justify-content: space-between; align-items: center; background: #f6f8fa; padding: 8px 12px; border-radius: 6px; margin-bottom: 20px; border: 1px solid #e1e4e8; }
+    .okf-domain { font-size: 12px; color: #586069; font-weight: bold; }
+    .okf-tags { display: flex; gap: 6px; }
+    .tag-badge { background: #e1e4e8; color: #0366d6; font-size: 11px; padding: 2px 8px; border-radius: 10px; text-decoration: none; }
+    .tag-badge:hover { background: #0366d6; color: #fff; }
+    .okf-footer-card { margin-top: 40px; padding: 16px; background: #f6f8fa; border: 1px solid #e1e4e8; border-radius: 6px; font-size: 13px; }
+    .okf-footer-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px solid #e1e4e8; padding-bottom: 6px; }
+    .okf-footer-title { font-weight: bold; color: #24292e; }
+    .okf-api-link { font-size: 11px; color: #0366d6; text-decoration: none; }
+    .okf-api-link:hover { text-decoration: underline; }
+    .okf-footer-meta span { color: #586069; margin-right: 15px; }
+    .warning-banner { background-color: #fff3cd; color: #856404; padding: 10px 15px; border-radius: 6px; border: 1px solid #ffeeba; margin-bottom: 20px; font-size: 13px; }
+    .edit-doc-btn { background: #28a745; color: #fff; border: none; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; margin-left: 10px; }
+    .edit-doc-btn:hover { background: #218838; }
+    .wiki-editor-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 10000; justify-content: center; align-items: center; }
+    .wiki-editor-container { background: #fff; width: 90vw; max-width: 960px; height: 85vh; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+    .wiki-editor-header { background: #1b1f23; color: #fff; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
+    .wiki-meta-accordion { background: #f6f8fa; border-bottom: 1px solid #e1e4e8; }
+    .wiki-meta-header { padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+    .wiki-meta-toggle-btn { background: #e1e4e8; border: none; padding: 3px 10px; font-size: 11px; border-radius: 4px; cursor: pointer; color: #24292e; }
+    .wiki-meta-toggle-btn.active { background: #0366d6; color: #fff; font-weight: bold; }
+    .wiki-meta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; padding: 12px 16px; }
+    .wiki-form-group { display: flex; flex-direction: column; gap: 4px; }
+    .wiki-form-group.full-width { grid-column: 1 / -1; }
+    .wiki-form-group label { font-size: 11px; font-weight: bold; color: #586069; }
+    .wiki-form-group input, .wiki-form-group select { padding: 4px 8px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; }
+    .wiki-raw-yaml-textarea { width: 100%; height: 120px; font-family: monospace; font-size: 12px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+    .wiki-editor-textarea { flex: 1; padding: 16px; font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace; font-size: 13px; line-height: 1.5; border: none; resize: none; outline: none; }
+    .wiki-editor-footer { background: #f6f8fa; padding: 10px 20px; border-top: 1px solid #e1e4e8; display: flex; justify-content: space-between; align-items: center; }
+    .wiki-editor-cancel-btn { background: #6c757d; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    .wiki-editor-save-btn { background: #28a745; color: #fff; border: none; padding: 6px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; }
+    .shutdown-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); color: #fff; z-index: 20000; flex-direction: column; justify-content: center; align-items: center; text-align: center; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+    <header class="top-header">
+        <a href="/" class="brand">📖 {20}</a>
+        <nav class="top-nav">
+            <a href="/">{3}</a>
+            <a href="/recent">{4}</a>
+            <a href="/tags">{5}</a>
+            <a href="/maintenance">{6}</a>
+            <a href="/authors">{7}</a>
+            <a href="/settings">{19}</a>
+            <a href="/api/index.json" target="_blank">{8}</a>
+            <select onchange="switchWikiLanguage(this.value)" style="background: #2f363d; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 2px 6px; font-size: 12px; cursor: pointer;">
+                {9}
+            </select>
+            <button class="shutdown-btn" onclick="shutdownWikiServer()" title="{21}" style="background: #dc3545; color: #fff; border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer; font-weight: bold;">✕ {21}</button>
+        </nav>
+        <form action="/search" method="GET" accept-charset="UTF-8" class="search-form">
+            <input type="text" name="q" placeholder="{10}">
+            <button type="submit">🔍 {11}</button>
+        </form>
+    </header>
+
+    <div class="layout-container">
+        <nav class="sidebar">
+            <h2>{12}</h2>
+            {1}
+        </nav>
+        <main class="main-content">
+            {2}
+        </main>
+    </div>
+
+    <!-- UI Shutdown Overlay -->
+    <div id="shutdownOverlay" class="shutdown-overlay">
+        <h2 id="shutdownTitle" style="font-size: 24px; margin-bottom: 12px;">サーバーをシャットダウン中...</h2>
+        <p id="shutdownDesc" style="font-size: 14px; color: #ccc;">画面を閉じてキーボードの処理を完了できます。</p>
+    </div>
+
+    <script>
+        function shutdownWikiServer() {
+            if (!confirm("{22}")) { return; }
+            var overlay = document.getElementById('shutdownOverlay');
+            if (overlay) { overlay.style.display = 'flex'; }
+
+            fetch('/api/shutdown', { method: 'POST' })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (document.getElementById('shutdownTitle')) {
+                        document.getElementById('shutdownTitle').innerText = "{23}";
+                    }
+                    if (document.getElementById('shutdownDesc')) {
+                        document.getElementById('shutdownDesc').innerText = "{24}";
+                    }
+                })
+                .catch(function(err) {
+                    if (document.getElementById('shutdownTitle')) {
+                        document.getElementById('shutdownTitle').innerText = "{23}";
+                    }
+                });
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            var searchLoadingTxt = "{31}";
+            document.querySelectorAll('form[action="/search"]').forEach(function(f) {
+                f.addEventListener('submit', function() {
+                    var btn = f.querySelector('button[type="submit"]');
+                    if (btn) {
+                        btn.disabled = true;
+                        btn.innerHTML = '<span style="display:inline-block; width:12px; height:12px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite; vertical-align:middle; margin-right:6px;"></span> ' + (searchLoadingTxt || btn.textContent || '');
+                    }
+                    var banner = document.getElementById('searchProgressBanner');
+                    if (banner) {
+                        banner.style.display = 'flex';
+                    }
+                });
+            });
+        });
+    </script>
+
+    {222}
+</body>
+</html>
+'@
+
+    $fullHtml = $template.Replace("{0}", $PageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $BodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{18}", $Lang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{31}", $searchLoadingTxtJs).Replace("{222}", $editorModalHtml)
+
+    if (-not [string]::IsNullOrWhiteSpace($chatWidgetHtml)) {
+        $fullHtml = $fullHtml.Replace("</body>", "$chatWidgetHtml`n</body>")
+    }
+
+    return $fullHtml
+}
