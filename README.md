@@ -85,6 +85,10 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
     - **タグ画面用語解説ボックス**: タグ検索画面（`/tags?tag=...`）の上部に、`glossary.md` 由来の用語解説ボックス（太字・リスト・リンク等のリッチな Markdown レンダリング対応）を表示。
   - **動的ナビゲーション & ビュー**: 最近の更新 (`/recent`), タグ集計/検索 (`/tags`), 品質・メンテナンスダッシュボード (`/maintenance`), 著者ディレクトリ (`/authors`), AND/NOT 検索 (`/search`), システム設定 (`/settings`)
   - **静的エキスポート**: `Export-MarkdigWiki.ps1` による OKF v0.2 メタデータカード同梱型 HTML 一括出力（日英多言語対応）
+    - **📦 単一 HTML（SPA モード / `-SingleFile`）**: 全 Markdown ドキュメントを 1 つのモノリス HTML ファイル（`index.html`）に統合。クライアントサイド JavaScript（`showPage` / `popstate` / `hashchange`）による超高速 SPA ページ遷移を実現。サブディレクトリ内の相対画像パス（`../images/...`）をルート基準へ自動正規化解決し、アンカーハッシュ移動にも対応。
+    - **📊 Mermaid モード選択 (`-MermaidMode Runtime | Svg`)**:
+      - `Runtime`: オフライン JavaScript（`mermaid.min.js` をインライン展開または同梱）による動的ダイアグラム描画。
+      - `Svg`: 外部スクリプトを一切読み込まず、セキュアな静的 SVG コンテナへ変換出力（スクリプト実行制限のある厳格な環境向け）。
   - **Markdown レンダリング**: .NET 4.6.2 ビルド版 `Markdig.dll` (GFM テーブル・コードブロック・タスクリスト・YamlFrontMatter 対応)
   - **図形・ダイアグラム**: `lib/mermaid.min.js` 同梱による 100% オフライン Mermaid ダイアグラム表示
 - **セキュリティ機能**:
@@ -154,8 +158,11 @@ SimpleWiki/
 
 1. **入力 Markdown フォルダ** を参照ボタン（または直接入力）で選択します。
 2. **出力先 HTML フォルダ** を選択します。
-3. **[🚀 エキスポート実行]** ボタンを押すと、一括で静的 HTML サイトが生成されます。
-4. 完了後、ダイアログから出力先フォルダを直接エクスプローラーで開くことができます。
+3. **オプション設定**:
+   - **単一 HTML ファイル（SPAモード）**: チェックを入れると、全ドキュメントを 1 つの `index.html` にまとめた高速 SPA を出力します。
+   - **Mermaid モード**: `Runtime`（オフライン動的 JS 描画）または `Svg`（静的 SVG コンテナ出力）を選択します。
+4. **[🚀 エキスポート実行]** ボタンを押すと、一括で静的 HTML サイトが生成されます。
+5. 完了後、ダイアログから出力先フォルダを直接エクスプローラーで開くことができます。
 
 ---
 
@@ -195,7 +202,14 @@ SimpleWiki/
 - **ドラッグ＆ドロップ**: 変換したい Markdown フォルダを `Export-MarkdigWiki.bat` にドラッグ＆ドロップします。
 - **PowerShell から実行**:
   ```powershell
+  # 通常複数ファイル出力
   .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "C:\inetpub\wwwroot\wiki"
+
+  # 単一 HTML (SPA モード) 出力
+  .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "dist" -SingleFile
+
+  # 静的 SVG Mermaid モードで出力
+  .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "dist" -MermaidMode Svg
   ```
 
 ---
@@ -248,9 +262,15 @@ SimpleWiki では、API キーを他人に漏洩させずに特定の PC 専用�
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\tests\Start-MarkdigWiki.Tests.ps1"
 ```
-- **検証結果**: 全 173 件の Pester 自動テストが **100% PASS**。
+- **検証結果**: 全 177 件の Pester 自動テストが **100% PASS**。
   - **1. スクリプト構文・AST検証**: 全 `.ps1` ファイルの構文解析・トークン検証に合格
-  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 173 件)**:
+  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 177 件)**:
+    - **📦 単一 HTML (SPA モード / `-SingleFile`) ＆ Mermaid モード検証（PR #41）**:
+      - `-SingleFile` 指定時、全ドキュメントが単一モノリス HTML（`index.html`）に統合され、インライン CSS・SPA ルーティング JS（`showPage` / `popstate` / `hashchange` / アンカー移動）が正常に機能することを実証。
+      - サブディレクトリ由来のドキュメント内相対画像パス（`../../images/...`, `../images/...`）がルート基準の `images/...` に自動正規化され、画像リンク切れが 0 件であることを検証。
+      - `-MermaidMode Svg` モードにおいて、Mermaid コードブロックが静的 SVG コンテナへ正常変換され、`mermaid.min.js` の出力がスキップされることを確認。
+      - `Export-GUI.ps1` における `chkSingleFile`（SPA モード）および `cmbMermaid`（Mermaid モード）コントロールの動的連携テスト。
+      - `Export-MarkdigWiki.ps1` 内部での未使用変数警告（`PSUseDeclaredVarsMoreThanAssignment`）を解消し、PSScriptAnalyzer 静的解析エラー・警告 0 件（Clean!）を達成。
     - サーバーモジュール化 ＆ テンプレート分離検証（PR #40: `Start-MarkdigWiki.ps1` のスリム化に伴う `Invoke-WikiRouteRequest` / `Get-WikiEditorModalHtml` / `Get-MainViewHtml` の独立性・PSCustomObject パラメータバインディング検証、エディター内 i18n トークン正常展開・多言語バインド検証、PSScriptAnalyzer 静的解析警告 0 件の維持）
     - PSScriptAnalyzer 静的解析の残存警告完全解消（リポジトリ全体・lib・tests・.agents/skills スクリプトで 0 warnings を達成。PR #39 での Write-Host 引数修正、WikiRag の未使用変数・パラメータ・$null比較順序改善、および各モジュールの適切な SuppressMessageAttribute / 空 catch ブロック対策の適用）
     - View コンポーネントリファクタリング検証（`Get-OkfFooterCardHtml` の Description 描画、`Get-MaintenanceViewHtml` のリストレンダラー共通化）
