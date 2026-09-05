@@ -1472,6 +1472,26 @@ Describe 'Editor Settings and Read-Only Guard Tests' {
         $htmlEn | Should Match 'Click to toggle'
     }
 
+    It "Get-WikiEditorModalHtml renders fullscreen maximize button and JavaScript toggle function" {
+        $htmlJa = Get-WikiEditorModalHtml -Lang "ja"
+        $htmlJa | Should Match 'id="wikiEditorFullscreenBtn"'
+        $htmlJa | Should Match 'function toggleWikiEditorFullscreen'
+        $htmlJa | Should Match 'toggleWikiEditorFullscreen\(\)'
+        $htmlJa | Should Match '⛶ 最大化'
+
+        $htmlEn = Get-WikiEditorModalHtml -Lang "en"
+        $htmlEn | Should Match '⛶ Maximize'
+    }
+
+    It "Get-MainViewHtml renders Japanese typography stack and fullscreen modal CSS rules" {
+        $html = Get-MainViewHtml -Title "Test" -RelPath "test.md" -ContentHtml "<p>Test</p>" -Config @{} -Lang "ja"
+        $html | Should Match 'BIZ UDPGothic'
+        $html | Should Match 'BIZ UDGothic'
+        $html | Should Match 'Cascadia Mono'
+        $html | Should Match '\.wiki-editor-modal\.fullscreen'
+        $html | Should Match '\.wiki-editor-container\.fullscreen'
+    }
+
     It "Get-OkfTopBarHtml hides edit button when EditorEnabled is false" {
         $meta = [PSCustomObject]@{
             Title       = "Test Doc"

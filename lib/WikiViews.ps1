@@ -1835,7 +1835,7 @@ function Get-MainViewHtml {
 <script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
 <style>
     * { box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; color: #24292e; background-color: #fff; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "BIZ UDPGothic", "Yu Gothic UI", "Meiryo", "Hiragino Sans", sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; color: #24292e; background-color: #fff; }
     header.top-header { background: #1b1f23; color: #fff; padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
     header.top-header a.brand { color: #fff; font-weight: bold; font-size: 16px; text-decoration: none; display: flex; align-items: center; gap: 8px; }
     header.top-header nav.top-nav { display: flex; gap: 15px; align-items: center; }
@@ -1859,7 +1859,7 @@ function Get-MainViewHtml {
     main.main-content h1 { font-size: 24px; margin-top: 0; border-bottom: 1px solid #e1e4e8; padding-bottom: 8px; color: #24292e; }
     main.main-content h2 { font-size: 20px; border-bottom: 1px solid #e1e4e8; padding-bottom: 6px; color: #24292e; margin-top: 24px; }
     main.main-content p { line-height: 1.6; color: #24292e; }
-    main.main-content code { background-color: #f6f8fa; padding: 2px 6px; border-radius: 3px; font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace; font-size: 85%; }
+    main.main-content code { background-color: #f6f8fa; padding: 2px 6px; border-radius: 3px; font-family: "Cascadia Mono", "Cascadia Code", SFMono-Regular, Consolas, "BIZ UDGothic", "Yu Gothic", "Meiryo", monospace; font-size: 85%; }
     main.main-content pre { background-color: #f6f8fa; padding: 16px; border-radius: 6px; overflow: auto; line-height: 1.45; }
     main.main-content pre code { background-color: transparent; padding: 0; }
     main.main-content table { border-collapse: collapse; width: 100%; margin: 15px 0; }
@@ -1886,7 +1886,9 @@ function Get-MainViewHtml {
     .edit-doc-btn { background: #28a745; color: #fff; border: none; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; margin-left: 10px; }
     .edit-doc-btn:hover { background: #218838; }
     .wiki-editor-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 10000; justify-content: center; align-items: center; padding: 16px; box-sizing: border-box; }
-    .wiki-editor-container { background: #fff; width: 92vw; max-width: 1040px; height: 90vh; max-height: calc(100vh - 32px); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+    .wiki-editor-modal.fullscreen { padding: 0; }
+    .wiki-editor-container { background: #fff; width: 92vw; max-width: 1040px; height: 90vh; max-height: calc(100vh - 32px); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.3); transition: width 0.2s ease, height 0.2s ease; }
+    .wiki-editor-container.fullscreen { width: 100vw; height: 100vh; max-width: none; max-height: none; border-radius: 0; }
     .wiki-editor-header { background: #1b1f23; color: #fff; padding: 10px 18px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; flex-shrink: 0; }
     .wiki-meta-accordion { background: #f6f8fa; border-bottom: 1px solid #e1e4e8; flex-shrink: 0; }
     .wiki-meta-header { padding: 8px 16px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; }
@@ -1899,13 +1901,36 @@ function Get-MainViewHtml {
     .wiki-form-group.full-width { grid-column: 1 / -1; }
     .wiki-form-group label { font-size: 11px; font-weight: bold; color: #586069; }
     .wiki-form-group input, .wiki-form-group select { padding: 3px 6px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; }
-    .wiki-raw-yaml-textarea { width: 100%; height: 120px; font-family: monospace; font-size: 12px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-    .wiki-editor-textarea { flex: 1; min-height: 0; padding: 16px; font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace; font-size: 13px; line-height: 1.5; border: none; resize: none; outline: none; }
+    .wiki-raw-yaml-textarea { width: 100%; height: 120px; font-family: "Cascadia Mono", "Cascadia Code", Consolas, "BIZ UDGothic", "Yu Gothic", "Meiryo", monospace; font-size: 12px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    .wiki-editor-textarea { flex: 1; min-height: 0; padding: 16px; font-family: "Cascadia Mono", "Cascadia Code", Consolas, "BIZ UDGothic", "Yu Gothic", "Meiryo", monospace; font-size: 13px; line-height: 1.5; border: none; resize: none; outline: none; }
     .wiki-editor-footer { background: #f6f8fa; padding: 8px 18px; border-top: 1px solid #e1e4e8; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
     .wiki-editor-cancel-btn { background: #6c757d; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; }
     .wiki-editor-save-btn { background: #28a745; color: #fff; border: none; padding: 6px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; }
-    .shutdown-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); color: #fff; z-index: 20000; flex-direction: column; justify-content: center; align-items: center; text-align: center; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .shutdown-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); color: #fff; z-index: 20000; flex-direction: column; justify-content: center; align-items: center; text-align: center; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "BIZ UDPGothic", "Yu Gothic UI", "Meiryo", "Hiragino Sans", sans-serif; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    /* TOAST UI Editor Typography Override for Optimal Japanese Rendering */
+    .toastui-editor-defaultUI,
+    .toastui-editor-contents,
+    .toastui-editor-contents p,
+    .toastui-editor-contents h1,
+    .toastui-editor-contents h2,
+    .toastui-editor-contents h3,
+    .toastui-editor-contents h4,
+    .toastui-editor-contents h5,
+    .toastui-editor-contents h6,
+    .toastui-editor-contents table,
+    .toastui-editor-contents li,
+    .ProseMirror {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "BIZ UDPGothic", "Yu Gothic UI", "Meiryo", "Hiragino Sans", sans-serif !important;
+    }
+    .toastui-editor-contents code,
+    .toastui-editor-contents pre,
+    .toastui-editor-contents pre code,
+    .toastui-editor-md-container textarea,
+    .toastui-editor-md-container .ProseMirror {
+        font-family: "Cascadia Mono", "Cascadia Code", Consolas, "BIZ UDGothic", "Yu Gothic", "Meiryo", monospace !important;
+    }
 </style>
 </head>
 <body>

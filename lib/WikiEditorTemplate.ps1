@@ -36,6 +36,8 @@ function Get-WikiEditorModalHtml {
     $edAutoDate         = Get-LocalizedStr -Key "editor_auto_date" -Lang $Lang -FormatArgs @($todayStr)
     $edBodyPlaceholder  = Get-LocalizedStr -Key "editor_body_placeholder" -Lang $Lang
     $edShortcutHint     = Get-LocalizedStr -Key "editor_shortcut_hint" -Lang $Lang
+    $edFullscreen       = Get-LocalizedStr -Key "editor_fullscreen" -Lang $Lang
+    $edRestore          = Get-LocalizedStr -Key "editor_restore" -Lang $Lang
 
     $edLoadingJs        = ConvertTo-JsString (Get-LocalizedStr -Key "editor_loading" -Lang $Lang)
     $edHistoryLoadingJs = ConvertTo-JsString (Get-LocalizedStr -Key "editor_history_loading" -Lang $Lang)
@@ -43,19 +45,24 @@ function Get-WikiEditorModalHtml {
     $edBackupLoadErrJs  = ConvertTo-JsString (Get-LocalizedStr -Key "editor_backup_load_err" -Lang $Lang)
     $edSavedWarningJs   = ConvertTo-JsString (Get-LocalizedStr -Key "editor_saved_warning" -Lang $Lang)
     $edSavedJs          = ConvertTo-JsString (Get-LocalizedStr -Key "editor_saved" -Lang $Lang)
+    $edFullscreenJs     = ConvertTo-JsString $edFullscreen
+    $edRestoreJs        = ConvertTo-JsString $edRestore
 
     $html = @'
     <!-- Wiki Editor Modal -->
     <div id="wikiEditorModal" class="wiki-editor-modal">
         <div class="wiki-editor-container">
-            <div class="wiki-editor-header">
+            <div class="wiki-editor-header" ondblclick="toggleWikiEditorFullscreen()" title="ダブルクリックで最大化/復元">
                 <div style="display: flex; align-items: center; gap: 12px;">
                     <span>$edTitle</span>
                     <select id="wikiEditorHistorySelect" onchange="loadWikiHistoryVersion(this)" style="background: #24292e; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 2px 6px; font-size: 12px; cursor: pointer;">
                         <option value="">$edLatest</option>
                     </select>
                 </div>
-                <span style="font-size: 12px; color: #ccc;" id="wikiEditorPath"></span>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <button id="wikiEditorFullscreenBtn" type="button" onclick="toggleWikiEditorFullscreen()" style="background: #343a40; border: 1px solid #495057; color: #f8f9fa; font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer;" title="$edBtnFullscreen">$edBtnFullscreen</button>
+                    <span style="font-size: 12px; color: #ccc;" id="wikiEditorPath"></span>
+                </div>
             </div>
 
             <!-- Metadata Section Accordion -->
@@ -580,8 +587,37 @@ function Get-WikiEditorModalHtml {
             location.reload();
         }
 
+        function toggleWikiEditorFullscreen() {
+            var modal = document.getElementById("wikiEditorModal");
+            var container = modal.querySelector(".wiki-editor-container");
+            var btn = document.getElementById("wikiEditorFullscreenBtn");
+            if (!container) return;
+
+            var isFs = container.classList.toggle("fullscreen");
+            modal.classList.toggle("fullscreen", isFs);
+
+            if (btn) {
+                btn.textContent = isFs ? "$edJsRestore" : "$edJsFullscreen";
+                btn.title = isFs ? "$edJsRestore" : "$edJsFullscreen";
+            }
+            setTimeout(function() {
+                window.dispatchEvent(new Event('resize'));
+            }, 50);
+        }
+
         function closeWikiEditor() {
-            document.getElementById("wikiEditorModal").style.display = "none";
+            var modal = document.getElementById("wikiEditorModal");
+            var container = modal.querySelector(".wiki-editor-container");
+            var btn = document.getElementById("wikiEditorFullscreenBtn");
+            if (container && container.classList.contains("fullscreen")) {
+                container.classList.remove("fullscreen");
+                modal.classList.remove("fullscreen");
+                if (btn) {
+                    btn.textContent = "$edJsFullscreen";
+                    btn.title = "$edJsFullscreen";
+                }
+            }
+            modal.style.display = "none";
         }
 
         function saveWikiMarkdown() {
@@ -620,6 +656,9 @@ function Get-WikiEditorModalHtml {
                             saveWikiMarkdown();
                         } else if (e.key === "Escape") {
                             closeWikiEditor();
+                        } else if (e.altKey && e.key === "Enter") {
+                            e.preventDefault();
+                            toggleWikiEditorFullscreen();
                         }
                     }
                 });
@@ -633,6 +672,10 @@ function Get-WikiEditorModalHtml {
         '$edLatest'           = $edLatest
         '$edCancel'           = $edCancel
         '$edSave'             = $edSave
+        '$edBtnFullscreen'    = $edFullscreen
+        '$edBtnRestore'       = $edRestore
+        '$edJsFullscreen'     = $edFullscreenJs
+        '$edJsRestore'        = $edRestoreJs
         '$edMetaSectionTitle' = $edMetaSectionTitle
         '$edMetaToggleHint'   = $edMetaToggleHint
         '$edModeForm'         = $edModeForm
