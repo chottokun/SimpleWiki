@@ -85,7 +85,10 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
     - **タグ画面用語解説ボックス**: タグ検索画面（`/tags?tag=...`）の上部に、`glossary.md` 由来の用語解説ボックス（太字・リスト・リンク等のリッチな Markdown レンダリング対応）を表示。
   - **動的ナビゲーション & ビュー**: 最近の更新 (`/recent`), タグ集計/検索 (`/tags`), 品質・メンテナンスダッシュボード (`/maintenance`), 著者ディレクトリ (`/authors`), AND/NOT 検索 (`/search`), システム設定 (`/settings`)
   - **静的エキスポート**: `Export-MarkdigWiki.ps1` による OKF v0.2 メタデータカード同梱型 HTML 一括出力（日英多言語対応）
-    - **📦 単一 HTML（SPA モード / `-SingleFile`）**: 全 Markdown ドキュメントを 1 つのモノリス HTML ファイル（`index.html`）に統合。クライアントサイド JavaScript（`showPage` / `popstate` / `hashchange`）による超高速 SPA ページ遷移を実現。サブディレクトリ内の相対画像パス（`../images/...`）をルート基準へ自動正規化解決し、アンカーハッシュ移動にも対応。
+    - **📦 単一 HTML（完全自己完結 SPA / `-SingleFile`）**: 全 Markdown ドキュメントを 1 つのモノリス HTML ファイル（`index.html`）に統合。クライアントサイド JavaScript（`showPage` / `popstate` / `hashchange`）による超高速 SPA ページ遷移を実現。アンカーハッシュ移動にも対応。
+    - **🖼️ 画像 Base64 インライン埋め込み ＆ 巨大画像自動リサイズ (`-EmbedImages` / `-NoEmbedImages`)**:
+      - 単一ファイル出力時に画像を Data URI（`data:image/...;base64,...`）として HTML 内に直接インライン埋め込み（完全自己完結型 1 ファイル化）。外部 `images/` フォルダなしで 100% 表示可能。
+      - **巨大画像自動リサイズ＆圧縮ガード (`-MaxInlineImageSizeKB` 既定 1024KB, `-MaxImageDimension` 既定 1600px)**: Windows 標準の .NET `System.Drawing` により、長辺 1600px 超または 1MB 超の巨大画像を高画質 Bicubic で自動縮小・JPEG/PNG 再圧縮して埋め込み、HTML ファイル肥大化やブラウザフリーズを未然に防止。SVG は劣化ゼロのベクター Data URI として軽量埋め込み。
     - **📊 Mermaid モード選択 (`-MermaidMode Runtime | Svg`)**:
       - `Runtime`: オフライン JavaScript（`mermaid.min.js` をインライン展開または同梱）による動的ダイアグラム描画。
       - `Svg`: 外部スクリプトを一切読み込まず、セキュアな静的 SVG コンテナへ変換出力（スクリプト実行制限のある厳格な環境向け）。
@@ -160,6 +163,7 @@ SimpleWiki/
 2. **出力先 HTML フォルダ** を選択します。
 3. **オプション設定**:
    - **単一 HTML ファイル（SPAモード）**: チェックを入れると、全ドキュメントを 1 つの `index.html` にまとめた高速 SPA を出力します。
+   - **🖼️ 画像を Base64 埋め込み（完全 1 ファイル化）**: 画像を HTML 内部にインライン埋め込みし、外部画像フォルダなしで完全自己完結させます（SPA モード選択時に自動チェック）。
    - **Mermaid モード**: `Runtime`（オフライン動的 JS 描画）または `Svg`（静的 SVG コンテナ出力）を選択します。
 4. **[🚀 エキスポート実行]** ボタンを押すと、一括で静的 HTML サイトが生成されます。
 5. 完了後、ダイアログから出力先フォルダを直接エクスプローラーで開くことができます。
@@ -205,8 +209,14 @@ SimpleWiki/
   # 通常複数ファイル出力
   .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "C:\inetpub\wwwroot\wiki"
 
-  # 単一 HTML (SPA モード) 出力
+  # 完全自己完結 単一 HTML (SPA モード ＆ 画像 Base64 埋め込み自動有効) 出力
   .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "dist" -SingleFile
+
+  # 単一 HTML 出力（画像の Base64 化を行わず外部フォルダ参照にする場合）
+  .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "dist" -SingleFile -NoEmbedImages
+
+  # 埋め込み画像サイズ上限（KB）やリサイズ長辺ピクセル数を指定して出力
+  .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "dist" -SingleFile -MaxInlineImageSizeKB 512 -MaxImageDimension 1280
 
   # 静的 SVG Mermaid モードで出力
   .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "dist" -MermaidMode Svg
@@ -262,9 +272,14 @@ SimpleWiki では、API キーを他人に漏洩させずに特定の PC 専用�
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\tests\Start-MarkdigWiki.Tests.ps1"
 ```
-- **検証結果**: 全 177 件の Pester 自動テストが **100% PASS**。
+- **検証結果**: 全 179 件の Pester 自動テストが **100% PASS**。
   - **1. スクリプト構文・AST検証**: 全 `.ps1` ファイルの構文解析・トークン検証に合格
-  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 177 件)**:
+  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 179 件)**:
+    - **🖼️ 画像 Base64 インライン埋め込み ＆ 巨大画像自動リサイズ・圧縮検証**:
+      - `-SingleFile` 指定時、全画像（PNG/SVG等）が `data:image/...;base64,...` として HTML 内に自動インライン埋め込みされ、外部 `images/` フォルダなしで 100% 自己完結することを確認。
+      - `-NoEmbedImages` スイッチにより、Base64 化を行わず外部 `images/` フォルダへの相対参照を維持できることを検証。
+      - `Get-OptimizedImageBase64` により、SVG のベクター Data URI 化、PNG の Data URI 化、および 2400px 超の巨大画像をアスペクト比を維持して高品質 Bicubic 縮小・再圧縮する動作を実証。
+      - `Export-GUI.ps1` における `chkEmbedImages` コントロール構文および `chkSingleFile` 連携動作をテスト。
     - **📦 単一 HTML (SPA モード / `-SingleFile`) ＆ Mermaid モード検証（PR #41）**:
       - `-SingleFile` 指定時、全ドキュメントが単一モノリス HTML（`index.html`）に統合され、インライン CSS・SPA ルーティング JS（`showPage` / `popstate` / `hashchange` / アンカー移動）が正常に機能することを実証。
       - サブディレクトリ由来のドキュメント内相対画像パス（`../../images/...`, `../images/...`）がルート基準の `images/...` に自動正規化され、画像リンク切れが 0 件であることを検証。

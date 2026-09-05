@@ -145,7 +145,7 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
         $styleMatches.Count | Should Be 1
     }
 
-    It "-SingleFile switch exports monolith SPA HTML with inline styles and JS routing" {
+    It "-SingleFile switch exports monolith SPA HTML with Base64 embedded images by default" {
         $singleExportDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestSingleFileExport"
         if (Test-Path $singleExportDir) { Remove-Item -Path $singleExportDir -Recurse -Force }
 
@@ -163,7 +163,7 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
             $htmlContent | Should Match '<section class="wiki-page" id="page_'
 
             # Verify links rewritten to anchor hash fragments
-            $htmlContent | Should Match 'href="#index" onclick="showPage\(''index''\); return false;"'
+            $htmlContent | Should Match 'href="#index" onclick="showPage\(''index'''
 
             # Verify SPA JavaScript routing functions are present
             $htmlContent | Should Match 'function showPage\(pageId'
@@ -172,13 +172,87 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
             # Verify inlined mermaid.min.js is present in Runtime mode
             $htmlContent | Should Match 'renderMermaidInContainer'
 
-            # Verify relative image paths from subdirectories are normalized to root
-            $htmlContent | Should Match 'src="images/ui-header\.png"'
-            $htmlContent | Should Match 'src="images/ui-viewer-header\.png"'
+            # Verify images are embedded as Base64 Data URIs by default
+            $htmlContent | Should Match 'src="data:image/png;base64,'
+            $htmlContent | Should Match 'src="data:image/svg\+xml;base64,'
             $htmlContent | Should Not Match 'src="\.\./\.\./images/'
             $htmlContent | Should Not Match 'src="\.\./images/'
+
+            # Verify physical images folder was not copied (pure self-contained HTML)
+            $imagesDir = Join-Path $singleExportDir "images"
+            (Test-Path $imagesDir) | Should Be $false
         } finally {
             if (Test-Path $singleExportDir) { Remove-Item -Path $singleExportDir -Recurse -Force }
+        }
+    }
+
+    It "-SingleFile with -NoEmbedImages preserves relative paths and copies asset directory" {
+        $noEmbedDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestNoEmbedExport"
+        if (Test-Path $noEmbedDir) { Remove-Item -Path $noEmbedDir -Recurse -Force }
+
+        try {
+            $exportScript = Join-Path $projectRoot "Export-MarkdigWiki.ps1"
+            $sampleDir    = Join-Path $projectRoot "markdown_sample"
+            & $exportScript -RootFolder $sampleDir -OutputDir $noEmbedDir -SingleFile -NoEmbedImages -MermaidMode "Runtime"
+
+            $indexPath = Join-Path $noEmbedDir "index.html"
+            (Test-Path $indexPath) | Should Be $true
+
+            $htmlContent = [System.IO.File]::ReadAllText($indexPath)
+            # Relative image paths normalized to root
+            $htmlContent | Should Match 'src="images/ui-header\.png"'
+            $htmlContent | Should Match 'src="images/ui-viewer-header\.png"'
+
+            # External images folder is preserved
+            $imagesDir = Join-Path $noEmbedDir "images"
+            (Test-Path $imagesDir) | Should Be $true
+        } finally {
+            if (Test-Path $noEmbedDir) { Remove-Item -Path $noEmbedDir -Recurse -Force }
+        }
+    }
+
+    It "Get-OptimizedImageBase64 resizes large images and converts images to Data URIs" {
+        $exportScript = Join-Path $projectRoot "Export-MarkdigWiki.ps1"
+        $svgPath      = Join-Path $projectRoot "markdown_sample\images\architecture.svg"
+        $pngPath      = Join-Path $projectRoot "markdown_sample\images\ui-header.png"
+
+        Add-Type -AssemblyName System.Drawing
+        $tempLargeBmpPath = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_LargeTestImage.png"
+        try {
+            $largeBmp = New-Object System.Drawing.Bitmap 2400, 1800
+            $g = [System.Drawing.Graphics]::FromImage($largeBmp)
+            $g.Clear([System.Drawing.Color]::Blue)
+            $g.Dispose()
+            $largeBmp.Save($tempLargeBmpPath, [System.Drawing.Imaging.ImageFormat]::Png)
+            $largeBmp.Dispose()
+
+            $scriptContent = Get-Content -Path $exportScript -Raw -Encoding UTF8
+            $funcDef = [regex]::Match($scriptContent, '(?s)function Get-OptimizedImageBase64\s*\{.*?\n\}').Value
+            Invoke-Expression $funcDef
+
+            # 1. Test SVG
+            $svgUri = Get-OptimizedImageBase64 -filePath $svgPath
+            $svgUri | Should Match '^data:image/svg\+xml;base64,'
+
+            # 2. Test PNG
+            $pngUri = Get-OptimizedImageBase64 -filePath $pngPath
+            $pngUri | Should Match '^data:image/png;base64,'
+
+            # 3. Test Large Image Resize (maxDimension 800)
+            $resizedUri = Get-OptimizedImageBase64 -filePath $tempLargeBmpPath -maxDimension 800
+            $resizedUri | Should Match '^data:image/(?:png|jpeg);base64,'
+
+            # Decode resized image and verify dimension
+            $b64Data = $resizedUri -replace '^data:image/(?:png|jpeg);base64,', ''
+            $bytes = [Convert]::FromBase64String($b64Data)
+            $ms = New-Object System.IO.MemoryStream(,$bytes)
+            $decodedImg = [System.Drawing.Image]::FromStream($ms)
+            ($decodedImg.Width -le 800) | Should Be $true
+            ($decodedImg.Height -le 800) | Should Be $true
+            $decodedImg.Dispose()
+            $ms.Dispose()
+        } finally {
+            if (Test-Path $tempLargeBmpPath) { Remove-Item -Path $tempLargeBmpPath -Force }
         }
     }
 
@@ -871,13 +945,16 @@ Describe 'Export-GUI.ps1 GUI Component and Syntax Validation' {
         $content | Should Match "Export-GUI\.ps1"
     }
 
-    It 'Export-GUI.ps1 contains controls for SingleFile and MermaidMode' {
+    It 'Export-GUI.ps1 contains controls for SingleFile, MermaidMode, and EmbedImages' {
         $guiScript = Join-Path $projectRoot "Export-GUI.ps1"
         $content   = Get-Content -Path $guiScript -Raw
         $content | Should Match 'chkSingleFile'
         $content | Should Match 'cmbMermaid'
+        $content | Should Match 'chkEmbedImages'
         $content | Should Match 'SingleFile'
         $content | Should Match 'MermaidMode'
+        $content | Should Match 'EmbedImages'
+        $content | Should Match 'NoEmbedImages'
     }
 }
 

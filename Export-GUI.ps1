@@ -20,7 +20,7 @@ $initialOutputDir = Join-Path $scriptDir "dist"
 # --- Form 作成 ---
 $form               = New-Object System.Windows.Forms.Form
 $form.Text          = "SimpleWiki - 静的 HTML エキスポート"
-$form.Size          = New-Object System.Drawing.Size(560, 360)
+$form.Size          = New-Object System.Drawing.Size(560, 380)
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedSingle
 $form.MaximizeBox   = $false
@@ -87,7 +87,7 @@ $btnBrowseOutput.Add_Click({
 })
 $form.Controls.Add($btnBrowseOutput)
 
-# 3. オプション設定 (SingleFile & MermaidMode)
+# 3. オプション設定 (SingleFile & MermaidMode & EmbedImages)
 $chkSingleFile          = New-Object System.Windows.Forms.CheckBox
 $chkSingleFile.Location = New-Object System.Drawing.Point(20, 140)
 $chkSingleFile.Size     = New-Object System.Drawing.Size(260, 24)
@@ -113,9 +113,23 @@ $null = $cmbMermaid.Items.Add("Svg")
 $cmbMermaid.SelectedIndex = 0
 $form.Controls.Add($cmbMermaid)
 
+$chkEmbedImages          = New-Object System.Windows.Forms.CheckBox
+$chkEmbedImages.Location = New-Object System.Drawing.Point(20, 170)
+$chkEmbedImages.Size     = New-Object System.Drawing.Size(350, 24)
+$chkEmbedImages.Text     = "🖼️ 画像を Base64 埋め込み（完全 1 ファイル化）"
+$chkEmbedImages.Font     = $fontLabel
+$chkEmbedImages.Checked  = $false
+$form.Controls.Add($chkEmbedImages)
+
+$chkSingleFile.Add_CheckedChanged({
+    if ($chkSingleFile.Checked) {
+        $chkEmbedImages.Checked = $true
+    }
+})
+
 # ステータスメッセージ
 $lblStatus          = New-Object System.Windows.Forms.Label
-$lblStatus.Location = New-Object System.Drawing.Point(20, 185)
+$lblStatus.Location = New-Object System.Drawing.Point(20, 205)
 $lblStatus.Size     = New-Object System.Drawing.Size(500, 20)
 $lblStatus.Text     = "準備完了。フォルダとオプションを選択して [エキスポート実行] を押してください。"
 $lblStatus.Font     = $fontLabel
@@ -124,7 +138,7 @@ $form.Controls.Add($lblStatus)
 
 # エキスポート実行ボタン
 $btnExport          = New-Object System.Windows.Forms.Button
-$btnExport.Location = New-Object System.Drawing.Point(170, 230)
+$btnExport.Location = New-Object System.Drawing.Point(170, 245)
 $btnExport.Size     = New-Object System.Drawing.Size(180, 40)
 $btnExport.Text     = "🚀 エキスポート実行"
 $btnExport.Font     = $fontBold
@@ -134,10 +148,11 @@ $btnExport.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $btnExport.FlatAppearance.BorderSize = 0
 
 $btnExport.Add_Click({
-    $inputPath   = $txtInput.Text.Trim()
-    $outputPath  = $txtOutput.Text.Trim()
-    $isSingle    = $chkSingleFile.Checked
-    $mermaidMode = $cmbMermaid.SelectedItem.ToString()
+    $inputPath    = $txtInput.Text.Trim()
+    $outputPath   = $txtOutput.Text.Trim()
+    $isSingle     = $chkSingleFile.Checked
+    $mermaidMode  = $cmbMermaid.SelectedItem.ToString()
+    $isEmbedImage = $chkEmbedImages.Checked
 
     if (-not (Test-Path $inputPath)) {
         [System.Windows.Forms.MessageBox]::Show("入力フォルダが見つかりません:`n$inputPath", "エラー", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
@@ -158,6 +173,11 @@ $btnExport.Add_Click({
         }
         if ($isSingle) {
             $params["SingleFile"] = $true
+        }
+        if ($isEmbedImage) {
+            $params["EmbedImages"] = $true
+        } else {
+            $params["NoEmbedImages"] = $true
         }
 
         & $exportScript @params
