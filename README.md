@@ -22,6 +22,11 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
   6. GUI ツール (`Export-GUI.bat`) による直感的なフォルダ選択とエキスポート。
 - **アーキテクチャ概要**:
   - **リアルタイム閲覧 & OKF ナレッジハブ**: `System.Net.HttpListener` によるローカル Web サーバー (`http://localhost:8080/`)
+    - **🧩 サーバーモジュール化 ＆ スリムアーキテクチャ (`lib/WikiServer.ps1`, `lib/WikiEditorTemplate.ps1`)**:
+      - `Start-MarkdigWiki.ps1` を約1,975行から約150行の軽量エントリーポイントへとスリム化。
+      - HTTP ルーティング・エンドポイントディスパッチ・SSE ストリーミング・シャットダウン処理を `lib/WikiServer.ps1`（`Invoke-WikiRouteRequest`）へ集約。
+      - OKF 分離エディターモーダルの HTML/JS テンプレートおよび動的トークンバインド処理を `lib/WikiEditorTemplate.ps1`（`Get-WikiEditorModalHtml`）へ分離。
+      - 共通レイアウト描画を `lib/WikiViews.ps1`（`Get-MainViewHtml`）へ集約し、保守性とテスト独立性を向上。
   - **🌐 多言語化 (i18n) ＆ 言語セレクタ ＆ 外部辞書拡張 (`lib/WikiI18n.ps1`)**:
     - **日本語 (`ja`) / 英語 (`en`)** の標準ビルトイン辞書を搭載。
     - ヘッダーの言語セレクタドロップダウンによるワンクリック即時切り替え（Cookie 保存）。
@@ -243,9 +248,10 @@ SimpleWiki では、API キーを他人に漏洩させずに特定の PC 専用�
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\tests\Start-MarkdigWiki.Tests.ps1"
 ```
-- **検証結果**: 全 169 件の Pester 自動テストが **100% PASS**。
+- **検証結果**: 全 172 件の Pester 自動テストが **100% PASS**。
   - **1. スクリプト構文・AST検証**: 全 `.ps1` ファイルの構文解析・トークン検証に合格
-  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 169 件)**:
+  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 172 件)**:
+    - サーバーモジュール化 ＆ テンプレート分離検証（PR #40: `Start-MarkdigWiki.ps1` のスリム化に伴う `Invoke-WikiRouteRequest` / `Get-WikiEditorModalHtml` / `Get-MainViewHtml` の独立性検証、エディター内 i18n トークン正常展開・多言語バインド検証、PSScriptAnalyzer 静的解析警告 0 件の維持）
     - PSScriptAnalyzer 静的解析の残存警告完全解消（リポジトリ全体・lib・tests・.agents/skills スクリプトで 0 warnings を達成。PR #39 での Write-Host 引数修正、WikiRag の未使用変数・パラメータ・$null比較順序改善、および各モジュールの適切な SuppressMessageAttribute / 空 catch ブロック対策の適用）
     - View コンポーネントリファクタリング検証（`Get-OkfFooterCardHtml` の Description 描画、`Get-MaintenanceViewHtml` のリストレンダラー共通化）
     - `glossary.md` からの用語・見出し・定義・エイリアス抽出テスト (`Get-GlossaryTerms`, `Get-GlossaryTermDefinition`)
