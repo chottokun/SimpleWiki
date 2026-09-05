@@ -470,17 +470,71 @@ function Get-ApiChunksJson {
     return ($allChunks | ConvertTo-Json -Depth 4)
 }
 
+# --- インデックス読み込み & 用語解説ヘルパー関数 ---
+function Ensure-WikiIndexLoaded {
+    param (
+        [string]$TargetWikiDir
+    )
+    $dir = if (-not [string]::IsNullOrWhiteSpace($TargetWikiDir)) { $TargetWikiDir } elseif ($wikiDir) { $wikiDir } elseif ($script:wikiDir) { $script:wikiDir } else { $PWD.Path }
+    if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
+        if (-not (Load-WikiIndexCache -TargetWikiDir $dir)) {
+            Build-WikiIndex -TargetWikiDir $dir | Out-Null
+        }
+    }
+}
+
+function Render-GlossaryBoxHtml {
+    param (
+        [string]$Term,
+        [string]$TargetWikiDir
+    )
+    if ([string]::IsNullOrWhiteSpace($Term)) {
+        return ""
+    }
+
+    $targetWiki = if (-not [string]::IsNullOrWhiteSpace($TargetWikiDir)) { $TargetWikiDir } elseif ($wikiDir) { $wikiDir } elseif ($script:wikiDir) { $script:wikiDir } else { $PWD.Path }
+    $gPath = Join-Path $targetWiki "glossary.md"
+    if (-not (Test-Path $gPath) -and $scriptDir) {
+        $gPath = Join-Path $scriptDir "markdown_sample/glossary.md"
+    }
+
+    $defText = Get-GlossaryTermDefinition -Term $Term -GlossaryPath $gPath
+    if ([string]::IsNullOrWhiteSpace($defText)) {
+        return ""
+    }
+
+    $formattedDef = ""
+    if ([System.AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -eq "Markdig" }) {
+        try {
+            $builder = New-Object Markdig.MarkdownPipelineBuilder
+            $null = [Markdig.MarkdownExtensions]::UseAdvancedExtensions($builder)
+            $pipeline = $builder.Build()
+            $formattedDef = [Markdig.Markdown]::ToHtml($defText, $pipeline)
+        } catch {
+            $formattedDef = ($defText -split '\r?\n' | ForEach-Object { [System.Net.WebUtility]::HtmlEncode($_) }) -join "<br>"
+        }
+    } else {
+        $formattedDef = ($defText -split '\r?\n' | ForEach-Object { [System.Net.WebUtility]::HtmlEncode($_) }) -join "<br>"
+    }
+
+    $encTag = [System.Net.WebUtility]::HtmlEncode($Term)
+    return @"
+<div class="glossary-box" style="background: #e8f4fd; border-left: 4px solid #0366d6; padding: 14px 18px; border-radius: 6px; margin-bottom: 24px;">
+    <div style="font-weight: bold; color: #0366d6; font-size: 15px; margin-bottom: 8px;">📖 用語解説: $encTag</div>
+    <div class="glossary-content" style="font-size: 13px; color: #24292e; line-height: 1.6;">
+        $formattedDef
+    </div>
+</div>
+"@
+}
+
 # --- 最近の更新一覧ビュー生成関数 ---
 function Get-RecentViewHtml {
     param (
         [string]$Lang = "ja"
     )
 
-    if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
-        if (-not (Load-WikiIndexCache -TargetWikiDir $wikiDir)) {
-            Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
-        }
-    }
+    Ensure-WikiIndexLoaded -TargetWikiDir $wikiDir
     $sorted = $script:WikiIndex | Sort-Object LastUpdated -Descending
 
     $titleLbl   = Get-LocalizedStr -Key "recent_updates_title" -Lang $Lang
@@ -522,11 +576,7 @@ function Get-TagsViewHtml {
         [string]$Lang = "ja"
     )
 
-    if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
-        if (-not (Load-WikiIndexCache -TargetWikiDir $wikiDir)) {
-            Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
-        }
-    }
+    Ensure-WikiIndexLoaded -TargetWikiDir $wikiDir
 
     if ([string]::IsNullOrWhiteSpace($SelectedTag)) {
         $tagListTitle = Get-LocalizedStr -Key "tag_list_title" -Lang $Lang
@@ -558,39 +608,7 @@ function Get-TagsViewHtml {
         $tagResultsTitle = Get-LocalizedStr -Key "tag_results_title" -Lang $Lang -FormatArgs @($encTag)
         $backToTags      = Get-LocalizedStr -Key "back_to_tags" -Lang $Lang
 
-        # glossary.md からの用語定義チェック
-        $glossaryBoxHtml = ""
-        $targetWiki = if ($wikiDir) { $wikiDir } elseif ($script:wikiDir) { $script:wikiDir } else { $PWD.Path }
-        $gPath = Join-Path $targetWiki "glossary.md"
-        if (-not (Test-Path $gPath) -and $scriptDir) {
-            $gPath = Join-Path $scriptDir "markdown_sample/glossary.md"
-        }
-
-        $defText = Get-GlossaryTermDefinition -Term $SelectedTag -GlossaryPath $gPath
-        if (-not [string]::IsNullOrWhiteSpace($defText)) {
-            $formattedDef = ""
-            if ([System.AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -eq "Markdig" }) {
-                try {
-                    $builder = New-Object Markdig.MarkdownPipelineBuilder
-                    $null = [Markdig.MarkdownExtensions]::UseAdvancedExtensions($builder)
-                    $pipeline = $builder.Build()
-                    $formattedDef = [Markdig.Markdown]::ToHtml($defText, $pipeline)
-                } catch {
-                    $formattedDef = ($defText -split '\r?\n' | ForEach-Object { [System.Net.WebUtility]::HtmlEncode($_) }) -join "<br>"
-                }
-            } else {
-                $formattedDef = ($defText -split '\r?\n' | ForEach-Object { [System.Net.WebUtility]::HtmlEncode($_) }) -join "<br>"
-            }
-
-            $glossaryBoxHtml = @"
-<div class="glossary-box" style="background: #e8f4fd; border-left: 4px solid #0366d6; padding: 14px 18px; border-radius: 6px; margin-bottom: 24px;">
-    <div style="font-weight: bold; color: #0366d6; font-size: 15px; margin-bottom: 8px;">📖 用語解説: $encTag</div>
-    <div class="glossary-content" style="font-size: 13px; color: #24292e; line-height: 1.6;">
-        $formattedDef
-    </div>
-</div>
-"@
-        }
+        $glossaryBoxHtml = Render-GlossaryBoxHtml -Term $SelectedTag -TargetWikiDir $wikiDir
 
         $cardsHtml = foreach ($item in $filtered) {
             $relUri = "/" + [Uri]::EscapeUriString($item.RelPath.Replace('\', '/'))
@@ -636,11 +654,7 @@ function Get-MaintenanceViewHtml {
         [string]$Lang = "ja"
     )
 
-    if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
-        if (-not (Load-WikiIndexCache -TargetWikiDir $wikiDir)) {
-            Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
-        }
-    }
+    Ensure-WikiIndexLoaded -TargetWikiDir $wikiDir
     $now = Get-Date
 
     $staleDocs      = @($script:WikiIndex | Where-Object { $_.Status -eq "active" -and ($now - $_.LastUpdated).TotalDays -ge 365 })
@@ -682,11 +696,7 @@ function Get-AuthorsViewHtml {
         [string]$Lang = "ja"
     )
 
-    if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
-        if (-not (Load-WikiIndexCache -TargetWikiDir $wikiDir)) {
-            Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
-        }
-    }
+    Ensure-WikiIndexLoaded -TargetWikiDir $wikiDir
 
     if ([string]::IsNullOrWhiteSpace($SelectedAuthor)) {
         $authorListTitle = Get-LocalizedStr -Key "author_list_title" -Lang $Lang
