@@ -1483,6 +1483,21 @@ Describe 'Editor Settings and Read-Only Guard Tests' {
         $htmlEn | Should Match '⛶ Maximize'
     }
 
+    It "Get-WikiEditorModalHtml binds save alert texts accurately without token prefix collision like dJs" {
+        $htmlJa = Get-WikiEditorModalHtml -Lang "ja"
+        $htmlJa | Should Match 'alert\(data\.warning \? "保存しました。'
+        $htmlJa | Should Match ': "保存しました。"\);'
+        $htmlJa | Should Not Match '保存dJs'
+        $htmlJa | Should Not Match 'dWarningJs'
+        $htmlJa | Should Not Match '\$ed[A-Za-z]+'
+
+        $htmlEn = Get-WikiEditorModalHtml -Lang "en"
+        $htmlEn | Should Match 'alert\(data\.warning \? "Saved successfully\.'
+        $htmlEn | Should Match ': "Saved successfully\."\);'
+        $htmlEn | Should Not Match 'SaveddJs'
+        $htmlEn | Should Not Match '\$ed[A-Za-z]+'
+    }
+
     It "Get-MainViewHtml renders Japanese typography stack and fullscreen modal CSS rules" {
         $html = Get-MainViewHtml -Title "Test" -RelPath "test.md" -ContentHtml "<p>Test</p>" -Config @{} -Lang "ja"
         $html | Should Match 'BIZ UDPGothic'

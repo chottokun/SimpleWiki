@@ -162,8 +162,8 @@ function Get-WikiEditorModalHtml {
                     <span>$edShortcutHint</span>
                 </div>
                 <div style="display: flex; gap: 8px;">
-                    <button class="wiki-editor-cancel-btn" onclick="closeWikiEditor()">$edCancel</button>
-                    <button class="wiki-editor-save-btn" onclick="saveWikiMarkdown()">$edSave</button>
+                    <button class="wiki-editor-cancel-btn" onclick="closeWikiEditor()">$edBtnCancel</button>
+                    <button class="wiki-editor-save-btn" onclick="saveWikiMarkdown()">$edBtnSave</button>
                 </div>
             </div>
         </div>
@@ -498,7 +498,7 @@ function Get-WikiEditorModalHtml {
 
             document.getElementById("wikiEditorPath").textContent = relPath;
             toggleMetaAccordion(false);
-            setEditorContent("$edLoadingJs");
+            setEditorContent("$edJsLoading");
             document.getElementById("rawYamlTextarea").value = "";
             switchYamlMode(false);
 
@@ -523,7 +523,7 @@ function Get-WikiEditorModalHtml {
                             document.getElementById("rawYamlTextarea").value = parsed.rawYaml;
                         })
                         .catch(err => {
-                            setEditorContent("$edLoadErrorJs" + err);
+                            setEditorContent("$edJsLoadError" + err);
                         });
                 });
 
@@ -567,7 +567,7 @@ function Get-WikiEditorModalHtml {
                 url += "&version=" + encodeURIComponent(version);
             }
 
-            setEditorContent("$edHistoryLoadingJs");
+            setEditorContent("$edJsHistoryLoading");
             fetch(url)
                 .then(r => r.json())
                 .then(data => {
@@ -578,7 +578,7 @@ function Get-WikiEditorModalHtml {
                     document.getElementById("rawYamlTextarea").value = parsed.rawYaml;
                 })
                 .catch(err => {
-                    setEditorContent("$edBackupLoadErrJs" + err);
+                    setEditorContent("$edJsBackupLoadErr" + err);
                 });
         }
 
@@ -634,7 +634,7 @@ function Get-WikiEditorModalHtml {
             .then(r => r.json())
             .then(data => {
                 if (data.success) {
-                    alert(data.warning ? "$edSavedWarningJs" + data.warning : "$edSavedJs");
+                    alert(data.warning ? "$edJsSavedWarning" + data.warning : "$edJsSaved");
                     closeWikiEditor();
                     location.reload();
                 } else {
@@ -670,8 +670,8 @@ function Get-WikiEditorModalHtml {
     $tokens = [ordered]@{
         '$edTitle'            = $edTitle
         '$edLatest'           = $edLatest
-        '$edCancel'           = $edCancel
-        '$edSave'             = $edSave
+        '$edBtnCancel'        = $edCancel
+        '$edBtnSave'          = $edSave
         '$edBtnFullscreen'    = $edFullscreen
         '$edBtnRestore'       = $edRestore
         '$edJsFullscreen'     = $edFullscreenJs
@@ -699,16 +699,18 @@ function Get-WikiEditorModalHtml {
         '$edAutoDate'         = $edAutoDate
         '$edBodyPlaceholder'  = $edBodyPlaceholder
         '$edShortcutHint'     = $edShortcutHint
-        '$edLoadingJs'        = $edLoadingJs
-        '$edHistoryLoadingJs' = $edHistoryLoadingJs
-        '$edLoadErrorJs'      = $edLoadErrorJs
-        '$edBackupLoadErrJs'  = $edBackupLoadErrJs
-        '$edSavedWarningJs'   = $edSavedWarningJs
-        '$edSavedJs'          = $edSavedJs
+        '$edJsLoading'        = $edLoadingJs
+        '$edJsHistoryLoading' = $edHistoryLoadingJs
+        '$edJsLoadError'      = $edLoadErrorJs
+        '$edJsBackupLoadErr'  = $edBackupLoadErrJs
+        '$edJsSavedWarning'   = $edSavedWarningJs
+        '$edJsSaved'          = $edSavedJs
     }
 
-    foreach ($entry in $tokens.GetEnumerator()) {
-        $html = $html.Replace($entry.Key, [string]$entry.Value)
+    # キー文字列の長さの降順（Longest Key First）で置換することで前方一致による意図しない部分置換を完全に防止
+    $sortedKeys = $tokens.Keys | Sort-Object -Property { $_.Length } -Descending
+    foreach ($key in $sortedKeys) {
+        $html = $html.Replace($key, [string]$tokens[$key])
     }
 
     return $html
