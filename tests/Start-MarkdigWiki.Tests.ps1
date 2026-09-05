@@ -217,43 +217,52 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
         $svgPath      = Join-Path $projectRoot "markdown_sample\images\architecture.svg"
         $pngPath      = Join-Path $projectRoot "markdown_sample\images\ui-header.png"
 
-        Add-Type -AssemblyName System.Drawing
-        $tempLargeBmpPath = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_LargeTestImage.png"
+        $scriptContent = Get-Content -Path $exportScript -Raw -Encoding UTF8
+        $funcDef = [regex]::Match($scriptContent, '(?s)function Get-OptimizedImageBase64\s*\{.*?\n\}').Value
+        Invoke-Expression $funcDef
+
+        # 1. Test SVG
+        $svgUri = Get-OptimizedImageBase64 -filePath $svgPath
+        $svgUri | Should Match '^data:image/svg\+xml;base64,'
+
+        # 2. Test PNG
+        $pngUri = Get-OptimizedImageBase64 -filePath $pngPath
+        $pngUri | Should Match '^data:image/png;base64,'
+
+        # 3. Test Large Image Resize (maxDimension 800) if GDI+ is available
+        $canTestGdi = $false
         try {
-            $largeBmp = New-Object System.Drawing.Bitmap 2400, 1800
-            $g = [System.Drawing.Graphics]::FromImage($largeBmp)
-            $g.Clear([System.Drawing.Color]::Blue)
-            $g.Dispose()
-            $largeBmp.Save($tempLargeBmpPath, [System.Drawing.Imaging.ImageFormat]::Png)
-            $largeBmp.Dispose()
+            Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+            $testBmp = New-Object System.Drawing.Bitmap 10, 10
+            $testBmp.Dispose()
+            $canTestGdi = $true
+        } catch {}
 
-            $scriptContent = Get-Content -Path $exportScript -Raw -Encoding UTF8
-            $funcDef = [regex]::Match($scriptContent, '(?s)function Get-OptimizedImageBase64\s*\{.*?\n\}').Value
-            Invoke-Expression $funcDef
+        if ($canTestGdi) {
+            $tempLargeBmpPath = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_LargeTestImage.png"
+            try {
+                $largeBmp = New-Object System.Drawing.Bitmap 2400, 1800
+                $g = [System.Drawing.Graphics]::FromImage($largeBmp)
+                $g.Clear([System.Drawing.Color]::Blue)
+                $g.Dispose()
+                $largeBmp.Save($tempLargeBmpPath, [System.Drawing.Imaging.ImageFormat]::Png)
+                $largeBmp.Dispose()
 
-            # 1. Test SVG
-            $svgUri = Get-OptimizedImageBase64 -filePath $svgPath
-            $svgUri | Should Match '^data:image/svg\+xml;base64,'
+                $resizedUri = Get-OptimizedImageBase64 -filePath $tempLargeBmpPath -maxDimension 800
+                $resizedUri | Should Match '^data:image/(?:png|jpeg);base64,'
 
-            # 2. Test PNG
-            $pngUri = Get-OptimizedImageBase64 -filePath $pngPath
-            $pngUri | Should Match '^data:image/png;base64,'
-
-            # 3. Test Large Image Resize (maxDimension 800)
-            $resizedUri = Get-OptimizedImageBase64 -filePath $tempLargeBmpPath -maxDimension 800
-            $resizedUri | Should Match '^data:image/(?:png|jpeg);base64,'
-
-            # Decode resized image and verify dimension
-            $b64Data = $resizedUri -replace '^data:image/(?:png|jpeg);base64,', ''
-            $bytes = [Convert]::FromBase64String($b64Data)
-            $ms = New-Object System.IO.MemoryStream(,$bytes)
-            $decodedImg = [System.Drawing.Image]::FromStream($ms)
-            ($decodedImg.Width -le 800) | Should Be $true
-            ($decodedImg.Height -le 800) | Should Be $true
-            $decodedImg.Dispose()
-            $ms.Dispose()
-        } finally {
-            if (Test-Path $tempLargeBmpPath) { Remove-Item -Path $tempLargeBmpPath -Force }
+                # Decode resized image and verify dimension
+                $b64Data = $resizedUri -replace '^data:image/(?:png|jpeg);base64,', ''
+                $bytes = [Convert]::FromBase64String($b64Data)
+                $ms = New-Object System.IO.MemoryStream(,$bytes)
+                $decodedImg = [System.Drawing.Image]::FromStream($ms)
+                ($decodedImg.Width -le 800) | Should Be $true
+                ($decodedImg.Height -le 800) | Should Be $true
+                $decodedImg.Dispose()
+                $ms.Dispose()
+            } finally {
+                if (Test-Path $tempLargeBmpPath) { Remove-Item -Path $tempLargeBmpPath -Force }
+            }
         }
     }
 
@@ -2873,5 +2882,23 @@ Describe "Refactoring Specific Behavior Tests" {
             $layoutHtml = Get-MainViewHtml -PageTitle "Config Test" -BodyContent "<p>Content</p>" -RelPath "index.md" -Lang "ja" -Config $customConfig
             $layoutHtml | Should Match "Config Test"
         } | Should Not Throw
+    }
+
+    It "Ensure-WikiIndexLoaded populates script:WikiIndex when index is null or empty" {
+        $sampleWikiDir = Join-Path $projectRoot "markdown_sample"
+        $script:WikiIndex = $null
+        Ensure-WikiIndexLoaded -TargetWikiDir $sampleWikiDir
+        $script:WikiIndex | Should Not Be $null
+        ($script:WikiIndex.Count -gt 0) | Should Be $true
+    }
+
+    It "Render-GlossaryBoxHtml returns formatted box for existing glossary term and empty string for non-existent" {
+        $sampleWikiDir = Join-Path $projectRoot "markdown_sample"
+        $boxHtml = Render-GlossaryBoxHtml -Term "OKF" -TargetWikiDir $sampleWikiDir
+        $boxHtml | Should Match '<div class="glossary-box"'
+        $boxHtml | Should Match 'OKF'
+
+        $emptyBox = Render-GlossaryBoxHtml -Term "NonExistentTerm12345" -TargetWikiDir $sampleWikiDir
+        $emptyBox | Should Be ""
     }
 }
