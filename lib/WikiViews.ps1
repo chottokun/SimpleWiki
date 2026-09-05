@@ -1309,6 +1309,7 @@ function Get-SettingsViewData {
     $editorEnabledChecked = if ($config.editor -and $null -ne $config.editor.enabled) {
         if ($config.editor.enabled -eq $true) { "checked" } else { "" }
     } else { "checked" }
+    $editorType           = if ($config.editor -and $config.editor.type) { [string]$config.editor.type } else { "toastui" }
     $editorMaxBackups     = if ($config.editor -and $null -ne $config.editor.maxBackups) { [int]$config.editor.maxBackups } else { 3 }
 
     $prebuildChecked   = if ($config.search -and $config.search.prebuildIndex -eq $true) { "checked" } else { "" }
@@ -1330,6 +1331,7 @@ function Get-SettingsViewData {
     return [PSCustomObject]@{
         Lang              = $Lang
         EditorEnabledChecked = $editorEnabledChecked
+        EditorType           = $editorType
         EditorMaxBackups     = $editorMaxBackups
         PrebuildChecked   = $prebuildChecked
         UseCacheChecked   = $useCacheChecked
@@ -1389,6 +1391,9 @@ function Render-SettingsEditorCard {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param ([PSCustomObject]$Data)
 
+    $selToastUi  = if ($Data.EditorType -eq "toastui") { "selected" } else { "" }
+    $selTextarea = if ($Data.EditorType -eq "textarea") { "selected" } else { "" }
+
     return @"
         <div class="okf-card">
             <div class="okf-card-header">$($Data.EditorTitleLbl)</div>
@@ -1399,6 +1404,14 @@ function Render-SettingsEditorCard {
                 </label>
                 <div style="font-size: 13px; color: #586069; margin-left: 24px;">
                     $($Data.EditorDescLbl)
+                </div>
+
+                <div style="margin-left: 24px; margin-top: 5px;">
+                    <label for="editorType" style="font-size: 13px; font-weight: bold;">エディタエンジン (Editor Type):</label><br>
+                    <select id="editorType" name="editorType" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px; font-size: 13px;">
+                        <option value="toastui" $selToastUi>TOAST UI Editor (WYSIWYG & Markdown)</option>
+                        <option value="textarea" $selTextarea>Standard Textarea (Text)</option>
+                    </select>
                 </div>
 
                 <div style="margin-left: 24px; margin-top: 5px;">
@@ -1581,6 +1594,7 @@ function saveSettings(e) {
     var payload = {
         editor: {
             enabled: document.getElementById('editorEnabled').checked,
+            type: document.getElementById('editorType').value,
             maxBackups: parseInt(document.getElementById('editorMaxBackups').value, 10) || 0
         },
         search: {
@@ -1801,6 +1815,9 @@ function Get-MainViewHtml {
 <head>
 <meta charset="UTF-8">
 <title>{0} - {20} OKF</title>
+<!-- TOAST UI Editor CDN Assets -->
+<link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/toastui-editor.min.css" />
+<script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
 <style>
     * { box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; color: #24292e; background-color: #fff; }

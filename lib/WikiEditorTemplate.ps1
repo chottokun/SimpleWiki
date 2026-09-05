@@ -137,7 +137,8 @@ function Get-WikiEditorModalHtml {
                 </div>
             </div>
 
-            <!-- Markdown Body Textarea -->
+            <!-- Markdown Body Editor (TOAST UI Editor Container & Fallback Textarea) -->
+            <div id="wikiEditorToastUiContainer" style="flex: 1; height: 100%; min-height: 250px; display: none; overflow: hidden;"></div>
             <textarea id="wikiEditorBodyTextarea" class="wiki-editor-textarea" placeholder="$edBodyPlaceholder"></textarea>
 
             <div class="wiki-editor-footer">
@@ -153,6 +154,46 @@ function Get-WikiEditorModalHtml {
     </div>
     <script>
         var isYamlRawMode = false;
+        var toastEditorInstance = null;
+        var currentEditorType = "toastui";
+
+        function initToastEditor(initialContent) {
+            var toastContainer = document.getElementById("wikiEditorToastUiContainer");
+            var textareaContainer = document.getElementById("wikiEditorBodyTextarea");
+
+            if (currentEditorType === "toastui" && window.toastui && window.toastui.Editor) {
+                textareaContainer.style.display = "none";
+                toastContainer.style.display = "block";
+
+                if (!toastEditorInstance) {
+                    toastEditorInstance = new toastui.Editor({
+                        el: toastContainer,
+                        height: '100%',
+                        initialEditType: 'markdown',
+                        previewStyle: 'vertical',
+                        initialValue: initialContent || ""
+                    });
+                } else {
+                    toastEditorInstance.setMarkdown(initialContent || "");
+                }
+            } else {
+                toastContainer.style.display = "none";
+                textareaContainer.style.display = "block";
+                textareaContainer.value = initialContent || "";
+            }
+        }
+
+        function getEditorContent() {
+            if (currentEditorType === "toastui" && toastEditorInstance) {
+                return toastEditorInstance.getMarkdown();
+            }
+            return document.getElementById("wikiEditorBodyTextarea").value;
+        }
+
+        function setEditorContent(text) {
+            initToastEditor(text);
+        }
+
         function parseMarkdownWithYaml(mdText) {
             var result = {
                 rawYaml: "",
@@ -277,7 +318,7 @@ function Get-WikiEditorModalHtml {
         }
 
         function generateMarkdownWithYaml(isRawMode) {
-            var bodyText = document.getElementById("wikiEditorBodyTextarea").value;
+            var bodyText = getEditorContent();
 
             if (isRawMode) {
                 var rawYaml = document.getElementById("rawYamlTextarea").value.trim();
@@ -407,12 +448,34 @@ function Get-WikiEditorModalHtml {
             if (!relPath) return;
 
             document.getElementById("wikiEditorPath").textContent = relPath;
-            document.getElementById("wikiEditorBodyTextarea").value = "$edLoadingJs";
+            setEditorContent("$edLoadingJs");
             document.getElementById("rawYamlTextarea").value = "";
             switchYamlMode(false);
 
             const selectEl = document.getElementById("wikiEditorHistorySelect");
             selectEl.innerHTML = '<option value="">' + "$edLatest" + '</option>';
+
+            fetch("/api/config")
+                .then(r => r.json())
+                .then(cfg => {
+                    if (cfg && cfg.editor && cfg.editor.type) {
+                        currentEditorType = cfg.editor.type;
+                    }
+                }).catch(() => {})
+                .finally(() => {
+                    fetch("/api/raw?relPath=" + encodeURIComponent(relPath))
+                        .then(r => r.json())
+                        .then(data => {
+                            const mdVal = (typeof data.markdown === "object" && data.markdown !== null) ? (data.markdown.value || "") : (data.markdown || "");
+                            var parsed = parseMarkdownWithYaml(mdVal);
+                            populateYamlForm(parsed.meta);
+                            setEditorContent(parsed.bodyText);
+                            document.getElementById("rawYamlTextarea").value = parsed.rawYaml;
+                        })
+                        .catch(err => {
+                            setEditorContent("$edLoadErrorJs" + err);
+                        });
+                });
 
             fetch("/api/history?relPath=" + encodeURIComponent(relPath))
                 .then(r => r.json())
@@ -441,19 +504,6 @@ function Get-WikiEditorModalHtml {
                     }
                 }).catch(() => {});
 
-            fetch("/api/raw?relPath=" + encodeURIComponent(relPath))
-                .then(r => r.json())
-                .then(data => {
-                    const mdVal = (typeof data.markdown === "object" && data.markdown !== null) ? (data.markdown.value || "") : (data.markdown || "");
-                    var parsed = parseMarkdownWithYaml(mdVal);
-                    populateYamlForm(parsed.meta);
-                    document.getElementById("wikiEditorBodyTextarea").value = parsed.bodyText;
-                    document.getElementById("rawYamlTextarea").value = parsed.rawYaml;
-                })
-                .catch(err => {
-                    document.getElementById("wikiEditorBodyTextarea").value = "$edLoadErrorJs" + err;
-                });
-
             document.getElementById("wikiEditorModal").style.display = "flex";
         }
 
@@ -467,18 +517,18 @@ function Get-WikiEditorModalHtml {
                 url += "&version=" + encodeURIComponent(version);
             }
 
-            document.getElementById("wikiEditorBodyTextarea").value = "$edHistoryLoadingJs";
+            setEditorContent("$edHistoryLoadingJs");
             fetch(url)
                 .then(r => r.json())
                 .then(data => {
                     const mdVal = (typeof data.markdown === "object" && data.markdown !== null) ? (data.markdown.value || "") : (data.markdown || "");
                     var parsed = parseMarkdownWithYaml(mdVal);
                     populateYamlForm(parsed.meta);
-                    document.getElementById("wikiEditorBodyTextarea").value = parsed.bodyText;
+                    setEditorContent(parsed.bodyText);
                     document.getElementById("rawYamlTextarea").value = parsed.rawYaml;
                 })
                 .catch(err => {
-                    document.getElementById("wikiEditorBodyTextarea").value = "$edBackupLoadErrJs" + err;
+                    setEditorContent("$edBackupLoadErrJs" + err);
                 });
         }
 
