@@ -145,7 +145,7 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
         $styleMatches.Count | Should Be 1
     }
 
-    It "-SingleFile switch exports monolith SPA HTML with Base64 embedded images by default" {
+    It "-SingleFile switch exports monolith HTML with anchor navigation and Base64 embedded images by default" {
         $singleExportDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestSingleFileExport"
         if (Test-Path $singleExportDir) { Remove-Item -Path $singleExportDir -Recurse -Force }
 
@@ -158,19 +158,20 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
             (Test-Path $indexPath) | Should Be $true
 
             $htmlContent = [System.IO.File]::ReadAllText($indexPath)
-            # Verify single page sections exist
-            $htmlContent | Should Match '<section class="wiki-page" id="index"'
+            # Verify single page sections exist and are not hidden
+            $htmlContent | Should Match '<section class="wiki-page" id="index">'
             $htmlContent | Should Match '<section class="wiki-page" id="page_'
+            $htmlContent | Should Not Match 'display: none'
 
             # Verify links rewritten to anchor hash fragments
-            $htmlContent | Should Match 'href="#index" onclick="showPage\(''index'''
+            $htmlContent | Should Match 'href="#index"'
 
-            # Verify SPA JavaScript routing functions are present
-            $htmlContent | Should Match 'function showPage\(pageId'
-            $htmlContent | Should Match 'window\.addEventListener\(''popstate'''
+            # Verify navigation JavaScript functions are present
+            $htmlContent | Should Match 'function updateActiveNav'
+            $htmlContent | Should Match 'window\.addEventListener\(''hashchange'''
 
             # Verify inlined mermaid.min.js is present in Runtime mode
-            $htmlContent | Should Match 'renderMermaidInContainer'
+            $htmlContent | Should Match 'mermaid\.initialize'
 
             # Verify images are embedded as Base64 Data URIs by default
             $htmlContent | Should Match 'src="data:image/png;base64,'

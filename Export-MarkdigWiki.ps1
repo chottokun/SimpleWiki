@@ -195,7 +195,7 @@ function Render-ExportFolderTreeHtml {
             $pageId   = Get-SinglePageId -relPath $relPath
             $isActive = ($pageId -eq "index")
             $activeClass = if ($isActive) { " class='active'" } else { "" }
-            $html += "  <li class='nav-file'><a href='#$pageId' onclick='showPage(&quot;$pageId&quot;); return false;'$activeClass>📄 $encodedTitle</a></li>`n"
+            $html += "  <li class='nav-file'><a href='#$pageId'$activeClass>📄 $encodedTitle</a></li>`n"
         } else {
             $fileHtmlPath = $file.FullName -replace '\.md$', '.html'
             $fileUri      = New-Object System.Uri($fileHtmlPath)
@@ -447,11 +447,25 @@ $commonStyle = @'
     .badge-draft { background: #ffc107; color: #212529; }
     .badge-deprecated { background: #dc3545; color: #fff; }
     .warning-banner { background: #fff3cd; border: 1px solid #ffeeba; color: #856404; padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; }
+
+    /* Single page section divider */
+    html { scroll-behavior: smooth; }
+    .wiki-page { border-bottom: 2px solid #e1e4e8; padding-bottom: 40px; margin-bottom: 40px; }
+    .wiki-page:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
 '@
 
 if ($SingleFile) {
-    # --- モノリス HTML (SPA モード) エキスポート ---
+    # --- モノリス HTML (アンカーナビゲーション方式) エキスポート ---
     $docListTitle = Get-LocalizedStr -Key "doc_list_title" -Lang $exportLang
+
+    # ドキュメントルートの index.md を最優先（先頭）にソート
+    $allMdFiles = @($allMdFiles | Sort-Object {
+        $rel = $_.FullName.Substring($wikiDir.Length).TrimStart('\', '/')
+        if ($rel -eq 'index.md') { 0 }
+        elseif ($rel -eq 'README.md') { 1 }
+        else { 2 }
+    }, FullName)
+
     $sidebarHtml  = Get-ExportSidebarHtml -allMdFiles $allMdFiles -wikiDir $wikiDir -IsSingleFileMode
 
     $pagesHtmlList = [System.Collections.Generic.List[string]]::new()
@@ -469,7 +483,7 @@ if ($SingleFile) {
         $okfFooter   = Get-OkfFooterCardHtml -Meta $meta -Lang $exportLang
         $bodyHtml    = $okfTopBar + $bodyHtml + $okfFooter
 
-        # リンク書き換え (相対 .md / .html リンクを #pageId に変換)
+        # リンク書き換え (相対 .md / .html リンクを #pageId または #anchorId に変換)
         $fileDirNorm = ([System.IO.Path]::GetDirectoryName($relPath)).Replace('\', '/').TrimEnd('/')
 
         $linkPattern = 'href=["'']([^"'':#]+?\.(?:md|html))(?:#([^"'']+))?["'']'
@@ -494,8 +508,8 @@ if ($SingleFile) {
             $resolvedRelPath = $stack -join '/'
             $targetPageId = Get-SinglePageId -relPath $resolvedRelPath
 
-            $anchorArg = if ($anchorId) { ", '$anchorId'" } else { "" }
-            return "href=""#$targetPageId"" onclick=""showPage('$targetPageId'$anchorArg); return false;"""
+            $targetHref = if ($anchorId) { "#$anchorId" } else { "#$targetPageId" }
+            return "href=""$targetHref"""
         }
 
         $bodyHtml = [System.Text.RegularExpressions.Regex]::Replace($bodyHtml, $linkPattern, $evaluator)
@@ -549,9 +563,8 @@ if ($SingleFile) {
             $bodyHtml = Convert-MermaidToSvgMarkup -html $bodyHtml
         }
 
-        $displayStyle = if ($pageId -eq "index") { "block" } else { "none" }
         $pageSection = @"
-<section class="wiki-page" id="$pageId" style="display: $displayStyle;">
+<section class="wiki-page" id="$pageId">
     <div class="markdown-body">
         $bodyHtml
     </div>
@@ -575,92 +588,76 @@ $mermaidJsCode
         }
         $mermaidInitScript = @"
 <script>
-    document.addEventListener("DOMContentLoaded", function() {
-        renderMermaidInContainer(document);
+document.addEventListener("DOMContentLoaded", function() {
+    if (typeof mermaid === "undefined") return;
+    document.querySelectorAll("pre code.language-mermaid").forEach(function(el) {
+        var pre = el.parentElement;
+        var div = document.createElement("div");
+        div.className = "mermaid";
+        div.textContent = (el.textContent || "").replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+        pre.replaceWith(div);
     });
-
-    function renderMermaidInContainer(container) {
-        if (typeof mermaid === "undefined") return;
-        var targets = container.querySelectorAll("pre code.language-mermaid");
-        targets.forEach(function(el) {
-            var pre = el.parentElement;
-            var div = document.createElement("div");
-            div.className = "mermaid";
-            div.textContent = el.textContent;
-            pre.replaceWith(div);
-        });
-        try {
-            mermaid.initialize({ startOnLoad: false, theme: "default" });
-            mermaid.run({ querySelector: ".mermaid" });
-        } catch(e) {
-            console.error("Mermaid initialization error:", e);
-        }
+    document.querySelectorAll("pre.mermaid").forEach(function(pre) {
+        var div = document.createElement("div");
+        div.className = "mermaid";
+        div.textContent = (pre.textContent || "").replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+        pre.replaceWith(div);
+    });
+    try {
+        mermaid.initialize({ startOnLoad: false, theme: "default" });
+        mermaid.run({ nodes: Array.from(document.querySelectorAll(".mermaid:not([data-processed])")) });
+    } catch(e) {
+        console.error("Mermaid initialization error:", e);
     }
+});
 </script>
 "@
     } else {
         $mermaidInitScript = ""
     }
 
-    $spaScript = @"
+    $navScript = @"
 <script>
-function showPage(pageId, anchorId) {
-    // すべてのページコンテナを非表示
-    document.querySelectorAll('.wiki-page').forEach(el => {
-        el.style.display = 'none';
-    });
-    // 該当ページを表示
-    const target = document.getElementById(pageId);
-    if (target) {
-        target.style.display = 'block';
-        if (anchorId) {
-            const anchorEl = document.getElementById(anchorId) || target.querySelector('[id=\"' + anchorId + '\"]');
-            if (anchorEl) {
-                anchorEl.scrollIntoView();
-            } else {
-                window.scrollTo(0, 0);
-            }
-        } else {
-            window.scrollTo(0, 0);
-        }
-    }
-    // アクティブなナビゲーションリンクを切り替え
-    document.querySelectorAll('nav li.nav-file a').forEach(a => {
+function updateActiveNav(hash) {
+    if (!hash) hash = '#index';
+    document.querySelectorAll('nav li.nav-file a').forEach(function(a) {
         a.classList.remove('active');
-        if (a.getAttribute('href') === '#' + pageId) {
+        if (a.getAttribute('href') === hash) {
             a.classList.add('active');
         }
     });
-    // 履歴とハッシュの更新
-    const nextHash = anchorId ? '#' + pageId + '_' + anchorId : '#' + pageId;
-    if (location.hash !== nextHash) {
-        history.pushState(null, '', nextHash);
-    }
 }
 
-// 起動時およびハッシュ変更時のルーティング
-window.addEventListener('popstate', () => {
-    const raw = location.hash.replace('#', '') || 'index';
-    const parts = raw.split('_');
-    const pageId = parts[0] === 'page' ? parts[0] + '_' + parts[1] : parts[0];
-    const anchorId = parts.length > (parts[0] === 'page' ? 2 : 1) ? parts.slice(parts[0] === 'page' ? 2 : 1).join('_') : '';
-    showPage(pageId, anchorId);
+window.addEventListener('hashchange', function() {
+    updateActiveNav(location.hash);
 });
 
-window.addEventListener('hashchange', () => {
-    const raw = location.hash.replace('#', '') || 'index';
-    const parts = raw.split('_');
-    const pageId = parts[0] === 'page' ? parts[0] + '_' + parts[1] : parts[0];
-    const anchorId = parts.length > (parts[0] === 'page' ? 2 : 1) ? parts.slice(parts[0] === 'page' ? 2 : 1).join('_') : '';
-    showPage(pageId, anchorId);
-});
+document.addEventListener("DOMContentLoaded", function() {
+    var initialHash = location.hash || '#index';
+    updateActiveNav(initialHash);
+    if (location.hash) {
+        var targetEl = document.getElementById(location.hash.substring(1));
+        if (targetEl) {
+            setTimeout(function() { targetEl.scrollIntoView(); }, 100);
+        }
+    }
 
-document.addEventListener("DOMContentLoaded", () => {
-    const raw = location.hash.replace('#', '') || 'index';
-    const parts = raw.split('_');
-    const pageId = parts[0] === 'page' ? parts[0] + '_' + parts[1] : parts[0];
-    const anchorId = parts.length > (parts[0] === 'page' ? 2 : 1) ? parts.slice(parts[0] === 'page' ? 2 : 1).join('_') : '';
-    showPage(pageId, anchorId);
+    if ('IntersectionObserver' in window) {
+        var observer = new IntersectionObserver(function(entries) {
+            entries.forEach(function(entry) {
+                if (entry.isIntersecting) {
+                    var id = entry.target.id;
+                    if (id) {
+                        updateActiveNav('#' + id);
+                    }
+                }
+            });
+        }, { rootMargin: '0px 0px -70% 0px' });
+
+        document.querySelectorAll('.wiki-page').forEach(function(sec) {
+            observer.observe(sec);
+        });
+    }
 });
 </script>
 "@
@@ -685,7 +682,7 @@ $mermaidScriptInline
         $allPagesContent
     </main>
     $mermaidInitScript
-    $spaScript
+    $navScript
 </body>
 </html>
 "@
@@ -809,11 +806,21 @@ $commonStyle
             var pre = el.parentElement;
             var div = document.createElement("div");
             div.className = "mermaid";
-            div.textContent = el.textContent;
+            div.textContent = (el.textContent || "").replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+            pre.replaceWith(div);
+        });
+        document.querySelectorAll("pre.mermaid").forEach(function(pre) {
+            var div = document.createElement("div");
+            div.className = "mermaid";
+            div.textContent = (pre.textContent || "").replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
             pre.replaceWith(div);
         });
         if (typeof mermaid !== "undefined") {
-            mermaid.initialize({ startOnLoad: true, theme: "default" });
+            try {
+                mermaid.initialize({ startOnLoad: true, theme: "default" });
+            } catch(e) {
+                console.error("Mermaid initialization error:", e);
+            }
         }
     });
 </script>
