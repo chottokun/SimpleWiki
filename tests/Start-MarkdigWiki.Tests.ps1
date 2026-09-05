@@ -166,11 +166,17 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
             $htmlContent | Should Match 'href="#index" onclick="showPage\(''index''\); return false;"'
 
             # Verify SPA JavaScript routing functions are present
-            $htmlContent | Should Match 'function showPage\(pageId\)'
+            $htmlContent | Should Match 'function showPage\(pageId'
             $htmlContent | Should Match 'window\.addEventListener\(''popstate'''
 
             # Verify inlined mermaid.min.js is present in Runtime mode
             $htmlContent | Should Match 'renderMermaidInContainer'
+
+            # Verify relative image paths from subdirectories are normalized to root
+            $htmlContent | Should Match 'src="images/ui-header\.png"'
+            $htmlContent | Should Match 'src="images/ui-viewer-header\.png"'
+            $htmlContent | Should Not Match 'src="\.\./\.\./images/'
+            $htmlContent | Should Not Match 'src="\.\./images/'
         } finally {
             if (Test-Path $singleExportDir) { Remove-Item -Path $singleExportDir -Recurse -Force }
         }

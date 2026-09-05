@@ -327,7 +327,7 @@ if ($SingleFile) {
         $evaluator = [System.Text.RegularExpressions.MatchEvaluator]{
             param($match)
             $targetPath = $match.Groups[1].Value
-            $hashPart   = $match.Groups[2].Value
+            $anchorId   = if ($match.Groups[2].Success -and -not [string]::IsNullOrWhiteSpace($match.Groups[2].Value)) { $match.Groups[2].Value } else { "" }
 
             # フルパスまたは正規化パスの判定
             $combined = if ([string]::IsNullOrWhiteSpace($fileDirNorm)) { $targetPath } else { "$fileDirNorm/$targetPath" }
@@ -345,10 +345,38 @@ if ($SingleFile) {
             $resolvedRelPath = $stack -join '/'
             $targetPageId = Get-SinglePageId -relPath $resolvedRelPath
 
-            return "href=""#$targetPageId"" onclick=""showPage('$targetPageId'); return false;"""
+            $anchorArg = if ($anchorId) { ", '$anchorId'" } else { "" }
+            return "href=""#$targetPageId"" onclick=""showPage('$targetPageId'$anchorArg); return false;"""
         }
 
         $bodyHtml = [System.Text.RegularExpressions.Regex]::Replace($bodyHtml, $linkPattern, $evaluator)
+
+        # 画像・アセットの相対パス解決 (ルート index.html 基準への正規化)
+        $assetPattern = '((?:src|href)=["''])([^"'':#]+?\.(?:png|jpe?g|gif|svg|webp|ico|pdf|zip|mp4|webm))(["''])'
+        $assetEvaluator = [System.Text.RegularExpressions.MatchEvaluator]{
+            param($match)
+            $prefix    = $match.Groups[1].Value
+            $assetPath = $match.Groups[2].Value
+            $suffix    = $match.Groups[3].Value
+
+            if ($assetPath.StartsWith('/') -or $assetPath.StartsWith('\')) {
+                return $match.Value
+            }
+
+            $combined = if ([string]::IsNullOrWhiteSpace($fileDirNorm)) { $assetPath } else { "$fileDirNorm/$assetPath" }
+            $parts = $combined -split '[\\/]'
+            $stack = [System.Collections.Generic.List[string]]::new()
+            foreach ($p in $parts) {
+                if ($p -eq '..') {
+                    if ($stack.Count -gt 0) { $stack.RemoveAt($stack.Count - 1) }
+                } elseif ($p -ne '.' -and $p -ne '') {
+                    $stack.Add($p)
+                }
+            }
+            $resolvedPath = ($stack -join '/').Replace('\', '/')
+            return "$prefix$resolvedPath$suffix"
+        }
+        $bodyHtml = [System.Text.RegularExpressions.Regex]::Replace($bodyHtml, $assetPattern, $assetEvaluator)
 
         if ($MermaidMode -eq "Svg") {
             $bodyHtml = Convert-MermaidToSvgMarkup -html $bodyHtml
@@ -409,7 +437,7 @@ $mermaidJsCode
 
     $spaScript = @"
 <script>
-function showPage(pageId) {
+function showPage(pageId, anchorId) {
     // すべてのページコンテナを非表示
     document.querySelectorAll('.wiki-page').forEach(el => {
         el.style.display = 'none';
@@ -418,7 +446,16 @@ function showPage(pageId) {
     const target = document.getElementById(pageId);
     if (target) {
         target.style.display = 'block';
-        window.scrollTo(0, 0);
+        if (anchorId) {
+            const anchorEl = document.getElementById(anchorId) || target.querySelector('[id=\"' + anchorId + '\"]');
+            if (anchorEl) {
+                anchorEl.scrollIntoView();
+            } else {
+                window.scrollTo(0, 0);
+            }
+        } else {
+            window.scrollTo(0, 0);
+        }
     }
     // アクティブなナビゲーションリンクを切り替え
     document.querySelectorAll('nav li.nav-file a').forEach(a => {
@@ -428,25 +465,35 @@ function showPage(pageId) {
         }
     });
     // 履歴とハッシュの更新
-    if (location.hash !== '#' + pageId) {
-        history.pushState(null, '', '#' + pageId);
+    const nextHash = anchorId ? '#' + pageId + '_' + anchorId : '#' + pageId;
+    if (location.hash !== nextHash) {
+        history.pushState(null, '', nextHash);
     }
 }
 
 // 起動時およびハッシュ変更時のルーティング
 window.addEventListener('popstate', () => {
-    const hash = location.hash.replace('#', '') || 'index';
-    showPage(hash);
+    const raw = location.hash.replace('#', '') || 'index';
+    const parts = raw.split('_');
+    const pageId = parts[0] === 'page' ? parts[0] + '_' + parts[1] : parts[0];
+    const anchorId = parts.length > (parts[0] === 'page' ? 2 : 1) ? parts.slice(parts[0] === 'page' ? 2 : 1).join('_') : '';
+    showPage(pageId, anchorId);
 });
 
 window.addEventListener('hashchange', () => {
-    const hash = location.hash.replace('#', '') || 'index';
-    showPage(hash);
+    const raw = location.hash.replace('#', '') || 'index';
+    const parts = raw.split('_');
+    const pageId = parts[0] === 'page' ? parts[0] + '_' + parts[1] : parts[0];
+    const anchorId = parts.length > (parts[0] === 'page' ? 2 : 1) ? parts.slice(parts[0] === 'page' ? 2 : 1).join('_') : '';
+    showPage(pageId, anchorId);
 });
 
 document.addEventListener("DOMContentLoaded", () => {
-    const hash = location.hash.replace('#', '') || 'index';
-    showPage(hash);
+    const raw = location.hash.replace('#', '') || 'index';
+    const parts = raw.split('_');
+    const pageId = parts[0] === 'page' ? parts[0] + '_' + parts[1] : parts[0];
+    const anchorId = parts.length > (parts[0] === 'page' ? 2 : 1) ? parts.slice(parts[0] === 'page' ? 2 : 1).join('_') : '';
+    showPage(pageId, anchorId);
 });
 </script>
 "@
