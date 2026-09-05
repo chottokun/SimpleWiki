@@ -136,6 +136,64 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
         $htmlContent | Should Match "class=""okf-top-bar"""
         $htmlContent | Should Match "class=""okf-footer-card"""
     }
+
+    It "-SingleFile switch exports monolith SPA HTML with inline styles and JS routing" {
+        $singleExportDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestSingleFileExport"
+        if (Test-Path $singleExportDir) { Remove-Item -Path $singleExportDir -Recurse -Force }
+
+        try {
+            $exportScript = Join-Path $projectRoot "Export-MarkdigWiki.ps1"
+            $sampleDir    = Join-Path $projectRoot "markdown_sample"
+            & $exportScript -RootFolder $sampleDir -OutputDir $singleExportDir -SingleFile -MermaidMode "Runtime"
+
+            $indexPath = Join-Path $singleExportDir "index.html"
+            (Test-Path $indexPath) | Should Be $true
+
+            $htmlContent = [System.IO.File]::ReadAllText($indexPath)
+            # Verify single page sections exist
+            $htmlContent | Should Match '<section class="wiki-page" id="index"'
+            $htmlContent | Should Match '<section class="wiki-page" id="page_'
+
+            # Verify links rewritten to anchor hash fragments
+            $htmlContent | Should Match 'href="#index" onclick="showPage\(''index''\); return false;"'
+
+            # Verify SPA JavaScript routing functions are present
+            $htmlContent | Should Match 'function showPage\(pageId\)'
+            $htmlContent | Should Match 'window\.addEventListener\(''popstate'''
+
+            # Verify inlined mermaid.min.js is present in Runtime mode
+            $htmlContent | Should Match 'renderMermaidInContainer'
+        } finally {
+            if (Test-Path $singleExportDir) { Remove-Item -Path $singleExportDir -Recurse -Force }
+        }
+    }
+
+    It "-MermaidMode Svg mode transforms mermaid code blocks and omits mermaid.min.js" {
+        $svgExportDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestSvgExport"
+        if (Test-Path $svgExportDir) { Remove-Item -Path $svgExportDir -Recurse -Force }
+
+        try {
+            $exportScript = Join-Path $projectRoot "Export-MarkdigWiki.ps1"
+            $sampleDir    = Join-Path $projectRoot "markdown_sample"
+            & $exportScript -RootFolder $sampleDir -OutputDir $svgExportDir -MermaidMode "Svg"
+
+            # Check that mermaid.min.js was NOT copied to output directory
+            $mermaidLibPath = Join-Path (Join-Path $svgExportDir "lib") "mermaid.min.js"
+            (Test-Path $mermaidLibPath) | Should Be $false
+
+            # Check that mermaid code blocks were converted to SVG containers in HTML files
+            $specHtmlPath = Join-Path (Join-Path $svgExportDir "docs") "詳細仕様.html"
+            (Test-Path $specHtmlPath) | Should Be $true
+            if (Test-Path $specHtmlPath) {
+                $htmlContent = [System.IO.File]::ReadAllText($specHtmlPath)
+                $htmlContent | Should Match 'class="mermaid-svg"'
+                $htmlContent | Should Match '<svg '
+                $htmlContent | Should Not Match '<script src=".*?mermaid.min.js">'
+            }
+        } finally {
+            if (Test-Path $svgExportDir) { Remove-Item -Path $svgExportDir -Recurse -Force }
+        }
+    }
 }
 
 Describe 'OKF Metadata Extraction and Fallback Tests (Get-DocumentMetadata)' {
