@@ -31,6 +31,6 @@ related:
 - 項目2
 
 ```mermaid
-graph TD
-    A[開始] --> B[処理実行] --> C[完了]
+flowchart TD
+    A["開始"] --> B["処理実行"] --> C["完了"]
 ```

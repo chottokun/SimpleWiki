@@ -45,9 +45,9 @@ SimpleWiki を RAG のナレッジデータソース（Producer）として利�
 ```mermaid
 sequenceDiagram
     autonumber
-    participant RAG as RAG インデクサー (Python/LangChain)
-    participant Wiki as SimpleWiki API Server
-    participant VectorDB as ベクトル DB (Chroma/Qdrant)
+    participant RAG as "RAG インデクサー (Python/LangChain)"
+    participant Wiki as "SimpleWiki API Server"
+    participant VectorDB as "ベクトル DB (Chroma/Qdrant)"
 
     note over RAG,Wiki: パターン A: 事前チャンク化 API (/api/chunks.json) を利用
     RAG->>Wiki: GET /api/chunks.json
