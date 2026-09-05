@@ -2664,4 +2664,19 @@ Describe "Refactoring Specific Behavior Tests" {
         $layoutHtml | Should Match 'id="wikiEditorModal"'
         $layoutHtml | Should Match 'shutdownWikiServer'
     }
+
+    It "Get-WikiEditorModalHtml binds i18n texts without unexpanded variable strings" {
+        $editorHtmlJa = Get-WikiEditorModalHtml -Lang "ja"
+        $editorHtmlJa | Should Match "Markdown"
+        $editorHtmlJa | Should Match "OKF"
+        $editorHtmlJa | Should Not Match '\$edTitle'
+        $editorHtmlJa | Should Not Match '\$edLatest'
+        $editorHtmlJa | Should Not Match '\$edLoadingJs'
+
+        $editorHtmlEn = Get-WikiEditorModalHtml -Lang "en"
+        $editorHtmlEn | Should Match "Markdown Editor"
+        $editorHtmlEn | Should Match "Latest"
+        $editorHtmlEn | Should Not Match '\$edTitle'
+        $editorHtmlEn | Should Not Match '\$edLatest'
+    }
 }

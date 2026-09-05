@@ -32,7 +32,6 @@ $libDir = Join-Path $scriptDir "lib"
 
 # ドキュメントルートの設定 (指定がない場合は markdown_sample フォルダ、存在しない場合は $PSScriptRoot)
 $wikiDir     = Get-WikiDir -RootFolder $RootFolder -TargetScriptDir $scriptDir
-$fullWikiDir = $wikiDir.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
 
 # --- Markdig.dll および依存ライブラリのロード ---
 $markdigDll = Join-Path $libDir "Markdig.dll"
@@ -101,7 +100,9 @@ if ($initCfg.search -and $initCfg.search.prebuildIndex -eq $true) {
 $cancelHandler = $null
 try {
     $cancelHandler = [System.ConsoleCancelEventHandler]{
-        param($sender, $e)
+        param($evtSender, $evtArgs)
+        $null = $evtSender
+        $null = $evtArgs
         Write-Host "`nサーバーを停止しています..." -ForegroundColor Yellow
         if ($bgIndexingJob) {
             try { Stop-Job -Job $bgIndexingJob -ErrorAction SilentlyContinue } catch { $null = $_ }

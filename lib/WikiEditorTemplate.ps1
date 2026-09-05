@@ -11,7 +11,6 @@ function Get-WikiEditorModalHtml {
     $todayStr           = (Get-Date).ToString("yyyy-MM-dd")
     $edTitle            = Get-LocalizedStr -Key "editor_title" -Lang $Lang
     $edLatest           = Get-LocalizedStr -Key "editor_latest_version" -Lang $Lang
-    $edHolder           = Get-LocalizedStr -Key "editor_placeholder" -Lang $Lang
     $edCancel           = Get-LocalizedStr -Key "editor_cancel_btn" -Lang $Lang
     $edSave             = Get-LocalizedStr -Key "editor_save_btn" -Lang $Lang
     $edMetaSectionTitle = Get-LocalizedStr -Key "editor_meta_section_title" -Lang $Lang
@@ -44,7 +43,7 @@ function Get-WikiEditorModalHtml {
     $edSavedWarningJs   = ConvertTo-JsString (Get-LocalizedStr -Key "editor_saved_warning" -Lang $Lang)
     $edSavedJs          = ConvertTo-JsString (Get-LocalizedStr -Key "editor_saved" -Lang $Lang)
 
-    return @'
+    $html = @'
     <!-- Wiki Editor Modal -->
     <div id="wikiEditorModal" class="wiki-editor-modal">
         <div class="wiki-editor-container">
@@ -535,4 +534,45 @@ function Get-WikiEditorModalHtml {
         });
     </script>
 '@
+
+    $tokens = [ordered]@{
+        '$edTitle'            = $edTitle
+        '$edLatest'           = $edLatest
+        '$edCancel'           = $edCancel
+        '$edSave'             = $edSave
+        '$edMetaSectionTitle' = $edMetaSectionTitle
+        '$edModeForm'         = $edModeForm
+        '$edModeRaw'          = $edModeRaw
+        '$edFieldType'        = $edFieldType
+        '$edFieldTitle'       = $edFieldTitle
+        '$edFieldStatus'      = $edFieldStatus
+        '$edStatusDraft'      = $edStatusDraft
+        '$edStatusStable'     = $edStatusStable
+        '$edStatusDeprecated' = $edStatusDeprecated
+        '$edFieldVersion'     = $edFieldVersion
+        '$edFieldDomain'      = $edFieldDomain
+        '$edFieldAuthor'      = $edFieldAuthor
+        '$edFieldReviewer'    = $edFieldReviewer
+        '$edFieldLastUpdated' = $edFieldLastUpdated
+        '$edSetToday'         = $edSetToday
+        '$edFieldDesc'        = $edFieldDesc
+        '$edFieldTags'        = $edFieldTags
+        '$edFieldRelated'     = $edFieldRelated
+        '$edFieldSuperseded'  = $edFieldSuperseded
+        '$edAutoDate'         = $edAutoDate
+        '$edBodyPlaceholder'  = $edBodyPlaceholder
+        '$edShortcutHint'     = $edShortcutHint
+        '$edLoadingJs'        = $edLoadingJs
+        '$edHistoryLoadingJs' = $edHistoryLoadingJs
+        '$edLoadErrorJs'      = $edLoadErrorJs
+        '$edBackupLoadErrJs'  = $edBackupLoadErrJs
+        '$edSavedWarningJs'   = $edSavedWarningJs
+        '$edSavedJs'          = $edSavedJs
+    }
+
+    foreach ($entry in $tokens.GetEnumerator()) {
+        $html = $html.Replace($entry.Key, [string]$entry.Value)
+    }
+
+    return $html
 }

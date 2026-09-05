@@ -23,6 +23,7 @@ function Write-SafeHttpResponse {
 }
 
 function Invoke-WikiRouteRequest {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingWriteHost", "")]
     param (
         [Parameter(Mandatory = $true)][System.Net.HttpListenerContext]$Context,
         [string]$WikiDir = "",
