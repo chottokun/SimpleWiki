@@ -2646,4 +2646,22 @@ Describe "Refactoring Specific Behavior Tests" {
         $html | Should Match "/docs/outdated.md"
         $html | Should Match "\(2020-01-01\)"
     }
+
+    It "Get-WikiEditorModalHtml generates editor modal HTML structure and JS functions" {
+        $editorHtml = Get-WikiEditorModalHtml -Lang "ja"
+        $editorHtml | Should Match 'id="wikiEditorModal"'
+        $editorHtml | Should Match 'id="yamlFormContainer"'
+        $editorHtml | Should Match 'id="yamlRawContainer"'
+        $editorHtml | Should Match 'function parseMarkdownWithYaml'
+        $editorHtml | Should Match 'function populateYamlForm'
+        $editorHtml | Should Match 'function generateMarkdownWithYaml'
+    }
+
+    It "Get-MainViewHtml renders full page HTML layout incorporating editor modal" {
+        $layoutHtml = Get-MainViewHtml -PageTitle "Test Title" -BodyContent "<p>Test Body</p>" -RelPath "index.md" -Lang "ja"
+        $layoutHtml | Should Match '<!DOCTYPE html>'
+        $layoutHtml | Should Match '<title>Test Title - .*SimpleWiki OKF</title>'
+        $layoutHtml | Should Match 'id="wikiEditorModal"'
+        $layoutHtml | Should Match 'shutdownWikiServer'
+    }
 }
