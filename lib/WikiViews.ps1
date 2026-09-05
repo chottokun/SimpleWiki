@@ -1754,14 +1754,14 @@ function Get-MainViewHtml {
         [string]$BodyContent = "",
         [string]$RelPath = "",
         [string]$Lang = "ja",
-        [hashtable]$Config = @{}
+        $Config = $null
     )
 
     $sidebarHtml     = Get-SidebarHtml -currentRelPath $RelPath -Lang $Lang
     $editorModalHtml = Get-WikiEditorModalHtml -Lang $Lang
 
     $chatWidgetHtml = ""
-    if ($Config.rag -and $Config.rag.enabled) {
+    if ($Config -and $Config.rag -and $Config.rag.enabled) {
         $chatWidgetHtml = Get-ChatWidgetHtml -Lang $Lang
     }
 

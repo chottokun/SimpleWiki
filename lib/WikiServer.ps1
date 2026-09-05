@@ -778,6 +778,15 @@ function Invoke-WikiRouteRequest {
             Write-SafeHttpResponse -Response $response -Bytes $notFoundBytes -StatusCode 404
             return $false
         }
+    } catch {
+        Write-Warning "Request processing error: $_"
+        try {
+            $errBytes = [System.Text.Encoding]::UTF8.GetBytes("<h1>500 Internal Server Error</h1>")
+            Write-SafeHttpResponse -Response $response -Bytes $errBytes -StatusCode 500
+        } catch {
+            $null = $_
+        }
+        return $false
     } finally {
         try { $response.Close() } catch { $null = $_ }
     }

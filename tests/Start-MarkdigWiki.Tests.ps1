@@ -2679,4 +2679,15 @@ Describe "Refactoring Specific Behavior Tests" {
         $editorHtmlEn | Should Not Match '\$edTitle'
         $editorHtmlEn | Should Not Match '\$edLatest'
     }
+
+    It "Get-MainViewHtml binds PSCustomObject Config without parameter binding exceptions" {
+        $customConfig = [PSCustomObject]@{
+            editor = [PSCustomObject]@{ enabled = $true }
+            rag    = [PSCustomObject]@{ enabled = $false }
+        }
+        {
+            $layoutHtml = Get-MainViewHtml -PageTitle "Config Test" -BodyContent "<p>Content</p>" -RelPath "index.md" -Lang "ja" -Config $customConfig
+            $layoutHtml | Should Match "Config Test"
+        } | Should Not Throw
+    }
 }
