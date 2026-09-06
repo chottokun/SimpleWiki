@@ -268,10 +268,10 @@ function Get-DocumentMetadata {
 
     $status = switch ($rawStatus) {
         "active"      { "active" }
+        "stable"      { "stable" }
         "draft"       { "draft" }
         "deprecated"  { "deprecated" }
         "archived"    { "archived" }
-        "stable"      { "active" }
         "wip"         { "draft" }
         "review"      { "draft" }
         "in-review"   { "draft" }
@@ -348,7 +348,8 @@ function Get-DocumentMetadata {
     }
 }
 
-function Calculate-WikiNodeCoordinates {
+function Measure-WikiNodeCoordinates {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param (
         [array]$DocList = @(),
         [int]$CanvasWidth = 1000,
@@ -440,6 +441,7 @@ function Calculate-WikiNodeCoordinates {
 
     return @($DocList)
 }
+Set-Alias -Name Calculate-WikiNodeCoordinates -Value Measure-WikiNodeCoordinates -ErrorAction SilentlyContinue
 
 function Get-GlossaryTerms {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]

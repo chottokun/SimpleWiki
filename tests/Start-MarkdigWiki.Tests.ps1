@@ -433,7 +433,7 @@ related:
 
         # TopBar and Footer HTML rendering
         $topBar = Get-OkfTopBarHtml -Meta $meta -Lang "ja"
-        $topBar | Should Match "✅ Active"
+        $topBar | Should Match "🌟 Stable"
         $topBar | Should Match "v0.2.0"
 
         $footer = Get-OkfFooterCardHtml -Meta $meta -Lang "ja"
@@ -3046,7 +3046,7 @@ status: invalid_unknown_status
             [PSCustomObject]@{ Title = "Doc C"; RelPath = "c.md"; Domain = "domain2"; Status = "draft"; Links = @() }
         )
 
-        $placedDocs = Calculate-WikiNodeCoordinates -DocList $docs
+        $placedDocs = Measure-WikiNodeCoordinates -DocList $docs
         $placedDocs.Count | Should Be 3
         foreach ($d in $placedDocs) {
             ($null -ne $d.X) | Should Be $true

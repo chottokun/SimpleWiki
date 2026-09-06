@@ -221,12 +221,27 @@ function Load-WikiIndexCache {
                 $updatedAt = $lastUpdated
             }
 
+            $cleanTags = @(if ($item.Tags -and ($item.Tags -isnot [System.Management.Automation.PSCustomObject])) {
+                foreach ($t in $item.Tags) {
+                    if ($t -is [string] -and -not [string]::IsNullOrWhiteSpace($t)) { $t.Trim() }
+                }
+            })
+
+            $cleanLinks = @(if ($item.Links -and ($item.Links -isnot [System.Management.Automation.PSCustomObject])) {
+                foreach ($l in $item.Links) {
+                    if ($l -is [string] -and -not [string]::IsNullOrWhiteSpace($l)) { $l.Trim() }
+                }
+            })
+
+            $cleanContributors = if ($item.Contributors -and ($item.Contributors -isnot [System.Management.Automation.PSCustomObject])) { @($item.Contributors) } else { @() }
+            $cleanRelated      = if ($item.Related -and ($item.Related -isnot [System.Management.Automation.PSCustomObject])) { @($item.Related) } else { @() }
+
             $psObj = [PSCustomObject]@{
                 Title        = $item.Title
                 Description  = $item.Description
                 Author       = $item.Author
                 Domain       = $item.Domain
-                Tags         = @($item.Tags)
+                Tags         = $cleanTags
                 LastUpdated  = $lastUpdated
                 CreatedAt    = $createdAt
                 UpdatedAt    = $updatedAt
@@ -237,9 +252,9 @@ function Load-WikiIndexCache {
                 TrustTier    = $item.TrustTier
                 Provenance   = $item.Provenance
                 Computations = $item.Computations
-                Contributors = $item.Contributors
-                Related      = $item.Related
-                Links        = @($item.Links)
+                Contributors = $cleanContributors
+                Related      = $cleanRelated
+                Links        = $cleanLinks
                 HasYaml      = [bool]$item.HasYaml
                 RelPath      = $item.RelPath
                 FullPath     = $item.FullPath
@@ -384,7 +399,7 @@ function Build-WikiIndex {
             }
         }
     } finally {
-        $placedIndex = Calculate-WikiNodeCoordinates -DocList $indexList.ToArray()
+        $placedIndex = Measure-WikiNodeCoordinates -DocList $indexList.ToArray()
         $script:WikiIndex = $placedIndex
         $script:WikiIndexDirWriteTime = $currentWriteTime
         $script:WikiIndexLastScan = Get-Date

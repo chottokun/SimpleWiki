@@ -769,7 +769,7 @@ function Get-SearchViewHtml {
         $tagsHtml = ""
         if ($item.Tags -and $item.Tags.Count -gt 0) {
             $badges = foreach ($t in $item.Tags) {
-                if ([string]::IsNullOrWhiteSpace($t)) { continue }
+                if ($t -isnot [string] -or [string]::IsNullOrWhiteSpace($t)) { continue }
                 $encT = [System.Net.WebUtility]::HtmlEncode([string]$t)
                 "<span class='tag-badge'>🏷️ $encT</span>"
             }
@@ -1733,7 +1733,7 @@ function Get-StellaControlPanelHtml {
     foreach ($item in $script:WikiIndex) {
         if ($item.Tags) {
             foreach ($t in $item.Tags) {
-                if (-not [string]::IsNullOrWhiteSpace($t)) { [void]$allTags.Add($t) }
+                if ($t -is [string] -and -not [string]::IsNullOrWhiteSpace($t)) { [void]$allTags.Add($t.Trim()) }
             }
         }
     }
@@ -2076,7 +2076,11 @@ function Get-TimelineViewHtml {
 
     $tagsSet = [System.Collections.Generic.HashSet[string]]::new()
     foreach ($d in $docs) {
-        if ($d.Tags) { foreach ($t in $d.Tags) { [void]$tagsSet.Add($t) } }
+        if ($d.Tags) {
+            foreach ($t in $d.Tags) {
+                if ($t -is [string] -and -not [string]::IsNullOrWhiteSpace($t)) { [void]$tagsSet.Add($t.Trim()) }
+            }
+        }
     }
     if ($tagsSet.Count -eq 0) { [void]$tagsSet.Add("Uncategorized") }
     $sortedTags = @($tagsSet | Sort-Object)
@@ -2248,6 +2252,8 @@ function Get-MainViewHtml {
     $navAuthors   = Get-LocalizedStr -Key "authors" -Lang $Lang
     $navSettings  = Get-LocalizedStr -Key "settings" -Lang $Lang
     $navApi       = Get-LocalizedStr -Key "api_json" -Lang $Lang
+    $navStella    = Get-LocalizedStr -Key "stella_view_nav" -Lang $Lang
+    $navTimeline  = Get-LocalizedStr -Key "timeline_view_nav" -Lang $Lang
     $searchHolder = Get-LocalizedStr -Key "search_placeholder" -Lang $Lang
     $searchBtnTxt = Get-LocalizedStr -Key "search_btn" -Lang $Lang
     $docListTitle = Get-LocalizedStr -Key "doc_list_title" -Lang $Lang
@@ -2379,8 +2385,8 @@ function Get-MainViewHtml {
         <a href="/" class="brand">📖 {20}</a>
         <nav class="top-nav">
             <a href="/">{3}</a>
-            <a href="/stella">🌌 Stella View</a>
-            <a href="/timeline">⏳ Timeline</a>
+            <a href="/stella">{25}</a>
+            <a href="/timeline">{26}</a>
             <a href="/recent">{4}</a>
             <a href="/tags">{5}</a>
             <a href="/maintenance">{6}</a>
@@ -2460,7 +2466,7 @@ function Get-MainViewHtml {
 </html>
 '@
 
-    $fullHtml = $template.Replace("{0}", $PageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $BodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{18}", $Lang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{31}", $searchLoadingTxtJs).Replace("{222}", $editorModalHtml)
+    $fullHtml = $template.Replace("{0}", $PageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $BodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{18}", $Lang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $navStella).Replace("{26}", $navTimeline).Replace("{31}", $searchLoadingTxtJs).Replace("{222}", $editorModalHtml)
 
     if (-not [string]::IsNullOrWhiteSpace($chatWidgetHtml)) {
         $fullHtml = $fullHtml.Replace("</body>", "$chatWidgetHtml`n</body>")
