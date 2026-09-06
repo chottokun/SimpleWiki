@@ -261,9 +261,22 @@ function Get-DocumentMetadata {
         }
     }
 
-    $status = "active"
+    $rawStatus = "active"
     if ($yamlDict.ContainsKey("status") -and -not [string]::IsNullOrWhiteSpace($yamlDict["status"])) {
-        $status = $yamlDict["status"].ToString().ToLower().Trim()
+        $rawStatus = $yamlDict["status"].ToString().ToLower().Trim()
+    }
+
+    $status = switch ($rawStatus) {
+        "active"      { "active" }
+        "stable"      { "stable" }
+        "draft"       { "draft" }
+        "deprecated"  { "deprecated" }
+        "archived"    { "archived" }
+        "wip"         { "draft" }
+        "review"      { "draft" }
+        "in-review"   { "draft" }
+        "obsolete"    { "deprecated" }
+        default       { "active" }
     }
 
     $version = if ($yamlDict.ContainsKey("version") -and -not [string]::IsNullOrWhiteSpace($yamlDict["version"])) { $yamlDict["version"].ToString().Trim() } else { "" }
@@ -286,7 +299,25 @@ function Get-DocumentMetadata {
     }
 
     $contributors = Get-YamlListProperty -YamlDict $yamlDict -Key "contributors"
-    $related = Get-YamlListProperty -YamlDict $yamlDict -Key "related"
+    $related      = Get-YamlListProperty -YamlDict $yamlDict -Key "related"
+    $links        = Get-YamlListProperty -YamlDict $yamlDict -Key "links"
+
+    $createdAt = $null
+    if ($yamlDict.ContainsKey("created_at") -and -not [string]::IsNullOrWhiteSpace($yamlDict["created_at"])) {
+        try { $createdAt = [DateTime]::Parse($yamlDict["created_at"]) } catch {}
+    }
+
+    $updatedAt = $lastUpdated
+    if ($yamlDict.ContainsKey("updated_at") -and -not [string]::IsNullOrWhiteSpace($yamlDict["updated_at"])) {
+        try { $updatedAt = [DateTime]::Parse($yamlDict["updated_at"]) } catch {}
+    }
+
+    if ($null -eq $createdAt) {
+        $createdAt = if ($updatedAt) { $updatedAt } elseif ($lastUpdated) { $lastUpdated } else { Get-Date }
+    }
+    if ($null -eq $updatedAt) {
+        $updatedAt = if ($lastUpdated) { $lastUpdated } else { Get-Date }
+    }
 
     return [PSCustomObject]@{
         Title        = $title
@@ -295,6 +326,8 @@ function Get-DocumentMetadata {
         Domain       = $domain
         Tags         = $tags
         LastUpdated  = $lastUpdated
+        CreatedAt    = $createdAt
+        UpdatedAt    = $updatedAt
         Status       = $status
         Version      = $version
         Reviewer     = $reviewer
@@ -304,13 +337,170 @@ function Get-DocumentMetadata {
         Computations = $computations
         Contributors = $contributors
         Related      = $related
+        Links        = $links
         HasYaml      = $hasYaml
         RelPath      = $RelPath
         FullPath     = if ($File) { $File.FullName } else { "" }
         BodyText     = $bodyText
         RawYamlDict  = $yamlDict
+        X            = 0
+        Y            = 0
     }
 }
+
+function Measure-WikiNodeCoordinates {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
+    param (
+        [array]$DocList = @(),
+        [int]$CanvasWidth = 1000,
+        [int]$CanvasHeight = 800,
+        [double]$MinDistance = 45.0
+    )
+
+    if ($null -eq $DocList -or $DocList.Count -eq 0) {
+        return @()
+    }
+
+    $docCount = $DocList.Count
+
+    # ドキュメント数に応じた仮想キャンバスの動的スケーリング (過密防止)
+    $scaleUnit = 1.0
+    if ($docCount -gt 25) {
+        $scaleUnit = [Math]::Sqrt($docCount / 25.0)
+        $CanvasWidth = [int][Math]::Max($CanvasWidth, [Math]::Round($CanvasWidth * $scaleUnit))
+        $CanvasHeight = [int][Math]::Max($CanvasHeight, [Math]::Round($CanvasHeight * $scaleUnit))
+    }
+
+    $centerX = [int]($CanvasWidth / 2)
+    $centerY = [int]($CanvasHeight / 2)
+    $maxRadius = [Math]::Min($CanvasWidth, $CanvasHeight) * 0.42
+
+    # 1. 共通タグおよび関連文書 (related) による親和性スコアとクラスタの計算
+    $totalAffinity = @{}
+
+    for ($i = 0; $i -lt $docCount; $i++) {
+        $d1 = $DocList[$i]
+        $r1 = if ($d1.RelPath) { $d1.RelPath.Replace('\', '/').ToLower() } else { $i.ToString() }
+        if (-not $totalAffinity.ContainsKey($r1)) { $totalAffinity[$r1] = 0 }
+        $tags1 = @(if ($d1.Tags) { foreach ($t in $d1.Tags) { if ($t -is [string] -and -not [string]::IsNullOrWhiteSpace($t)) { $t.Trim().ToLower() } } })
+
+        for ($j = $i + 1; $j -lt $docCount; $j++) {
+            $d2 = $DocList[$j]
+            $r2 = if ($d2.RelPath) { $d2.RelPath.Replace('\', '/').ToLower() } else { $j.ToString() }
+            if (-not $totalAffinity.ContainsKey($r2)) { $totalAffinity[$r2] = 0 }
+            $tags2 = @(if ($d2.Tags) { foreach ($t in $d2.Tags) { if ($t -is [string] -and -not [string]::IsNullOrWhiteSpace($t)) { $t.Trim().ToLower() } } })
+
+            $score = 0
+            foreach ($t in $tags1) {
+                if ($tags2 -contains $t) { $score += 3 }
+            }
+            if ($d1.Related -and ($d1.Related -contains $d2.RelPath -or $d1.Related -contains $r2)) { $score += 5 }
+            if ($d2.Related -and ($d2.Related -contains $d1.RelPath -or $d2.Related -contains $r1)) { $score += 5 }
+            if ($d1.Domain -and $d2.Domain) {
+                if ($d1.Domain.ToLower() -eq $d2.Domain.ToLower()) {
+                    $score += 2
+                } else {
+                    $dom1Parent = ($d1.Domain -split '[\\/]')[0].ToLower()
+                    $dom2Parent = ($d2.Domain -split '[\\/]')[0].ToLower()
+                    if ($dom1Parent -eq $dom2Parent) { $score += 1 }
+                }
+            }
+
+            if ($score -gt 0) {
+                $totalAffinity[$r1] += $score
+                $totalAffinity[$r2] += $score
+            }
+        }
+    }
+
+    # 2. 親和性スコアが高いノード（知識のハブ文書）を中心に、関連ノードを周囲に配置
+    $sortedDocs = @($DocList | Sort-Object -Descending {
+        $r = if ($_.RelPath) { $_.RelPath.Replace('\', '/').ToLower() } else { "" }
+        if ($totalAffinity.ContainsKey($r)) { $totalAffinity[$r] } else { 0 }
+    })
+
+    $domainGroups = @($DocList | Group-Object Domain | Sort-Object Count -Descending)
+    $domainAngles = @{}
+    $dCount = $domainGroups.Count
+    if ($dCount -eq 0) { $dCount = 1 }
+    for ($d = 0; $d -lt $dCount; $d++) {
+        $domainAngles[$domainGroups[$d].Name] = (2 * [Math]::PI / $dCount) * $d
+    }
+
+    $placedNodes = [System.Collections.Generic.List[PSObject]]::new()
+
+    for ($i = 0; $i -lt $docCount; $i++) {
+        $doc = $sortedDocs[$i]
+        $r = if ($doc.RelPath) { $doc.RelPath.Replace('\', '/').ToLower() } else { "" }
+        $aff = if ($totalAffinity.ContainsKey($r)) { $totalAffinity[$r] } else { 0 }
+
+        if ($i -eq 0 -and $aff -gt 0) {
+            $posX = $centerX
+            $posY = $centerY
+        } else {
+            $baseAngle = if ($domainAngles.ContainsKey($doc.Domain)) { $domainAngles[$doc.Domain] } else { ($i * 2.39996) }
+            $distFromCenter = if ($aff -ge 8) {
+                90 + ($i * 10)
+            } elseif ($aff -gt 0) {
+                160 + ($i * 9)
+            } else {
+                240 + ($i * 7)
+            }
+            $distFromCenter = [Math]::Min($maxRadius, [double]$distFromCenter)
+            $jitterAngle = $baseAngle + ((($i % 5) - 2) * 0.28)
+
+            $posX = [Math]::Round($centerX + ($distFromCenter * [Math]::Cos($jitterAngle)))
+            $posY = [Math]::Round($centerY + ($distFromCenter * [Math]::Sin($jitterAngle)))
+        }
+
+        # 衝突回避（重なり防止）
+        $hasCollision = $true
+        $attempts = 0
+        while ($hasCollision -and $attempts -lt 50) {
+            $hasCollision = $false
+            foreach ($pn in $placedNodes) {
+                $dx = $posX - $pn.X
+                $dy = $posY - $pn.Y
+                $dist = [Math]::Sqrt(($dx * $dx) + ($dy * $dy))
+                if ($dist -lt $MinDistance) {
+                    $hasCollision = $true
+                    $overlap = $MinDistance - $dist + 1.0
+                    if ($dist -gt 0) {
+                        $posX += [Math]::Round(($dx / $dist) * $overlap)
+                        $posY += [Math]::Round(($dy / $dist) * $overlap)
+                    } else {
+                        $posX += [Math]::Round($MinDistance)
+                    }
+                    break
+                }
+            }
+            $attempts++
+        }
+
+        $posX = [Math]::Max(50, [Math]::Min($CanvasWidth - 50, $posX))
+        $posY = [Math]::Max(50, [Math]::Min($CanvasHeight - 50, $posY))
+
+        if ($doc.PSObject -and $doc.PSObject.Properties["X"]) {
+            $doc.X = [int]$posX
+        } else {
+            Add-Member -InputObject $doc -NotePropertyName X -NotePropertyValue ([int]$posX) -Force
+        }
+
+        if ($doc.PSObject -and $doc.PSObject.Properties["Y"]) {
+            $doc.Y = [int]$posY
+        } else {
+            Add-Member -InputObject $doc -NotePropertyName Y -NotePropertyValue ([int]$posY) -Force
+        }
+
+        $doc.X = [int]$posX
+        $doc.Y = [int]$posY
+
+        [void]$placedNodes.Add($doc)
+    }
+
+    return @($DocList)
+}
+Set-Alias -Name Calculate-WikiNodeCoordinates -Value Measure-WikiNodeCoordinates -ErrorAction SilentlyContinue
 
 function Get-GlossaryTerms {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]

@@ -324,6 +324,9 @@ function Get-ApiIndexJson {
 
     $exportItems = @(foreach ($item in $slicedItems) {
         $lastUpdStr = if ($item.LastUpdated -is [DateTime]) { $item.LastUpdated.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $item.LastUpdated }
+        $createdStr = if ($item.CreatedAt -is [DateTime]) { $item.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $item.CreatedAt }
+        $updatedStr = if ($item.UpdatedAt -is [DateTime]) { $item.UpdatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $item.UpdatedAt }
+
         $fullObj = [PSCustomObject]@{
             Title       = $item.Title
             Description = $item.Description
@@ -331,9 +334,14 @@ function Get-ApiIndexJson {
             Domain      = $item.Domain
             Tags        = $item.Tags
             LastUpdated = $lastUpdStr
+            CreatedAt   = $createdStr
+            UpdatedAt   = $updatedStr
             Status      = $item.Status
             HasYaml     = $item.HasYaml
             RelPath     = $item.RelPath
+            Links       = $item.Links
+            X           = if ($null -ne $item.X) { [int]$item.X } else { 0 }
+            Y           = if ($null -ne $item.Y) { [int]$item.Y } else { 0 }
         }
 
         if ($fields -and $fields.Count -gt 0) {
@@ -761,7 +769,7 @@ function Get-SearchViewHtml {
         $tagsHtml = ""
         if ($item.Tags -and $item.Tags.Count -gt 0) {
             $badges = foreach ($t in $item.Tags) {
-                if ([string]::IsNullOrWhiteSpace($t)) { continue }
+                if ($t -isnot [string] -or [string]::IsNullOrWhiteSpace($t)) { continue }
                 $encT = [System.Net.WebUtility]::HtmlEncode([string]$t)
                 "<span class='tag-badge'>🏷️ $encT</span>"
             }
@@ -1699,6 +1707,807 @@ function clearAllCachesNow() {
 "@
 }
 
+# --- コントロールパネル ＆ ステラビュー ＆ タイムライン描画関数 ---
+
+function Get-StellaControlPanelHtml {
+    param (
+        [string]$ActiveView = "stella", # "stella" または "timeline"
+        [string]$Lang = "ja"
+    )
+
+    Ensure-WikiIndexLoaded -TargetWikiDir $wikiDir
+
+    $navStella   = Get-LocalizedStr -Key "stella_view_nav" -Lang $Lang
+    $navTimeline = Get-LocalizedStr -Key "timeline_view_nav" -Lang $Lang
+    $searchHolder= Get-LocalizedStr -Key "stella_search_holder" -Lang $Lang
+
+    $stAll       = Get-LocalizedStr -Key "stella_status_all" -Lang $Lang
+    $stActive    = Get-LocalizedStr -Key "stella_status_active" -Lang $Lang
+    $stDraft     = Get-LocalizedStr -Key "stella_status_draft" -Lang $Lang
+    $stDep       = Get-LocalizedStr -Key "stella_status_deprecated" -Lang $Lang
+    $stArch      = Get-LocalizedStr -Key "stella_status_archived" -Lang $Lang
+    $tagAll      = Get-LocalizedStr -Key "stella_tag_all" -Lang $Lang
+    $editBtnTxt  = Get-LocalizedStr -Key "edit_doc_btn" -Lang $Lang
+    $resetBtnTxt = Get-LocalizedStr -Key "stella_btn_reset" -Lang $Lang
+
+    $allTags = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($item in $script:WikiIndex) {
+        if ($item.Tags) {
+            foreach ($t in $item.Tags) {
+                if ($t -is [string] -and -not [string]::IsNullOrWhiteSpace($t)) { [void]$allTags.Add($t.Trim()) }
+            }
+        }
+    }
+
+    $tagOptions = foreach ($t in ($allTags | Sort-Object)) {
+        $encT = [System.Net.WebUtility]::HtmlEncode($t)
+        "<option value='$encT'>🏷️ $encT</option>"
+    }
+    $tagOptionsStr = $tagOptions -join ""
+
+    $stellaClass   = if ($ActiveView -eq "stella") { "active" } else { "" }
+    $timelineClass = if ($ActiveView -eq "timeline") { "active" } else { "" }
+    $resetBtnHtml  = if ($ActiveView -eq "stella") { "<button class='stella-reset-btn' onclick='resetStellaView()' title='$resetBtnTxt'>$resetBtnTxt</button>" } else { "" }
+
+    return @"
+<div class="stella-control-panel">
+    <div class="stella-control-left">
+        <a href="/stella" class="stella-nav-btn $stellaClass">$navStella</a>
+        <a href="/timeline" class="stella-nav-btn $timelineClass">$navTimeline</a>
+        $resetBtnHtml
+    </div>
+    <div class="stella-control-center">
+        <input type="text" id="stellaSearchInput" placeholder="$searchHolder" class="stella-input">
+        <select id="stellaStatusSelect" class="stella-select">
+            <option value="all">$stAll</option>
+            <option value="active">$stActive</option>
+            <option value="draft">$stDraft</option>
+            <option value="deprecated">$stDep</option>
+            <option value="archived">$stArch</option>
+        </select>
+        <select id="stellaTagSelect" class="stella-select">
+            <option value="all">$tagAll</option>
+            $tagOptionsStr
+        </select>
+    </div>
+    <div class="stella-control-right">
+        <button class="stella-editor-btn" onclick="openWikiEditor(this)">$editBtnTxt</button>
+    </div>
+</div>
+<style>
+    .stella-control-panel { display: flex; align-items: center; justify-content: space-between; background: #161b22; padding: 10px 16px; border-radius: 8px; border: 1px solid #30363d; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
+    .stella-control-left, .stella-control-center, .stella-control-right { display: flex; align-items: center; gap: 8px; }
+    .stella-nav-btn { color: #8b949e; text-decoration: none; font-size: 13px; font-weight: bold; padding: 6px 12px; border-radius: 6px; background: #21262d; border: 1px solid #30363d; transition: all 0.2s; }
+    .stella-nav-btn:hover { color: #58a6ff; background: #30363d; }
+    .stella-nav-btn.active { color: #ffffff; background: #1f6feb; border-color: #388bfd; }
+    .stella-reset-btn { color: #8b949e; background: #21262d; border: 1px solid #30363d; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+    .stella-reset-btn:hover { color: #58a6ff; background: #30363d; border-color: #58a6ff; }
+    .stella-input, .stella-select { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; font-size: 12px; padding: 6px 10px; border-radius: 6px; outline: none; }
+    .stella-input { width: 220px; }
+    .stella-input:focus, .stella-select:focus { border-color: #58a6ff; }
+    .stella-editor-btn { background: #238636; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; }
+    .stella-editor-btn:hover { background: #2ea043; }
+</style>
+"@
+}
+
+function Get-StellaViewHtml {
+    param (
+        [string]$Lang = "ja"
+    )
+
+    Ensure-WikiIndexLoaded -TargetWikiDir $wikiDir
+    $controlPanelHtml = Get-StellaControlPanelHtml -ActiveView "stella" -Lang $Lang
+
+    $previewTitle   = Get-LocalizedStr -Key "stella_preview_title" -Lang $Lang
+    $openDocTxt     = Get-LocalizedStr -Key "search_btn" -Lang $Lang
+    $navStellaTitle = Get-LocalizedStr -Key "stella_view_nav" -Lang $Lang
+    $helpDrag       = Get-LocalizedStr -Key "stella_help_drag" -Lang $Lang
+    $helpWheel      = Get-LocalizedStr -Key "stella_help_wheel" -Lang $Lang
+    $helpClick      = Get-LocalizedStr -Key "stella_help_click" -Lang $Lang
+    $connectedTitle = Get-LocalizedStr -Key "stella_connected_nodes" -Lang $Lang
+
+    # Index items serialization
+    $indexJson = Get-ApiIndexJson -QueryParams @{ limit = "all" }
+
+    return @"
+$controlPanelHtml
+
+<div class="stella-container" style="position: relative; width: 100%; height: calc(100vh - 180px); min-height: 550px; background: radial-gradient(circle at 50% 50%, #0d131f 0%, #070a0f 100%); border-radius: 8px; border: 1px solid #30363d; overflow: hidden; display: flex;">
+    <!-- Graphical Operation Guide Overlay -->
+    <div class="stella-help-overlay" style="position: absolute; top: 12px; left: 12px; background: rgba(22, 27, 34, 0.88); backdrop-filter: blur(6px); padding: 10px 14px; border-radius: 8px; border: 1px solid #30363d; color: #8b949e; font-size: 11px; z-index: 50; pointer-events: none; line-height: 1.6; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+        <div style="font-weight: bold; color: #58a6ff; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">$navStellaTitle</div>
+        <div>$helpDrag</div>
+        <div>$helpWheel</div>
+        <div>$helpClick</div>
+    </div>
+
+    <svg id="stellaCanvas" style="width: 100%; height: 100%; cursor: grab;" viewBox="0 0 1000 800">
+        <g id="stellaTransformGroup">
+            <g id="stellaLinksGroup"></g>
+            <g id="stellaNodesGroup"></g>
+        </g>
+    </svg>
+
+    <!-- Slide-in preview pane -->
+    <div id="stellaSlidePane" class="stella-slidein-pane" style="position: absolute; top: 0; right: -380px; width: 360px; height: 100%; background: #161b22; border-left: 1px solid #30363d; padding: 20px; box-shadow: -4px 0 16px rgba(0,0,0,0.5); transition: right 0.3s ease; color: #c9d1d9; overflow-y: auto; z-index: 100; box-sizing: border-box;">
+        <button onclick="closeStellaPane()" style="position: absolute; top: 12px; right: 12px; background: none; border: none; color: #8b949e; font-size: 18px; cursor: pointer;">✕</button>
+        <h3 id="stellaPaneTitle" style="margin-top: 0; font-size: 16px; color: #58a6ff; word-break: break-all;">$previewTitle</h3>
+        <div id="stellaPaneMeta" style="font-size: 12px; color: #8b949e; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;"></div>
+        <p id="stellaPaneDesc" style="font-size: 13px; line-height: 1.5; color: #8b949e; background: #0d1117; padding: 10px; border-radius: 6px; border: 1px solid #21262d; margin-bottom: 12px;"></p>
+
+        <!-- Connected Stars (Metadata Affinity) -->
+        <div id="stellaConnectedSection" style="margin-top: 14px; border-top: 1px solid #21262d; padding-top: 12px;">
+            <div style="font-size: 12px; font-weight: bold; color: #58a6ff; margin-bottom: 8px;">$connectedTitle</div>
+            <div id="stellaConnectedList" style="display: flex; flex-direction: column; gap: 6px; font-size: 12px;"></div>
+        </div>
+
+        <div style="margin-top: 18px;">
+            <a id="stellaPaneLink" href="#" style="display: inline-block; padding: 8px 16px; background: #1f6feb; color: #fff; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: bold;">📄 記事を開く</a>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var rawData = $indexJson;
+    var rawItems = (rawData && rawData.Items) ? rawData.Items : [];
+    var localStorageKey = "simplewiki_stella_positions";
+    var customPositions = {};
+    try {
+        var stored = localStorage.getItem(localStorageKey);
+        if (stored) { customPositions = JSON.parse(stored); }
+    } catch(e){}
+
+    // Merge node positions from localStorage if tweaked by user
+    var nodes = rawItems.map(function(item) {
+        var rel = item.RelPath || item.relPath || "";
+        var x = (customPositions[rel] && customPositions[rel].x !== undefined) ? customPositions[rel].x : (item.X || item.x || 100);
+        var y = (customPositions[rel] && customPositions[rel].y !== undefined) ? customPositions[rel].y : (item.Y || item.y || 100);
+        return {
+            relPath: rel,
+            title: item.Title || item.title || "Untitled",
+            description: item.Description || item.description || "",
+            status: (item.Status || item.status || "active").toLowerCase(),
+            tags: item.Tags || item.tags || [],
+            domain: item.Domain || item.domain || "root",
+            lastUpdated: item.LastUpdated || item.lastUpdated || "",
+            related: item.Related || item.related || [],
+            links: item.Links || item.links || [],
+            x: x,
+            y: y
+        };
+    });
+
+    var svg = document.getElementById("stellaCanvas");
+    var gGroup = document.getElementById("stellaTransformGroup");
+    var gLinks = document.getElementById("stellaLinksGroup");
+    var gNodes = document.getElementById("stellaNodesGroup");
+    var pane = document.getElementById("stellaSlidePane");
+
+    var viewX = 0, viewY = 0, viewScale = 1;
+    var selectedNode = null;
+    var allEdges = [];
+
+    function updateTransform(animate) {
+        if (animate) {
+            gGroup.style.transition = "transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1)";
+            setTimeout(function() { gGroup.style.transition = "none"; }, 350);
+        } else {
+            gGroup.style.transition = "none";
+        }
+        gGroup.setAttribute("transform", "translate(" + viewX + "," + viewY + ") scale(" + viewScale + ")");
+
+        // LOD (Level of Detail): ズームアウト時は一般ノードのラベルを淡くし、過密を防ぐ
+        var nodeElems = gNodes.querySelectorAll(".stella-node");
+        nodeElems.forEach(function(el) {
+            var isHub = el.dataset.isHub === "true";
+            var text = el.querySelector("text");
+            if (text && !selectedNode) {
+                if (viewScale < 0.75 && !isHub) {
+                    text.style.opacity = "0.15";
+                } else {
+                    text.style.opacity = "0.85";
+                }
+            }
+        });
+    }
+
+    function autoFitView(animate) {
+        if (!nodes || nodes.length === 0) return;
+        var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        nodes.forEach(function(n) {
+            if (n.x < minX) minX = n.x;
+            if (n.x > maxX) maxX = n.x;
+            if (n.y < minY) minY = n.y;
+            if (n.y > maxY) maxY = n.y;
+        });
+
+        var boundingWidth = Math.max(300, maxX - minX + 160);
+        var boundingHeight = Math.max(240, maxY - minY + 160);
+        var centerNodeX = (minX + maxX) / 2;
+        var centerNodeY = (minY + maxY) / 2;
+
+        var scaleW = 920 / boundingWidth;
+        var scaleH = 720 / boundingHeight;
+        viewScale = Math.min(1.3, Math.max(0.35, Math.min(scaleW, scaleH)));
+        viewX = 500 - (centerNodeX * viewScale);
+        viewY = 400 - (centerNodeY * viewScale);
+        selectedNode = null;
+        updateTransform(animate);
+    }
+
+    window.resetStellaView = function() {
+        autoFitView(true);
+        applyFilter();
+        closeStellaPane();
+    };
+
+    function renderCanvas() {
+        gLinks.innerHTML = "";
+        gNodes.innerHTML = "";
+        allEdges = [];
+
+        // 1. メタデータ（共通タグ & related）による全関係性エッジの算出
+        var nodeCount = nodes.length;
+        for (var i = 0; i < nodeCount; i++) {
+            for (var j = i + 1; j < nodeCount; j++) {
+                var n1 = nodes[i];
+                var n2 = nodes[j];
+
+                // 共通タグの抽出
+                var sharedTags = [];
+                if (n1.tags && n2.tags) {
+                    n1.tags.forEach(function(t) {
+                        if (typeof t === "string" && t.trim() !== "" && n2.tags.indexOf(t) !== -1 && sharedTags.indexOf(t) === -1) {
+                            sharedTags.push(t);
+                        }
+                    });
+                }
+
+                // related 指定の相互参照
+                var isRelated = false;
+                var r1 = n1.relPath.replace(/\\/g, '/').toLowerCase();
+                var r2 = n2.relPath.replace(/\\/g, '/').toLowerCase();
+                if (n1.related) {
+                    n1.related.forEach(function(rel) {
+                        if (typeof rel === "string" && (rel.toLowerCase() === r2 || rel.toLowerCase() === n2.relPath.toLowerCase())) { isRelated = true; }
+                    });
+                }
+                if (n2.related) {
+                    n2.related.forEach(function(rel) {
+                        if (typeof rel === "string" && (rel.toLowerCase() === r1 || rel.toLowerCase() === n1.relPath.toLowerCase())) { isRelated = true; }
+                    });
+                }
+
+                if (sharedTags.length > 0 || isRelated) {
+                    allEdges.push({
+                        source: n1,
+                        target: n2,
+                        sharedTags: sharedTags,
+                        isRelated: isRelated,
+                        weight: (isRelated ? 6 : 0) + (sharedTags.length * 2)
+                    });
+                }
+            }
+        }
+
+        // 2. 毛糸玉化防止（次数制限 k-NN フィルタ）:
+        // 常時描画するエッジは「related指定」または「各ノードの親和性上位4件」に限定
+        var nodeEdgeCount = {};
+        var backboneEdgeMap = {};
+        var sortedEdges = allEdges.slice().sort(function(a, b) { return b.weight - a.weight; });
+
+        sortedEdges.forEach(function(e) {
+            var sKey = e.source.relPath;
+            var tKey = e.target.relPath;
+            var countS = nodeEdgeCount[sKey] || 0;
+            var countT = nodeEdgeCount[tKey] || 0;
+
+            if (e.isRelated || (countS < 4 && countT < 4)) {
+                var edgeId = sKey < tKey ? sKey + '|' + tKey : tKey + '|' + sKey;
+                backboneEdgeMap[edgeId] = true;
+                nodeEdgeCount[sKey] = countS + 1;
+                nodeEdgeCount[tKey] = countT + 1;
+            }
+        });
+
+        // 3. 星座線 (SVG Line) の描画（backbone 以外は初期非表示、選択時に全展開）
+        allEdges.forEach(function(e) {
+            var sKey = e.source.relPath;
+            var tKey = e.target.relPath;
+            var edgeId = sKey < tKey ? sKey + '|' + tKey : tKey + '|' + sKey;
+            var isBackbone = !!backboneEdgeMap[edgeId];
+
+            var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            line.setAttribute("x1", e.source.x);
+            line.setAttribute("y1", e.source.y);
+            line.setAttribute("x2", e.target.x);
+            line.setAttribute("y2", e.target.y);
+
+            var strokeColor = e.isRelated ? "rgba(138, 180, 248, 0.55)" : (e.sharedTags.length > 1 ? "rgba(88, 166, 255, 0.4)" : "rgba(88, 166, 255, 0.2)");
+            var strokeWidth = e.isRelated ? "2.2" : (e.sharedTags.length > 1 ? "1.6" : "1.1");
+            line.setAttribute("stroke", strokeColor);
+            line.setAttribute("stroke-width", strokeWidth);
+            if (!e.isRelated && e.sharedTags.length === 1) {
+                line.setAttribute("stroke-dasharray", "4,3");
+            }
+            line.setAttribute("class", "stella-link-line" + (isBackbone ? " stella-backbone" : " stella-secondary"));
+            line.dataset.source = e.source.relPath;
+            line.dataset.target = e.target.relPath;
+            line.dataset.isRelated = e.isRelated ? "true" : "false";
+            line.dataset.sharedCount = e.sharedTags.length;
+            line.dataset.isBackbone = isBackbone ? "true" : "false";
+
+            if (!isBackbone) {
+                line.style.display = "none";
+            }
+
+            gLinks.appendChild(line);
+        });
+
+        // 4. 星ノード (SVG Circle + Text) の描画
+        nodes.forEach(function(n) {
+            var g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            g.setAttribute("transform", "translate(" + n.x + "," + n.y + ")");
+            g.setAttribute("class", "stella-node");
+            g.dataset.relpath = n.relPath;
+            var isHub = (n.tags && n.tags.length >= 4);
+            g.dataset.isHub = isHub ? "true" : "false";
+            g.style.cursor = "pointer";
+
+            var rSize = isHub ? 8 : 6;
+            var dotColor = (n.status === 'stable' || n.status === 'active') ? '#58a6ff' : (n.status === 'draft' ? '#d29922' : '#f85149');
+
+            var circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            circle.setAttribute("r", rSize.toString());
+            circle.setAttribute("fill", dotColor);
+            circle.setAttribute("opacity", "0.85");
+            circle.setAttribute("class", "stella-dot");
+            circle.style.transition = "all 0.2s ease";
+
+            var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            text.setAttribute("x", (rSize + 5).toString());
+            text.setAttribute("y", "4");
+            text.setAttribute("fill", "#c9d1d9");
+            text.setAttribute("font-size", "11px");
+            text.setAttribute("font-weight", isHub ? "bold" : "500");
+            text.setAttribute("opacity", "0.85");
+            text.textContent = n.title;
+
+            g.appendChild(circle);
+            g.appendChild(text);
+
+            // ノードクリック -> 星座発光 & プレビュー表示
+            g.addEventListener("click", function(e) {
+                e.stopPropagation();
+                flyToNode(n);
+                highlightConstellation(n);
+                openStellaPane(n);
+            });
+
+            // ノードドラッグによる位置のカスタマイズと永続化
+            var isDraggingNode = false;
+            var dragStartX = 0, dragStartY = 0;
+
+            g.addEventListener("mousedown", function(e) {
+                if (e.button !== 0) return;
+                isDraggingNode = true;
+                dragStartX = e.clientX;
+                dragStartY = e.clientY;
+                e.stopPropagation();
+
+                var onMouseMove = function(me) {
+                    if (!isDraggingNode) return;
+                    var dx = (me.clientX - dragStartX) / viewScale;
+                    var dy = (me.clientY - dragStartY) / viewScale;
+                    n.x += dx;
+                    n.y += dy;
+                    dragStartX = me.clientX;
+                    dragStartY = me.clientY;
+                    g.setAttribute("transform", "translate(" + n.x + "," + n.y + ")");
+
+                    // 接続線の位置もリアルタイム追従
+                    var lines = gLinks.querySelectorAll(".stella-link-line");
+                    lines.forEach(function(l) {
+                        if (l.dataset.source === n.relPath) {
+                            l.setAttribute("x1", n.x);
+                            l.setAttribute("y1", n.y);
+                        } else if (l.dataset.target === n.relPath) {
+                            l.setAttribute("x2", n.x);
+                            l.setAttribute("y2", n.y);
+                        }
+                    });
+
+                    // 位置を localStorage に保存
+                    customPositions[n.relPath] = { x: n.x, y: n.y };
+                    try { localStorage.setItem(localStorageKey, JSON.stringify(customPositions)); } catch(err){}
+                };
+
+                var onMouseUp = function() {
+                    isDraggingNode = false;
+                    window.removeEventListener("mousemove", onMouseMove);
+                    window.removeEventListener("mouseup", onMouseUp);
+                };
+
+                window.addEventListener("mousemove", onMouseMove);
+                window.addEventListener("mouseup", onMouseUp);
+            });
+
+            gNodes.appendChild(g);
+        });
+
+        autoFitView(false);
+    }
+
+    // キャンバス全体のパン（背景ドラッグ）
+    var isPanning = false;
+    var panStartX = 0, panStartY = 0;
+
+    svg.addEventListener("mousedown", function(e) {
+        if (e.button !== 0) return;
+        isPanning = true;
+        panStartX = e.clientX - viewX;
+        panStartY = e.clientY - viewY;
+        svg.style.cursor = "grabbing";
+    });
+
+    window.addEventListener("mousemove", function(e) {
+        if (!isPanning) return;
+        viewX = e.clientX - panStartX;
+        viewY = e.clientY - panStartY;
+        updateTransform(false);
+    });
+
+    window.addEventListener("mouseup", function() {
+        if (isPanning) {
+            isPanning = false;
+            svg.style.cursor = "grab";
+        }
+    });
+
+    // マウスホイールによるスムーズズーム
+    svg.addEventListener("wheel", function(e) {
+        e.preventDefault();
+        var zoomFactor = e.deltaY < 0 ? 1.12 : 0.89;
+        var newScale = Math.max(0.35, Math.min(3.2, viewScale * zoomFactor));
+
+        var rect = svg.getBoundingClientRect();
+        var mouseX = e.clientX - rect.left;
+        var mouseY = e.clientY - rect.top;
+
+        viewX = mouseX - (mouseX - viewX) * (newScale / viewScale);
+        viewY = mouseY - (mouseY - viewY) * (newScale / viewScale);
+        viewScale = newScale;
+
+        updateTransform(false);
+    }, { passive: false });
+
+    function flyToNode(n) {
+        selectedNode = n;
+        viewScale = 1.35;
+        viewX = 500 - (n.x * viewScale);
+        viewY = 400 - (n.y * viewScale);
+        updateTransform(true);
+    }
+
+    window.flyToRelPath = function(rel) {
+        var target = nodes.filter(function(n) { return n.relPath === rel; })[0];
+        if (target) {
+            flyToNode(target);
+            highlightConstellation(target);
+            openStellaPane(target);
+        }
+    };
+
+    // 星座発光 (Constellation Lighting) - 選択ノードに繋がる全エッジを動的展開
+    function highlightConstellation(centerNode) {
+        var connectedRels = {};
+        connectedRels[centerNode.relPath] = true;
+
+        allEdges.forEach(function(e) {
+            if (e.source.relPath === centerNode.relPath) { connectedRels[e.target.relPath] = true; }
+            if (e.target.relPath === centerNode.relPath) { connectedRels[e.source.relPath] = true; }
+        });
+
+        // ノードの発光効果
+        var nodeElems = gNodes.querySelectorAll(".stella-node");
+        nodeElems.forEach(function(el) {
+            var rel = el.dataset.relpath;
+            var dot = el.querySelector("circle");
+            var text = el.querySelector("text");
+
+            if (rel === centerNode.relPath) {
+                dot.setAttribute("fill", "#58a6ff");
+                dot.setAttribute("r", "10");
+                dot.setAttribute("opacity", "1");
+                text.style.opacity = "1";
+                text.setAttribute("font-weight", "bold");
+            } else if (connectedRels[rel]) {
+                dot.setAttribute("fill", "#79c0ff");
+                dot.setAttribute("r", "8");
+                dot.setAttribute("opacity", "1");
+                text.style.opacity = "0.95";
+            } else {
+                dot.setAttribute("opacity", "0.2");
+                text.style.opacity = "0.15";
+            }
+        });
+
+        // 接続線の発光（選択ノードに繋がる全線を全展開）
+        var linkElems = gLinks.querySelectorAll(".stella-link-line");
+        linkElems.forEach(function(line) {
+            var s = line.dataset.source;
+            var t = line.dataset.target;
+            var isConnected = (s === centerNode.relPath || t === centerNode.relPath);
+
+            if (isConnected) {
+                line.style.display = "block";
+                line.setAttribute("stroke", "rgba(88, 166, 255, 0.95)");
+                line.setAttribute("stroke-width", "2.8");
+                line.style.filter = "drop-shadow(0 0 5px #388bfd)";
+            } else {
+                var isBackbone = line.dataset.isBackbone === "true";
+                if (isBackbone) {
+                    line.style.display = "block";
+                    line.setAttribute("stroke", "rgba(88, 166, 255, 0.08)");
+                    line.setAttribute("stroke-width", "1");
+                    line.style.filter = "none";
+                } else {
+                    line.style.display = "none";
+                }
+            }
+        });
+    }
+
+    function openStellaPane(n) {
+        document.getElementById("stellaPaneTitle").textContent = n.title;
+        var statusBadge = "<span style='padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; background: " + (n.status === 'active' || n.status === 'stable' ? '#238636' : n.status === 'draft' ? '#d29922' : '#f85149') + "; color: #fff;'>" + n.status.toUpperCase() + "</span>";
+        var domainBadge = "<span style='padding: 2px 8px; border-radius: 10px; font-size: 11px; background: #21262d; color: #8b949e; border: 1px solid #30363d;'>📁 " + (n.domain || "root") + "</span>";
+        var dateStr = n.lastUpdated ? n.lastUpdated.substring(0, 10) : "";
+        document.getElementById("stellaPaneMeta").innerHTML = statusBadge + " " + domainBadge + " <span>📅 " + dateStr + "</span>";
+        document.getElementById("stellaPaneDesc").textContent = n.description || "概要はありません。";
+        document.getElementById("stellaPaneLink").href = "/" + encodeURIComponent(n.relPath.replace(/\\/g, '/')).replace(/%2F/g, '/');
+
+        // 繋がっている星一覧の生成
+        var connectedListEl = document.getElementById("stellaConnectedList");
+        var connectedItems = [];
+        allEdges.forEach(function(e) {
+            var other = null;
+            if (e.source.relPath === n.relPath) other = e.target;
+            else if (e.target.relPath === n.relPath) other = e.source;
+
+            if (other) {
+                var reason = e.isRelated ? "🔗 関連指定" : ("🏷️ " + e.sharedTags.join(", "));
+                connectedItems.push("<div onclick=\"flyToRelPath('" + other.relPath.replace(/'/g, "\\'") + "')\" style='cursor: pointer; padding: 6px 10px; background: #0d1117; border-radius: 6px; border: 1px solid #21262d; display: flex; justify-content: space-between; align-items: center; transition: all 0.2s;' onmouseover=\"this.style.borderColor='#58a6ff'\" onmouseout=\"this.style.borderColor='#21262d'\"><span style='color: #c9d1d9; font-weight: 500;'>🌟 " + other.title + "</span><span style='color: #8b949e; font-size: 11px;'>" + reason + "</span></div>");
+            }
+        });
+
+        if (connectedItems.length > 0) {
+            connectedListEl.innerHTML = connectedItems.join("");
+            document.getElementById("stellaConnectedSection").style.display = "block";
+        } else {
+            connectedListEl.innerHTML = "<span style='color: #6e7681; font-size: 11px;'>関連する星はありません</span>";
+        }
+
+        pane.style.right = "0px";
+    }
+
+    window.closeStellaPane = function() {
+        pane.style.right = "-380px";
+        if (selectedNode) {
+            applyFilter();
+            selectedNode = null;
+        }
+    };
+
+    // フィルター & 検索の連動
+    function applyFilter() {
+        var query = (document.getElementById("stellaSearchInput").value || "").toLowerCase().trim();
+        var statusVal = document.getElementById("stellaStatusSelect").value;
+        var tagVal = document.getElementById("stellaTagSelect").value;
+
+        var matchingRels = {};
+        nodes.forEach(function(n) {
+            var matchQ = !query || (n.title.toLowerCase().indexOf(query) !== -1 || n.description.toLowerCase().indexOf(query) !== -1);
+            var matchS = statusVal === "all" || n.status === statusVal || (statusVal === "active" && n.status === "stable");
+            var matchT = tagVal === "all" || (n.tags && n.tags.indexOf(tagVal) !== -1);
+
+            if (matchQ && matchS && matchT && (query || statusVal !== "all" || tagVal !== "all")) {
+                matchingRels[n.relPath] = true;
+            }
+        });
+
+        var isActiveFilter = (query !== "" || statusVal !== "all" || tagVal !== "all");
+
+        // ノードのハイライト
+        var nodeElems = gNodes.querySelectorAll(".stella-node");
+        nodeElems.forEach(function(el) {
+            var rel = el.dataset.relpath;
+            var dot = el.querySelector("circle");
+            var text = el.querySelector("text");
+            var isHub = el.dataset.isHub === "true";
+
+            if (!isActiveFilter) {
+                var nodeObj = nodes.filter(function(x) { return x.relPath === rel; })[0];
+                var dotColor = (nodeObj && (nodeObj.status === 'stable' || nodeObj.status === 'active')) ? '#58a6ff' : (nodeObj && nodeObj.status === 'draft' ? '#d29922' : '#f85149');
+                dot.setAttribute("fill", dotColor);
+                dot.setAttribute("r", isHub ? "8" : "6");
+                dot.setAttribute("opacity", "0.85");
+                if (text) {
+                    text.style.opacity = (viewScale < 0.75 && !isHub) ? "0.15" : "0.85";
+                }
+            } else if (matchingRels[rel]) {
+                dot.setAttribute("fill", "#388bfd");
+                dot.setAttribute("r", "9");
+                dot.setAttribute("opacity", "1");
+                if (text) { text.style.opacity = "1"; }
+            } else {
+                dot.setAttribute("fill", "#21262d");
+                dot.setAttribute("r", "4");
+                dot.setAttribute("opacity", "0.2");
+                if (text) { text.style.opacity = "0.15"; }
+            }
+        });
+
+        // 星座線のハイライト
+        var linkElems = gLinks.querySelectorAll(".stella-link-line");
+        linkElems.forEach(function(line) {
+            var s = line.dataset.source;
+            var t = line.dataset.target;
+            var isBackbone = line.dataset.isBackbone === "true";
+            line.style.filter = "none";
+
+            if (isActiveFilter) {
+                if (matchingRels[s] && matchingRels[t]) {
+                    line.style.display = "block";
+                    line.setAttribute("stroke", "rgba(56, 139, 253, 0.85)");
+                    line.setAttribute("stroke-width", "2.2");
+                } else {
+                    line.style.display = "none";
+                }
+            } else {
+                if (isBackbone) {
+                    line.style.display = "block";
+                    var isRelated = line.dataset.isRelated === "true";
+                    var sharedCount = parseInt(line.dataset.sharedCount || "0", 10);
+                    line.setAttribute("stroke", isRelated ? "rgba(138, 180, 248, 0.55)" : (sharedCount > 1 ? "rgba(88, 166, 255, 0.4)" : "rgba(88, 166, 255, 0.2)"));
+                    line.setAttribute("stroke-width", isRelated ? "2.2" : (sharedCount > 1 ? "1.6" : "1.1"));
+                } else {
+                    line.style.display = "none";
+                }
+            }
+        });
+    }
+
+    document.getElementById("stellaSearchInput").addEventListener("input", applyFilter);
+    document.getElementById("stellaStatusSelect").addEventListener("change", applyFilter);
+    document.getElementById("stellaTagSelect").addEventListener("change", applyFilter);
+
+    renderCanvas();
+})();
+</script>
+"@
+}
+
+function Get-TimelineViewHtml {
+    param (
+        [string]$Lang = "ja"
+    )
+
+    Ensure-WikiIndexLoaded -TargetWikiDir $wikiDir
+    $controlPanelHtml = Get-StellaControlPanelHtml -ActiveView "timeline" -Lang $Lang
+
+    $staleNoticeTxt = Get-LocalizedStr -Key "stella_stale_warning" -Lang $Lang
+    $treeTitleTxt   = Get-LocalizedStr -Key "stella_tree_lineage" -Lang $Lang
+
+    # Timeline calculation
+    $now = Get-Date
+    $docs = $script:WikiIndex | Sort-Object UpdatedAt -Descending
+
+    $tagsSet = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($d in $docs) {
+        if ($d.Tags) {
+            foreach ($t in $d.Tags) {
+                if ($t -is [string] -and -not [string]::IsNullOrWhiteSpace($t)) { [void]$tagsSet.Add($t.Trim()) }
+            }
+        }
+    }
+    if ($tagsSet.Count -eq 0) { [void]$tagsSet.Add("Uncategorized") }
+    $sortedTags = @($tagsSet | Sort-Object)
+
+    $timelineRowsHtml = foreach ($tag in $sortedTags) {
+        $tagEnc = [System.Net.WebUtility]::HtmlEncode($tag)
+        $docsInTag = @($docs | Where-Object { ($_.Tags -contains $tag) -or ($tag -eq "Uncategorized" -and (-not $_.Tags -or $_.Tags.Count -eq 0)) })
+
+        $dotsHtml = foreach ($d in $docsInTag) {
+            $relUri = "/" + [Uri]::EscapeUriString($d.RelPath.Replace('\', '/'))
+            $titleEnc = [System.Net.WebUtility]::HtmlEncode($d.Title)
+            $dateStr = if ($d.UpdatedAt) { $d.UpdatedAt.ToString("yyyy-MM-dd") } else { "" }
+
+            $isStale = ($d.Status -eq "active" -and $d.UpdatedAt -and ($now - $d.UpdatedAt).TotalDays -ge 180)
+            $staleClass = if ($isStale) { "stale-warning-ring" } else { "" }
+            $staleIcon = if ($isStale) { "<span style='color:#f85149; font-weight:bold;' title='$staleNoticeTxt'> ⚠️</span>" } else { "" }
+
+            $color = switch ($d.Status) {
+                "active"     { "#2ea043" }
+                "draft"      { "#d29922" }
+                "deprecated" { "#f85149" }
+                "archived"   { "#8b949e" }
+                default      { "#2ea043" }
+            }
+
+            "<a href='$relUri' class='timeline-dot-item $staleClass' style='background:$color;' title='$titleEnc ($dateStr)'>$staleIcon</a>"
+        }
+
+        @"
+        <div class="timeline-matrix-row">
+            <div class="timeline-row-label">🏷️ $tagEnc</div>
+            <div class="timeline-row-dots">
+                $($dotsHtml -join "")
+            </div>
+        </div>
+"@
+    }
+
+    # Tree Lineage Visualization (Parent-child from links)
+    $treeNodesHtml = foreach ($d in $docs) {
+        $titleEnc = [System.Net.WebUtility]::HtmlEncode($d.Title)
+        $relUri = "/" + [Uri]::EscapeUriString($d.RelPath.Replace('\', '/'))
+
+        $childHtml = ""
+        if ($d.Links -and $d.Links.Count -gt 0) {
+            $childItems = foreach ($l in $d.Links) {
+                $linkedDoc = $docs | Where-Object { $_.RelPath -eq $l } | Select-Object -First 1
+                if ($linkedDoc) {
+                    $lTitleEnc = [System.Net.WebUtility]::HtmlEncode($linkedDoc.Title)
+                    $lRelUri = "/" + [Uri]::EscapeUriString($linkedDoc.RelPath.Replace('\', '/'))
+                    "<li>└── 📄 <a href='$lRelUri'>$lTitleEnc</a></li>"
+                }
+            }
+            if ($childItems) {
+                $childHtml = "<ul class='tree-branches'>" + ($childItems -join "") + "</ul>"
+            }
+        }
+
+        "<div class='tree-root-item'>🌱 <a href='$relUri' class='tree-root-link'>$titleEnc</a>$childHtml</div>"
+    }
+
+    return @"
+$controlPanelHtml
+
+<div class="timeline-matrix-container" style="background: #161b22; padding: 20px; border-radius: 8px; border: 1px solid #30363d; margin-bottom: 30px; color: #c9d1d9;">
+    <h2 style="margin-top:0; font-size: 18px; border-bottom: 1px solid #30363d; padding-bottom: 10px; color: #58a6ff;">⏳ タイムライン・マトリックス</h2>
+    <div class="timeline-matrix">
+        $($timelineRowsHtml -join "")
+    </div>
+</div>
+
+<div class="tree-lineage-container" style="background: #161b22; padding: 20px; border-radius: 8px; border: 1px solid #30363d; color: #c9d1d9;">
+    <h2 style="margin-top:0; font-size: 18px; border-bottom: 1px solid #30363d; padding-bottom: 10px; color: #58a6ff;">$treeTitleTxt</h2>
+    <div class="tree-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
+        $($treeNodesHtml -join "")
+    </div>
+</div>
+
+<style>
+    .timeline-matrix-row { display: flex; align-items: center; border-bottom: 1px solid #21262d; padding: 10px 0; }
+    .timeline-row-label { width: 140px; font-weight: bold; font-size: 12px; color: #8b949e; flex-shrink: 0; }
+    .timeline-row-dots { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .timeline-dot-item { width: 14px; height: 14px; border-radius: 50%; display: inline-block; text-decoration: none; position: relative; transition: transform 0.2s; }
+    .timeline-dot-item:hover { transform: scale(1.4); z-index: 10; }
+    .stale-warning-ring { border: 2px solid #f85149; animation: pulseStale 1.5s infinite; }
+    @keyframes pulseStale { 0% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.7); } 70% { box-shadow: 0 0 0 6px rgba(248, 81, 73, 0); } 100% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0); } }
+
+    .tree-root-item { background: #0d1117; padding: 12px; border-radius: 6px; border: 1px solid #21262d; font-size: 13px; }
+    .tree-root-link { font-weight: bold; color: #58a6ff; text-decoration: none; }
+    .tree-branches { list-style: none; padding-left: 12px; margin: 6px 0 0 0; font-size: 12px; color: #8b949e; }
+    .tree-branches a { color: #8b949e; text-decoration: none; }
+    .tree-branches a:hover { color: #58a6ff; }
+</style>
+"@
+}
+
 # --- システム設定ビュー生成メイン関数 ---
 function Get-SettingsViewHtml {
     param (
@@ -1774,6 +2583,8 @@ function Get-MainViewHtml {
     $navAuthors   = Get-LocalizedStr -Key "authors" -Lang $Lang
     $navSettings  = Get-LocalizedStr -Key "settings" -Lang $Lang
     $navApi       = Get-LocalizedStr -Key "api_json" -Lang $Lang
+    $navStella    = Get-LocalizedStr -Key "stella_view_nav" -Lang $Lang
+    $navTimeline  = Get-LocalizedStr -Key "timeline_view_nav" -Lang $Lang
     $searchHolder = Get-LocalizedStr -Key "search_placeholder" -Lang $Lang
     $searchBtnTxt = Get-LocalizedStr -Key "search_btn" -Lang $Lang
     $docListTitle = Get-LocalizedStr -Key "doc_list_title" -Lang $Lang
@@ -1905,6 +2716,8 @@ function Get-MainViewHtml {
         <a href="/" class="brand">📖 {20}</a>
         <nav class="top-nav">
             <a href="/">{3}</a>
+            <a href="/stella">{25}</a>
+            <a href="/timeline">{26}</a>
             <a href="/recent">{4}</a>
             <a href="/tags">{5}</a>
             <a href="/maintenance">{6}</a>
@@ -1984,7 +2797,7 @@ function Get-MainViewHtml {
 </html>
 '@
 
-    $fullHtml = $template.Replace("{0}", $PageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $BodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{18}", $Lang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{31}", $searchLoadingTxtJs).Replace("{222}", $editorModalHtml)
+    $fullHtml = $template.Replace("{0}", $PageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $BodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{18}", $Lang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $navStella).Replace("{26}", $navTimeline).Replace("{31}", $searchLoadingTxtJs).Replace("{222}", $editorModalHtml)
 
     if (-not [string]::IsNullOrWhiteSpace($chatWidgetHtml)) {
         $fullHtml = $fullHtml.Replace("</body>", "$chatWidgetHtml`n</body>")

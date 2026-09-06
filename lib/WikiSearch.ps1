@@ -212,13 +212,39 @@ function Load-WikiIndexCache {
             if (-not [DateTime]::TryParse($item.LastUpdated, [ref]$lastUpdated)) {
                 $lastUpdated = Get-Date
             }
+            $createdAt = [DateTime]::MinValue
+            if (-not [DateTime]::TryParse($item.CreatedAt, [ref]$createdAt)) {
+                $createdAt = $lastUpdated
+            }
+            $updatedAt = [DateTime]::MinValue
+            if (-not [DateTime]::TryParse($item.UpdatedAt, [ref]$updatedAt)) {
+                $updatedAt = $lastUpdated
+            }
+
+            $cleanTags = @(if ($item.Tags -and ($item.Tags -isnot [System.Management.Automation.PSCustomObject])) {
+                foreach ($t in $item.Tags) {
+                    if ($t -is [string] -and -not [string]::IsNullOrWhiteSpace($t)) { $t.Trim() }
+                }
+            })
+
+            $cleanLinks = @(if ($item.Links -and ($item.Links -isnot [System.Management.Automation.PSCustomObject])) {
+                foreach ($l in $item.Links) {
+                    if ($l -is [string] -and -not [string]::IsNullOrWhiteSpace($l)) { $l.Trim() }
+                }
+            })
+
+            $cleanContributors = if ($item.Contributors -and ($item.Contributors -isnot [System.Management.Automation.PSCustomObject])) { @($item.Contributors) } else { @() }
+            $cleanRelated      = if ($item.Related -and ($item.Related -isnot [System.Management.Automation.PSCustomObject])) { @($item.Related) } else { @() }
+
             $psObj = [PSCustomObject]@{
                 Title        = $item.Title
                 Description  = $item.Description
                 Author       = $item.Author
                 Domain       = $item.Domain
-                Tags         = @($item.Tags)
+                Tags         = $cleanTags
                 LastUpdated  = $lastUpdated
+                CreatedAt    = $createdAt
+                UpdatedAt    = $updatedAt
                 Status       = $item.Status
                 Version      = $item.Version
                 Reviewer     = $item.Reviewer
@@ -226,12 +252,15 @@ function Load-WikiIndexCache {
                 TrustTier    = $item.TrustTier
                 Provenance   = $item.Provenance
                 Computations = $item.Computations
-                Contributors = $item.Contributors
-                Related      = $item.Related
+                Contributors = $cleanContributors
+                Related      = $cleanRelated
+                Links        = $cleanLinks
                 HasYaml      = [bool]$item.HasYaml
                 RelPath      = $item.RelPath
                 FullPath     = $item.FullPath
                 BodyText     = $item.BodyText
+                X            = if ($null -ne $item.X) { [int]$item.X } else { 0 }
+                Y            = if ($null -ne $item.Y) { [int]$item.Y } else { 0 }
             }
             $itemList.Add($psObj)
         }
@@ -370,7 +399,8 @@ function Build-WikiIndex {
             }
         }
     } finally {
-        $script:WikiIndex = $indexList.ToArray()
+        $placedIndex = Measure-WikiNodeCoordinates -DocList $indexList.ToArray()
+        $script:WikiIndex = $placedIndex
         $script:WikiIndexDirWriteTime = $currentWriteTime
         $script:WikiIndexLastScan = Get-Date
 
