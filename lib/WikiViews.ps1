@@ -1887,24 +1887,58 @@ $controlPanelHtml
 
     var viewX = 0, viewY = 0, viewScale = 1;
     var selectedNode = null;
-    var edges = [];
+    var allEdges = [];
 
     function updateTransform(animate) {
         if (animate) {
-            gGroup.style.transition = "transform 0.3s ease-out";
-            setTimeout(function() { gGroup.style.transition = "none"; }, 300);
+            gGroup.style.transition = "transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1)";
+            setTimeout(function() { gGroup.style.transition = "none"; }, 350);
         } else {
             gGroup.style.transition = "none";
         }
         gGroup.setAttribute("transform", "translate(" + viewX + "," + viewY + ") scale(" + viewScale + ")");
+
+        // LOD (Level of Detail): ズームアウト時は一般ノードのラベルを淡くし、過密を防ぐ
+        var nodeElems = gNodes.querySelectorAll(".stella-node");
+        nodeElems.forEach(function(el) {
+            var isHub = el.dataset.isHub === "true";
+            var text = el.querySelector("text");
+            if (text && !selectedNode) {
+                if (viewScale < 0.75 && !isHub) {
+                    text.style.opacity = "0.15";
+                } else {
+                    text.style.opacity = "0.85";
+                }
+            }
+        });
+    }
+
+    function autoFitView(animate) {
+        if (!nodes || nodes.length === 0) return;
+        var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        nodes.forEach(function(n) {
+            if (n.x < minX) minX = n.x;
+            if (n.x > maxX) maxX = n.x;
+            if (n.y < minY) minY = n.y;
+            if (n.y > maxY) maxY = n.y;
+        });
+
+        var boundingWidth = Math.max(300, maxX - minX + 160);
+        var boundingHeight = Math.max(240, maxY - minY + 160);
+        var centerNodeX = (minX + maxX) / 2;
+        var centerNodeY = (minY + maxY) / 2;
+
+        var scaleW = 920 / boundingWidth;
+        var scaleH = 720 / boundingHeight;
+        viewScale = Math.min(1.3, Math.max(0.35, Math.min(scaleW, scaleH)));
+        viewX = 500 - (centerNodeX * viewScale);
+        viewY = 400 - (centerNodeY * viewScale);
+        selectedNode = null;
+        updateTransform(animate);
     }
 
     window.resetStellaView = function() {
-        viewX = 0;
-        viewY = 0;
-        viewScale = 1;
-        selectedNode = null;
-        updateTransform(true);
+        autoFitView(true);
         applyFilter();
         closeStellaPane();
     };
@@ -1912,9 +1946,9 @@ $controlPanelHtml
     function renderCanvas() {
         gLinks.innerHTML = "";
         gNodes.innerHTML = "";
-        edges = [];
+        allEdges = [];
 
-        // 1. メタデータ（共通タグ & related）による関係性エッジ（星座線）の算出
+        // 1. メタデータ（共通タグ & related）による全関係性エッジの算出
         var nodeCount = nodes.length;
         for (var i = 0; i < nodeCount; i++) {
             for (var j = i + 1; j < nodeCount; j++) {
@@ -1947,19 +1981,44 @@ $controlPanelHtml
                 }
 
                 if (sharedTags.length > 0 || isRelated) {
-                    edges.push({
+                    allEdges.push({
                         source: n1,
                         target: n2,
                         sharedTags: sharedTags,
                         isRelated: isRelated,
-                        weight: (isRelated ? 4 : 0) + (sharedTags.length * 2)
+                        weight: (isRelated ? 6 : 0) + (sharedTags.length * 2)
                     });
                 }
             }
         }
 
-        // 2. 星座線 (SVG Line) の描画
-        edges.forEach(function(e) {
+        // 2. 毛糸玉化防止（次数制限 k-NN フィルタ）:
+        // 常時描画するエッジは「related指定」または「各ノードの親和性上位4件」に限定
+        var nodeEdgeCount = {};
+        var backboneEdgeMap = {};
+        var sortedEdges = allEdges.slice().sort(function(a, b) { return b.weight - a.weight; });
+
+        sortedEdges.forEach(function(e) {
+            var sKey = e.source.relPath;
+            var tKey = e.target.relPath;
+            var countS = nodeEdgeCount[sKey] || 0;
+            var countT = nodeEdgeCount[tKey] || 0;
+
+            if (e.isRelated || (countS < 4 && countT < 4)) {
+                var edgeId = sKey < tKey ? sKey + '|' + tKey : tKey + '|' + sKey;
+                backboneEdgeMap[edgeId] = true;
+                nodeEdgeCount[sKey] = countS + 1;
+                nodeEdgeCount[tKey] = countT + 1;
+            }
+        });
+
+        // 3. 星座線 (SVG Line) の描画（backbone 以外は初期非表示、選択時に全展開）
+        allEdges.forEach(function(e) {
+            var sKey = e.source.relPath;
+            var tKey = e.target.relPath;
+            var edgeId = sKey < tKey ? sKey + '|' + tKey : tKey + '|' + sKey;
+            var isBackbone = !!backboneEdgeMap[edgeId];
+
             var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
             line.setAttribute("x1", e.source.x);
             line.setAttribute("y1", e.source.y);
@@ -1973,25 +2032,31 @@ $controlPanelHtml
             if (!e.isRelated && e.sharedTags.length === 1) {
                 line.setAttribute("stroke-dasharray", "4,3");
             }
-            line.setAttribute("class", "stella-link-line");
+            line.setAttribute("class", "stella-link-line" + (isBackbone ? " stella-backbone" : " stella-secondary"));
             line.dataset.source = e.source.relPath;
             line.dataset.target = e.target.relPath;
             line.dataset.isRelated = e.isRelated ? "true" : "false";
             line.dataset.sharedCount = e.sharedTags.length;
+            line.dataset.isBackbone = isBackbone ? "true" : "false";
+
+            if (!isBackbone) {
+                line.style.display = "none";
+            }
 
             gLinks.appendChild(line);
         });
 
-        // 3. 星ノード (SVG Circle + Text) の描画
+        // 4. 星ノード (SVG Circle + Text) の描画
         nodes.forEach(function(n) {
             var g = document.createElementNS("http://www.w3.org/2000/svg", "g");
             g.setAttribute("transform", "translate(" + n.x + "," + n.y + ")");
             g.setAttribute("class", "stella-node");
             g.dataset.relpath = n.relPath;
+            var isHub = (n.tags && n.tags.length >= 4);
+            g.dataset.isHub = isHub ? "true" : "false";
             g.style.cursor = "pointer";
 
-            // 星の半径とカラー（ステータス・重要度）
-            var rSize = (n.tags && n.tags.length >= 4) ? 8 : 6;
+            var rSize = isHub ? 8 : 6;
             var dotColor = (n.status === 'stable' || n.status === 'active') ? '#58a6ff' : (n.status === 'draft' ? '#d29922' : '#f85149');
 
             var circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
@@ -2006,7 +2071,7 @@ $controlPanelHtml
             text.setAttribute("y", "4");
             text.setAttribute("fill", "#c9d1d9");
             text.setAttribute("font-size", "11px");
-            text.setAttribute("font-weight", "500");
+            text.setAttribute("font-weight", isHub ? "bold" : "500");
             text.setAttribute("opacity", "0.85");
             text.textContent = n.title;
 
@@ -2071,6 +2136,8 @@ $controlPanelHtml
 
             gNodes.appendChild(g);
         });
+
+        autoFitView(false);
     }
 
     // キャンバス全体のパン（背景ドラッグ）
@@ -2105,7 +2172,6 @@ $controlPanelHtml
         var zoomFactor = e.deltaY < 0 ? 1.12 : 0.89;
         var newScale = Math.max(0.35, Math.min(3.2, viewScale * zoomFactor));
 
-        // マウス位置を中心としたズーム
         var rect = svg.getBoundingClientRect();
         var mouseX = e.clientX - rect.left;
         var mouseY = e.clientY - rect.top;
@@ -2134,12 +2200,12 @@ $controlPanelHtml
         }
     };
 
-    // 星座発光 (Constellation Lighting)
+    // 星座発光 (Constellation Lighting) - 選択ノードに繋がる全エッジを動的展開
     function highlightConstellation(centerNode) {
         var connectedRels = {};
         connectedRels[centerNode.relPath] = true;
 
-        edges.forEach(function(e) {
+        allEdges.forEach(function(e) {
             if (e.source.relPath === centerNode.relPath) { connectedRels[e.target.relPath] = true; }
             if (e.target.relPath === centerNode.relPath) { connectedRels[e.source.relPath] = true; }
         });
@@ -2155,32 +2221,41 @@ $controlPanelHtml
                 dot.setAttribute("fill", "#58a6ff");
                 dot.setAttribute("r", "10");
                 dot.setAttribute("opacity", "1");
-                text.setAttribute("opacity", "1");
+                text.style.opacity = "1";
                 text.setAttribute("font-weight", "bold");
             } else if (connectedRels[rel]) {
                 dot.setAttribute("fill", "#79c0ff");
                 dot.setAttribute("r", "8");
                 dot.setAttribute("opacity", "1");
-                text.setAttribute("opacity", "0.95");
+                text.style.opacity = "0.95";
             } else {
                 dot.setAttribute("opacity", "0.2");
-                text.setAttribute("opacity", "0.2");
+                text.style.opacity = "0.15";
             }
         });
 
-        // 接続線の発光
+        // 接続線の発光（選択ノードに繋がる全線を全展開）
         var linkElems = gLinks.querySelectorAll(".stella-link-line");
         linkElems.forEach(function(line) {
             var s = line.dataset.source;
             var t = line.dataset.target;
-            if (s === centerNode.relPath || t === centerNode.relPath) {
+            var isConnected = (s === centerNode.relPath || t === centerNode.relPath);
+
+            if (isConnected) {
+                line.style.display = "block";
                 line.setAttribute("stroke", "rgba(88, 166, 255, 0.95)");
                 line.setAttribute("stroke-width", "2.8");
-                line.style.filter = "drop-shadow(0 0 4px #388bfd)";
+                line.style.filter = "drop-shadow(0 0 5px #388bfd)";
             } else {
-                line.setAttribute("stroke", "rgba(88, 166, 255, 0.08)");
-                line.setAttribute("stroke-width", "1");
-                line.style.filter = "none";
+                var isBackbone = line.dataset.isBackbone === "true";
+                if (isBackbone) {
+                    line.style.display = "block";
+                    line.setAttribute("stroke", "rgba(88, 166, 255, 0.08)");
+                    line.setAttribute("stroke-width", "1");
+                    line.style.filter = "none";
+                } else {
+                    line.style.display = "none";
+                }
             }
         });
     }
@@ -2197,7 +2272,7 @@ $controlPanelHtml
         // 繋がっている星一覧の生成
         var connectedListEl = document.getElementById("stellaConnectedList");
         var connectedItems = [];
-        edges.forEach(function(e) {
+        allEdges.forEach(function(e) {
             var other = null;
             if (e.source.relPath === n.relPath) other = e.target;
             else if (e.target.relPath === n.relPath) other = e.source;
@@ -2251,24 +2326,27 @@ $controlPanelHtml
             var rel = el.dataset.relpath;
             var dot = el.querySelector("circle");
             var text = el.querySelector("text");
+            var isHub = el.dataset.isHub === "true";
 
             if (!isActiveFilter) {
                 var nodeObj = nodes.filter(function(x) { return x.relPath === rel; })[0];
                 var dotColor = (nodeObj && (nodeObj.status === 'stable' || nodeObj.status === 'active')) ? '#58a6ff' : (nodeObj && nodeObj.status === 'draft' ? '#d29922' : '#f85149');
                 dot.setAttribute("fill", dotColor);
-                dot.setAttribute("r", (nodeObj && nodeObj.tags && nodeObj.tags.length >= 4) ? "8" : "6");
+                dot.setAttribute("r", isHub ? "8" : "6");
                 dot.setAttribute("opacity", "0.85");
-                text.setAttribute("opacity", "0.85");
+                if (text) {
+                    text.style.opacity = (viewScale < 0.75 && !isHub) ? "0.15" : "0.85";
+                }
             } else if (matchingRels[rel]) {
                 dot.setAttribute("fill", "#388bfd");
                 dot.setAttribute("r", "9");
                 dot.setAttribute("opacity", "1");
-                text.setAttribute("opacity", "1");
+                if (text) { text.style.opacity = "1"; }
             } else {
                 dot.setAttribute("fill", "#21262d");
                 dot.setAttribute("r", "4");
                 dot.setAttribute("opacity", "0.2");
-                text.setAttribute("opacity", "0.2");
+                if (text) { text.style.opacity = "0.15"; }
             }
         });
 
@@ -2277,18 +2355,27 @@ $controlPanelHtml
         linkElems.forEach(function(line) {
             var s = line.dataset.source;
             var t = line.dataset.target;
+            var isBackbone = line.dataset.isBackbone === "true";
             line.style.filter = "none";
-            if (isActiveFilter && (matchingRels[s] && matchingRels[t])) {
-                line.setAttribute("stroke", "rgba(56, 139, 253, 0.85)");
-                line.setAttribute("stroke-width", "2.2");
-            } else if (!isActiveFilter) {
-                var isRelated = line.dataset.isRelated === "true";
-                var sharedCount = parseInt(line.dataset.sharedCount || "0", 10);
-                line.setAttribute("stroke", isRelated ? "rgba(138, 180, 248, 0.55)" : (sharedCount > 1 ? "rgba(88, 166, 255, 0.4)" : "rgba(88, 166, 255, 0.2)"));
-                line.setAttribute("stroke-width", isRelated ? "2.2" : (sharedCount > 1 ? "1.6" : "1.1"));
+
+            if (isActiveFilter) {
+                if (matchingRels[s] && matchingRels[t]) {
+                    line.style.display = "block";
+                    line.setAttribute("stroke", "rgba(56, 139, 253, 0.85)");
+                    line.setAttribute("stroke-width", "2.2");
+                } else {
+                    line.style.display = "none";
+                }
             } else {
-                line.setAttribute("stroke", "rgba(88, 166, 255, 0.08)");
-                line.setAttribute("stroke-width", "1");
+                if (isBackbone) {
+                    line.style.display = "block";
+                    var isRelated = line.dataset.isRelated === "true";
+                    var sharedCount = parseInt(line.dataset.sharedCount || "0", 10);
+                    line.setAttribute("stroke", isRelated ? "rgba(138, 180, 248, 0.55)" : (sharedCount > 1 ? "rgba(88, 166, 255, 0.4)" : "rgba(88, 166, 255, 0.2)"));
+                    line.setAttribute("stroke-width", isRelated ? "2.2" : (sharedCount > 1 ? "1.6" : "1.1"));
+                } else {
+                    line.style.display = "none";
+                }
             }
         });
     }

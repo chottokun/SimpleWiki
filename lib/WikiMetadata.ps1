@@ -361,12 +361,21 @@ function Measure-WikiNodeCoordinates {
         return @()
     }
 
+    $docCount = $DocList.Count
+
+    # ドキュメント数に応じた仮想キャンバスの動的スケーリング (過密防止)
+    $scaleUnit = 1.0
+    if ($docCount -gt 25) {
+        $scaleUnit = [Math]::Sqrt($docCount / 25.0)
+        $CanvasWidth = [int][Math]::Max($CanvasWidth, [Math]::Round($CanvasWidth * $scaleUnit))
+        $CanvasHeight = [int][Math]::Max($CanvasHeight, [Math]::Round($CanvasHeight * $scaleUnit))
+    }
+
     $centerX = [int]($CanvasWidth / 2)
     $centerY = [int]($CanvasHeight / 2)
-    $maxRadius = [Math]::Min($CanvasWidth, $CanvasHeight) * 0.40
+    $maxRadius = [Math]::Min($CanvasWidth, $CanvasHeight) * 0.42
 
     # 1. 共通タグおよび関連文書 (related) による親和性スコアとクラスタの計算
-    $docCount = $DocList.Count
     $totalAffinity = @{}
 
     for ($i = 0; $i -lt $docCount; $i++) {
