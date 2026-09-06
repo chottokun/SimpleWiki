@@ -429,6 +429,26 @@ function Measure-WikiNodeCoordinates {
 
     $placedNodes = [System.Collections.Generic.List[PSObject]]::new()
 
+    # 3. 時間軸 (Z座標) のレンジ計算 (最古 = 奥/過去, 最新 = 手前/現在)
+    $allTimes = foreach ($d in $DocList) {
+        $dt = $null
+        if ($d.UpdatedAt) {
+            if ($d.UpdatedAt -is [DateTime]) { $dt = $d.UpdatedAt }
+            else { [void][DateTime]::TryParse($d.UpdatedAt.ToString(), [ref]$dt) }
+        }
+        if (-not $dt -and $d.CreatedAt) {
+            if ($d.CreatedAt -is [DateTime]) { $dt = $d.CreatedAt }
+            else { [void][DateTime]::TryParse($d.CreatedAt.ToString(), [ref]$dt) }
+        }
+        if (-not $dt) { $dt = Get-Date }
+        $dt.Ticks
+    }
+
+    $minTicks = ($allTimes | Measure-Object -Minimum).Minimum
+    $maxTicks = ($allTimes | Measure-Object -Maximum).Maximum
+    $timeRange = if ($maxTicks -gt $minTicks) { [double]($maxTicks - $minTicks) } else { 1.0 }
+    $maxZDepth = [Math]::Round(350.0 * $scaleUnit)
+
     for ($i = 0; $i -lt $docCount; $i++) {
         $doc = $sortedDocs[$i]
         $r = if ($doc.RelPath) { $doc.RelPath.Replace('\', '/').ToLower() } else { "" }
@@ -480,6 +500,24 @@ function Measure-WikiNodeCoordinates {
         $posX = [Math]::Max(50, [Math]::Min($CanvasWidth - 50, $posX))
         $posY = [Math]::Max(50, [Math]::Min($CanvasHeight - 50, $posY))
 
+        # Z座標（時間軸: 最古 = -$maxZDepth [奥/過去], 最新 = +$maxZDepth [手前/現在]）
+        $docDt = $null
+        if ($doc.UpdatedAt) {
+            if ($doc.UpdatedAt -is [DateTime]) { $docDt = $doc.UpdatedAt }
+            else { [void][DateTime]::TryParse($doc.UpdatedAt.ToString(), [ref]$docDt) }
+        }
+        if (-not $docDt -and $doc.CreatedAt) {
+            if ($doc.CreatedAt -is [DateTime]) { $docDt = $doc.CreatedAt }
+            else { [void][DateTime]::TryParse($doc.CreatedAt.ToString(), [ref]$docDt) }
+        }
+        if (-not $docDt) { $docDt = Get-Date }
+
+        $posZ = if ($maxTicks -eq $minTicks) {
+            0
+        } else {
+            [Math]::Round(((($docDt.Ticks - $minTicks) / $timeRange) * (2 * $maxZDepth)) - $maxZDepth)
+        }
+
         if ($doc.PSObject -and $doc.PSObject.Properties["X"]) {
             $doc.X = [int]$posX
         } else {
@@ -492,8 +530,15 @@ function Measure-WikiNodeCoordinates {
             Add-Member -InputObject $doc -NotePropertyName Y -NotePropertyValue ([int]$posY) -Force
         }
 
+        if ($doc.PSObject -and $doc.PSObject.Properties["Z"]) {
+            $doc.Z = [int]$posZ
+        } else {
+            Add-Member -InputObject $doc -NotePropertyName Z -NotePropertyValue ([int]$posZ) -Force
+        }
+
         $doc.X = [int]$posX
         $doc.Y = [int]$posY
+        $doc.Z = [int]$posZ
 
         [void]$placedNodes.Add($doc)
     }

@@ -3002,7 +3002,7 @@ Describe "Refactoring Specific Behavior Tests" {
     }
 }
 
-Describe 'Stella View & Timeline/Tree Specification Tests' {
+Describe 'Stella View & 3D Spacetime Specification Tests' {
     BeforeAll {
         . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -DotSourceOnly
     }
@@ -3039,11 +3039,11 @@ status: invalid_unknown_status
         $metaInvalid.Status | Should Be "active"
     }
 
-    It "Computes deterministic 2D coordinates (x, y) with collision avoidance" {
+    It "Computes deterministic 3D coordinates (X, Y, Z) with collision avoidance and time depth" {
         $docs = @(
-            [PSCustomObject]@{ Title = "Doc A"; RelPath = "a.md"; Domain = "domain1"; Status = "active"; Links = @() },
-            [PSCustomObject]@{ Title = "Doc B"; RelPath = "b.md"; Domain = "domain1"; Status = "active"; Links = @() },
-            [PSCustomObject]@{ Title = "Doc C"; RelPath = "c.md"; Domain = "domain2"; Status = "draft"; Links = @() }
+            [PSCustomObject]@{ Title = "Doc Old"; RelPath = "a.md"; Domain = "domain1"; Status = "active"; CreatedAt = [DateTime]"2023-01-01"; UpdatedAt = [DateTime]"2023-01-01"; Links = @() },
+            [PSCustomObject]@{ Title = "Doc Mid"; RelPath = "b.md"; Domain = "domain1"; Status = "active"; CreatedAt = [DateTime]"2024-06-01"; UpdatedAt = [DateTime]"2024-06-01"; Links = @() },
+            [PSCustomObject]@{ Title = "Doc New"; RelPath = "c.md"; Domain = "domain2"; Status = "draft"; CreatedAt = [DateTime]"2026-09-01"; UpdatedAt = [DateTime]"2026-09-01"; Links = @() }
         )
 
         $placedDocs = Measure-WikiNodeCoordinates -DocList $docs
@@ -3051,23 +3051,29 @@ status: invalid_unknown_status
         foreach ($d in $placedDocs) {
             ($null -ne $d.X) | Should Be $true
             ($null -ne $d.Y) | Should Be $true
+            ($null -ne $d.Z) | Should Be $true
         }
 
         # Verify coordinates are not all overlapping (distance >= minDistance)
         $dist = [Math]::Sqrt([Math]::Pow(($placedDocs[0].X - $placedDocs[1].X), 2) + [Math]::Pow(($placedDocs[0].Y - $placedDocs[1].Y), 2))
         ($dist -ge 30) | Should Be $true
+
+        # Verify time depth Z reflects chronology (Doc Old has lower Z than Doc New)
+        ($placedDocs[0].Z -lt $placedDocs[2].Z) | Should Be $true
     }
 
-    It "Get-StellaViewHtml renders canvas, control panel, slide-in pane, and localStorage JS" {
+    It "Get-StellaViewHtml renders 3D canvas, control panel with view presets, and time HUD" {
         $sampleWikiDir = Join-Path $projectRoot "markdown_sample"
         Ensure-WikiIndexLoaded -TargetWikiDir $sampleWikiDir
         $html = Get-StellaViewHtml -Lang "ja"
         $html | Should Match "stellaCanvas"
         $html | Should Match "stella-control-panel"
         $html | Should Match "stella-slidein-pane"
-        $html | Should Match "localStorage"
+        $html | Should Match "stella-preset-btn"
+        $html | Should Match "setStellaPreset"
+        $html | Should Match "project3D"
+        $html | Should Match "stellaTimeHud"
         $html | Should Match "flyToNode"
-        $html | Should Match "ステラビュー"
         $html | Should Match "stella-help-overlay"
         $html | Should Match "stella-reset-btn"
         $html | Should Match "resetStellaView"
@@ -3075,19 +3081,8 @@ status: invalid_unknown_status
         $html | Should Match "stellaConnectedSection"
     }
 
-    It "Get-TimelineViewHtml renders time vs tag matrix, status colored dots, stale warnings, and tree lineage" {
-        $sampleWikiDir = Join-Path $projectRoot "markdown_sample"
-        Ensure-WikiIndexLoaded -TargetWikiDir $sampleWikiDir
-        $html = Get-TimelineViewHtml -Lang "ja"
-        $html | Should Match "timeline-matrix"
-        $html | Should Match "stale-warning-ring"
-        $html | Should Match "tree-lineage-container"
-        $html | Should Match "タイムライン"
-    }
-
-    It "HTTP route requests handle /stella and /timeline endpoints" {
+    It "HTTP route requests handle /stella endpoint" {
         $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
         $scriptContent | Should Match 'rawPath -eq "/stella"'
-        $scriptContent | Should Match 'rawPath -eq "/timeline"'
     }
 }
