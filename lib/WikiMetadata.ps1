@@ -354,89 +354,139 @@ function Measure-WikiNodeCoordinates {
         [array]$DocList = @(),
         [int]$CanvasWidth = 1000,
         [int]$CanvasHeight = 800,
-        [double]$MinDistance = 40.0
+        [double]$MinDistance = 45.0
     )
 
     if ($null -eq $DocList -or $DocList.Count -eq 0) {
         return @()
     }
 
-    # Group documents by Domain to form semantic clusters in space
-    $domainGroups = $DocList | Group-Object Domain
-    $domainCount = $domainGroups.Count
-    if ($domainCount -eq 0) { $domainCount = 1 }
-
     $centerX = [int]($CanvasWidth / 2)
     $centerY = [int]($CanvasHeight / 2)
-    $domainRadius = [Math]::Min($CanvasWidth, $CanvasHeight) * 0.35
+    $maxRadius = [Math]::Min($CanvasWidth, $CanvasHeight) * 0.40
+
+    # 1. 共通タグおよび関連文書 (related) による親和性スコアとクラスタの計算
+    $docCount = $DocList.Count
+    $totalAffinity = @{}
+
+    for ($i = 0; $i -lt $docCount; $i++) {
+        $d1 = $DocList[$i]
+        $r1 = if ($d1.RelPath) { $d1.RelPath.Replace('\', '/').ToLower() } else { $i.ToString() }
+        if (-not $totalAffinity.ContainsKey($r1)) { $totalAffinity[$r1] = 0 }
+        $tags1 = @(if ($d1.Tags) { foreach ($t in $d1.Tags) { if ($t -is [string] -and -not [string]::IsNullOrWhiteSpace($t)) { $t.Trim().ToLower() } } })
+
+        for ($j = $i + 1; $j -lt $docCount; $j++) {
+            $d2 = $DocList[$j]
+            $r2 = if ($d2.RelPath) { $d2.RelPath.Replace('\', '/').ToLower() } else { $j.ToString() }
+            if (-not $totalAffinity.ContainsKey($r2)) { $totalAffinity[$r2] = 0 }
+            $tags2 = @(if ($d2.Tags) { foreach ($t in $d2.Tags) { if ($t -is [string] -and -not [string]::IsNullOrWhiteSpace($t)) { $t.Trim().ToLower() } } })
+
+            $score = 0
+            foreach ($t in $tags1) {
+                if ($tags2 -contains $t) { $score += 3 }
+            }
+            if ($d1.Related -and ($d1.Related -contains $d2.RelPath -or $d1.Related -contains $r2)) { $score += 5 }
+            if ($d2.Related -and ($d2.Related -contains $d1.RelPath -or $d2.Related -contains $r1)) { $score += 5 }
+            if ($d1.Domain -and $d2.Domain) {
+                if ($d1.Domain.ToLower() -eq $d2.Domain.ToLower()) {
+                    $score += 2
+                } else {
+                    $dom1Parent = ($d1.Domain -split '[\\/]')[0].ToLower()
+                    $dom2Parent = ($d2.Domain -split '[\\/]')[0].ToLower()
+                    if ($dom1Parent -eq $dom2Parent) { $score += 1 }
+                }
+            }
+
+            if ($score -gt 0) {
+                $totalAffinity[$r1] += $score
+                $totalAffinity[$r2] += $score
+            }
+        }
+    }
+
+    # 2. 親和性スコアが高いノード（知識のハブ文書）を中心に、関連ノードを周囲に配置
+    $sortedDocs = @($DocList | Sort-Object -Descending {
+        $r = if ($_.RelPath) { $_.RelPath.Replace('\', '/').ToLower() } else { "" }
+        if ($totalAffinity.ContainsKey($r)) { $totalAffinity[$r] } else { 0 }
+    })
+
+    $domainGroups = @($DocList | Group-Object Domain | Sort-Object Count -Descending)
+    $domainAngles = @{}
+    $dCount = $domainGroups.Count
+    if ($dCount -eq 0) { $dCount = 1 }
+    for ($d = 0; $d -lt $dCount; $d++) {
+        $domainAngles[$domainGroups[$d].Name] = (2 * [Math]::PI / $dCount) * $d
+    }
 
     $placedNodes = [System.Collections.Generic.List[PSObject]]::new()
 
-    for ($dIdx = 0; $dIdx -lt $domainCount; $dIdx++) {
-        $group = $domainGroups[$dIdx]
-        $angle = (2 * [Math]::PI / $domainCount) * $dIdx
-        $clusterCenterX = $centerX + [int]($domainRadius * [Math]::Cos($angle))
-        $clusterCenterY = $centerY + [int]($domainRadius * [Math]::Sin($angle))
+    for ($i = 0; $i -lt $docCount; $i++) {
+        $doc = $sortedDocs[$i]
+        $r = if ($doc.RelPath) { $doc.RelPath.Replace('\', '/').ToLower() } else { "" }
+        $aff = if ($totalAffinity.ContainsKey($r)) { $totalAffinity[$r] } else { 0 }
 
-        $docsInGroup = @($group.Group)
-        $docCount = $docsInGroup.Count
-
-        for ($i = 0; $i -lt $docCount; $i++) {
-            $doc = $docsInGroup[$i]
-            if ($null -eq $doc) { continue }
-
-            # Spiral offset within domain cluster for deterministic placement
-            $spiralRadius = 35 * [Math]::Sqrt($i + 1)
-            $spiralAngle  = $i * 2.4 # Golden ratio angle approximation
-
-            $posX = [Math]::Round($clusterCenterX + ($spiralRadius * [Math]::Cos($spiralAngle)))
-            $posY = [Math]::Round($clusterCenterY + ($spiralRadius * [Math]::Sin($spiralAngle)))
-
-            # Collision avoidance check against already placed nodes
-            $hasCollision = $true
-            $attempts = 0
-            while ($hasCollision -and $attempts -lt 50) {
-                $hasCollision = $false
-                foreach ($pn in $placedNodes) {
-                    $dx = $posX - $pn.X
-                    $dy = $posY - $pn.Y
-                    $dist = [Math]::Sqrt(($dx * $dx) + ($dy * $dy))
-                    if ($dist -lt $MinDistance) {
-                        $hasCollision = $true
-                        $overlap = $MinDistance - $dist + 1.0
-                        if ($dist -gt 0) {
-                            $posX += [Math]::Round(($dx / $dist) * $overlap)
-                            $posY += [Math]::Round(($dy / $dist) * $overlap)
-                        } else {
-                            $posX += [Math]::Round($MinDistance)
-                        }
-                        break
-                    }
-                }
-                $attempts++
-            }
-
-            # Clamp coordinates to canvas bounds
-            $posX = [Math]::Max(40, [Math]::Min($CanvasWidth - 40, $posX))
-            $posY = [Math]::Max(40, [Math]::Min($CanvasHeight - 40, $posY))
-
-            if ($doc.PSObject -and $doc.PSObject.Properties["X"]) {
-                $doc.X = [int]$posX
+        if ($i -eq 0 -and $aff -gt 0) {
+            $posX = $centerX
+            $posY = $centerY
+        } else {
+            $baseAngle = if ($domainAngles.ContainsKey($doc.Domain)) { $domainAngles[$doc.Domain] } else { ($i * 2.39996) }
+            $distFromCenter = if ($aff -ge 8) {
+                90 + ($i * 10)
+            } elseif ($aff -gt 0) {
+                160 + ($i * 9)
             } else {
-                Add-Member -InputObject $doc -NotePropertyName X -NotePropertyValue ([int]$posX) -Force
+                240 + ($i * 7)
             }
+            $distFromCenter = [Math]::Min($maxRadius, [double]$distFromCenter)
+            $jitterAngle = $baseAngle + ((($i % 5) - 2) * 0.28)
 
-            if ($doc.PSObject -and $doc.PSObject.Properties["Y"]) {
-                $doc.Y = [int]$posY
-            } else {
-                Add-Member -InputObject $doc -NotePropertyName Y -NotePropertyValue ([int]$posY) -Force
-            }
-
-            $doc.X = [int]$posX
-            $doc.Y = [int]$posY
-
-            [void]$placedNodes.Add($doc)
+            $posX = [Math]::Round($centerX + ($distFromCenter * [Math]::Cos($jitterAngle)))
+            $posY = [Math]::Round($centerY + ($distFromCenter * [Math]::Sin($jitterAngle)))
         }
+
+        # 衝突回避（重なり防止）
+        $hasCollision = $true
+        $attempts = 0
+        while ($hasCollision -and $attempts -lt 50) {
+            $hasCollision = $false
+            foreach ($pn in $placedNodes) {
+                $dx = $posX - $pn.X
+                $dy = $posY - $pn.Y
+                $dist = [Math]::Sqrt(($dx * $dx) + ($dy * $dy))
+                if ($dist -lt $MinDistance) {
+                    $hasCollision = $true
+                    $overlap = $MinDistance - $dist + 1.0
+                    if ($dist -gt 0) {
+                        $posX += [Math]::Round(($dx / $dist) * $overlap)
+                        $posY += [Math]::Round(($dy / $dist) * $overlap)
+                    } else {
+                        $posX += [Math]::Round($MinDistance)
+                    }
+                    break
+                }
+            }
+            $attempts++
+        }
+
+        $posX = [Math]::Max(50, [Math]::Min($CanvasWidth - 50, $posX))
+        $posY = [Math]::Max(50, [Math]::Min($CanvasHeight - 50, $posY))
+
+        if ($doc.PSObject -and $doc.PSObject.Properties["X"]) {
+            $doc.X = [int]$posX
+        } else {
+            Add-Member -InputObject $doc -NotePropertyName X -NotePropertyValue ([int]$posX) -Force
+        }
+
+        if ($doc.PSObject -and $doc.PSObject.Properties["Y"]) {
+            $doc.Y = [int]$posY
+        } else {
+            Add-Member -InputObject $doc -NotePropertyName Y -NotePropertyValue ([int]$posY) -Force
+        }
+
+        $doc.X = [int]$posX
+        $doc.Y = [int]$posY
+
+        [void]$placedNodes.Add($doc)
     }
 
     return @($DocList)

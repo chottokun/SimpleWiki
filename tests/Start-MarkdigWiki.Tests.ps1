@@ -3068,6 +3068,11 @@ status: invalid_unknown_status
         $html | Should Match "localStorage"
         $html | Should Match "flyToNode"
         $html | Should Match "ステラビュー"
+        $html | Should Match "stella-help-overlay"
+        $html | Should Match "stella-reset-btn"
+        $html | Should Match "resetStellaView"
+        $html | Should Match "highlightConstellation"
+        $html | Should Match "stellaConnectedSection"
     }
 
     It "Get-TimelineViewHtml renders time vs tag matrix, status colored dots, stale warnings, and tree lineage" {

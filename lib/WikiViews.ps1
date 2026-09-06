@@ -1728,6 +1728,7 @@ function Get-StellaControlPanelHtml {
     $stArch      = Get-LocalizedStr -Key "stella_status_archived" -Lang $Lang
     $tagAll      = Get-LocalizedStr -Key "stella_tag_all" -Lang $Lang
     $editBtnTxt  = Get-LocalizedStr -Key "edit_doc_btn" -Lang $Lang
+    $resetBtnTxt = Get-LocalizedStr -Key "stella_btn_reset" -Lang $Lang
 
     $allTags = [System.Collections.Generic.HashSet[string]]::new()
     foreach ($item in $script:WikiIndex) {
@@ -1746,12 +1747,14 @@ function Get-StellaControlPanelHtml {
 
     $stellaClass   = if ($ActiveView -eq "stella") { "active" } else { "" }
     $timelineClass = if ($ActiveView -eq "timeline") { "active" } else { "" }
+    $resetBtnHtml  = if ($ActiveView -eq "stella") { "<button class='stella-reset-btn' onclick='resetStellaView()' title='$resetBtnTxt'>$resetBtnTxt</button>" } else { "" }
 
     return @"
 <div class="stella-control-panel">
     <div class="stella-control-left">
         <a href="/stella" class="stella-nav-btn $stellaClass">$navStella</a>
         <a href="/timeline" class="stella-nav-btn $timelineClass">$navTimeline</a>
+        $resetBtnHtml
     </div>
     <div class="stella-control-center">
         <input type="text" id="stellaSearchInput" placeholder="$searchHolder" class="stella-input">
@@ -1777,6 +1780,8 @@ function Get-StellaControlPanelHtml {
     .stella-nav-btn { color: #8b949e; text-decoration: none; font-size: 13px; font-weight: bold; padding: 6px 12px; border-radius: 6px; background: #21262d; border: 1px solid #30363d; transition: all 0.2s; }
     .stella-nav-btn:hover { color: #58a6ff; background: #30363d; }
     .stella-nav-btn.active { color: #ffffff; background: #1f6feb; border-color: #388bfd; }
+    .stella-reset-btn { color: #8b949e; background: #21262d; border: 1px solid #30363d; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+    .stella-reset-btn:hover { color: #58a6ff; background: #30363d; border-color: #58a6ff; }
     .stella-input, .stella-select { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; font-size: 12px; padding: 6px 10px; border-radius: 6px; outline: none; }
     .stella-input { width: 220px; }
     .stella-input:focus, .stella-select:focus { border-color: #58a6ff; }
@@ -1794,8 +1799,13 @@ function Get-StellaViewHtml {
     Ensure-WikiIndexLoaded -TargetWikiDir $wikiDir
     $controlPanelHtml = Get-StellaControlPanelHtml -ActiveView "stella" -Lang $Lang
 
-    $previewTitle = Get-LocalizedStr -Key "stella_preview_title" -Lang $Lang
-    $openDocTxt   = Get-LocalizedStr -Key "search_btn" -Lang $Lang
+    $previewTitle   = Get-LocalizedStr -Key "stella_preview_title" -Lang $Lang
+    $openDocTxt     = Get-LocalizedStr -Key "search_btn" -Lang $Lang
+    $navStellaTitle = Get-LocalizedStr -Key "stella_view_nav" -Lang $Lang
+    $helpDrag       = Get-LocalizedStr -Key "stella_help_drag" -Lang $Lang
+    $helpWheel      = Get-LocalizedStr -Key "stella_help_wheel" -Lang $Lang
+    $helpClick      = Get-LocalizedStr -Key "stella_help_click" -Lang $Lang
+    $connectedTitle = Get-LocalizedStr -Key "stella_connected_nodes" -Lang $Lang
 
     # Index items serialization
     $indexJson = Get-ApiIndexJson -QueryParams @{ limit = "all" }
@@ -1803,7 +1813,15 @@ function Get-StellaViewHtml {
     return @"
 $controlPanelHtml
 
-<div class="stella-container" style="position: relative; width: 100%; height: calc(100vh - 180px); min-height: 550px; background: #0b0e14; border-radius: 8px; border: 1px solid #30363d; overflow: hidden; display: flex;">
+<div class="stella-container" style="position: relative; width: 100%; height: calc(100vh - 180px); min-height: 550px; background: radial-gradient(circle at 50% 50%, #0d131f 0%, #070a0f 100%); border-radius: 8px; border: 1px solid #30363d; overflow: hidden; display: flex;">
+    <!-- Graphical Operation Guide Overlay -->
+    <div class="stella-help-overlay" style="position: absolute; top: 12px; left: 12px; background: rgba(22, 27, 34, 0.88); backdrop-filter: blur(6px); padding: 10px 14px; border-radius: 8px; border: 1px solid #30363d; color: #8b949e; font-size: 11px; z-index: 50; pointer-events: none; line-height: 1.6; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+        <div style="font-weight: bold; color: #58a6ff; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">$navStellaTitle</div>
+        <div>$helpDrag</div>
+        <div>$helpWheel</div>
+        <div>$helpClick</div>
+    </div>
+
     <svg id="stellaCanvas" style="width: 100%; height: 100%; cursor: grab;" viewBox="0 0 1000 800">
         <g id="stellaTransformGroup">
             <g id="stellaLinksGroup"></g>
@@ -1812,12 +1830,19 @@ $controlPanelHtml
     </svg>
 
     <!-- Slide-in preview pane -->
-    <div id="stellaSlidePane" class="stella-slidein-pane" style="position: absolute; top: 0; right: -360px; width: 340px; height: 100%; background: #161b22; border-left: 1px solid #30363d; padding: 20px; box-shadow: -4px 0 16px rgba(0,0,0,0.5); transition: right 0.3s ease; color: #c9d1d9; overflow-y: auto; z-index: 100;">
+    <div id="stellaSlidePane" class="stella-slidein-pane" style="position: absolute; top: 0; right: -380px; width: 360px; height: 100%; background: #161b22; border-left: 1px solid #30363d; padding: 20px; box-shadow: -4px 0 16px rgba(0,0,0,0.5); transition: right 0.3s ease; color: #c9d1d9; overflow-y: auto; z-index: 100; box-sizing: border-box;">
         <button onclick="closeStellaPane()" style="position: absolute; top: 12px; right: 12px; background: none; border: none; color: #8b949e; font-size: 18px; cursor: pointer;">✕</button>
         <h3 id="stellaPaneTitle" style="margin-top: 0; font-size: 16px; color: #58a6ff; word-break: break-all;">$previewTitle</h3>
         <div id="stellaPaneMeta" style="font-size: 12px; color: #8b949e; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;"></div>
-        <p id="stellaPaneDesc" style="font-size: 13px; line-height: 1.5; color: #8b949e; background: #0d1117; padding: 10px; border-radius: 6px; border: 1px solid #21262d;"></p>
-        <div style="margin-top: 16px;">
+        <p id="stellaPaneDesc" style="font-size: 13px; line-height: 1.5; color: #8b949e; background: #0d1117; padding: 10px; border-radius: 6px; border: 1px solid #21262d; margin-bottom: 12px;"></p>
+
+        <!-- Connected Stars (Metadata Affinity) -->
+        <div id="stellaConnectedSection" style="margin-top: 14px; border-top: 1px solid #21262d; padding-top: 12px;">
+            <div style="font-size: 12px; font-weight: bold; color: #58a6ff; margin-bottom: 8px;">$connectedTitle</div>
+            <div id="stellaConnectedList" style="display: flex; flex-direction: column; gap: 6px; font-size: 12px;"></div>
+        </div>
+
+        <div style="margin-top: 18px;">
             <a id="stellaPaneLink" href="#" style="display: inline-block; padding: 8px 16px; background: #1f6feb; color: #fff; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: bold;">📄 記事を開く</a>
         </div>
     </div>
@@ -1847,6 +1872,7 @@ $controlPanelHtml
             tags: item.Tags || item.tags || [],
             domain: item.Domain || item.domain || "root",
             lastUpdated: item.LastUpdated || item.lastUpdated || "",
+            related: item.Related || item.related || [],
             links: item.Links || item.links || [],
             x: x,
             y: y
@@ -1861,38 +1887,102 @@ $controlPanelHtml
 
     var viewX = 0, viewY = 0, viewScale = 1;
     var selectedNode = null;
+    var edges = [];
+
+    function updateTransform(animate) {
+        if (animate) {
+            gGroup.style.transition = "transform 0.3s ease-out";
+            setTimeout(function() { gGroup.style.transition = "none"; }, 300);
+        } else {
+            gGroup.style.transition = "none";
+        }
+        gGroup.setAttribute("transform", "translate(" + viewX + "," + viewY + ") scale(" + viewScale + ")");
+    }
+
+    window.resetStellaView = function() {
+        viewX = 0;
+        viewY = 0;
+        viewScale = 1;
+        selectedNode = null;
+        updateTransform(true);
+        applyFilter();
+        closeStellaPane();
+    };
 
     function renderCanvas() {
         gLinks.innerHTML = "";
         gNodes.innerHTML = "";
+        edges = [];
 
-        // Build links map
-        var nodeMap = {};
-        nodes.forEach(function(n) { nodeMap[n.relPath] = n; });
+        // 1. メタデータ（共通タグ & related）による関係性エッジ（星座線）の算出
+        var nodeCount = nodes.length;
+        for (var i = 0; i < nodeCount; i++) {
+            for (var j = i + 1; j < nodeCount; j++) {
+                var n1 = nodes[i];
+                var n2 = nodes[j];
 
-        // Draw Links
-        nodes.forEach(function(n) {
-            if (n.links && n.links.length > 0) {
-                n.links.forEach(function(targetRel) {
-                    var targetNode = nodeMap[targetRel];
-                    if (targetNode) {
-                        var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-                        line.setAttribute("x1", n.x);
-                        line.setAttribute("y1", n.y);
-                        line.setAttribute("x2", targetNode.x);
-                        line.setAttribute("y2", targetNode.y);
-                        line.setAttribute("stroke", "rgba(88, 166, 255, 0.15)");
-                        line.setAttribute("stroke-width", "1.5");
-                        line.setAttribute("class", "stella-link-line");
-                        line.dataset.source = n.relPath;
-                        line.dataset.target = targetNode.relPath;
-                        gLinks.appendChild(line);
-                    }
-                });
+                // 共通タグの抽出
+                var sharedTags = [];
+                if (n1.tags && n2.tags) {
+                    n1.tags.forEach(function(t) {
+                        if (typeof t === "string" && t.trim() !== "" && n2.tags.indexOf(t) !== -1 && sharedTags.indexOf(t) === -1) {
+                            sharedTags.push(t);
+                        }
+                    });
+                }
+
+                // related 指定の相互参照
+                var isRelated = false;
+                var r1 = n1.relPath.replace(/\\/g, '/').toLowerCase();
+                var r2 = n2.relPath.replace(/\\/g, '/').toLowerCase();
+                if (n1.related) {
+                    n1.related.forEach(function(rel) {
+                        if (typeof rel === "string" && (rel.toLowerCase() === r2 || rel.toLowerCase() === n2.relPath.toLowerCase())) { isRelated = true; }
+                    });
+                }
+                if (n2.related) {
+                    n2.related.forEach(function(rel) {
+                        if (typeof rel === "string" && (rel.toLowerCase() === r1 || rel.toLowerCase() === n1.relPath.toLowerCase())) { isRelated = true; }
+                    });
+                }
+
+                if (sharedTags.length > 0 || isRelated) {
+                    edges.push({
+                        source: n1,
+                        target: n2,
+                        sharedTags: sharedTags,
+                        isRelated: isRelated,
+                        weight: (isRelated ? 4 : 0) + (sharedTags.length * 2)
+                    });
+                }
             }
+        }
+
+        // 2. 星座線 (SVG Line) の描画
+        edges.forEach(function(e) {
+            var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            line.setAttribute("x1", e.source.x);
+            line.setAttribute("y1", e.source.y);
+            line.setAttribute("x2", e.target.x);
+            line.setAttribute("y2", e.target.y);
+
+            var strokeColor = e.isRelated ? "rgba(138, 180, 248, 0.55)" : (e.sharedTags.length > 1 ? "rgba(88, 166, 255, 0.4)" : "rgba(88, 166, 255, 0.2)");
+            var strokeWidth = e.isRelated ? "2.2" : (e.sharedTags.length > 1 ? "1.6" : "1.1");
+            line.setAttribute("stroke", strokeColor);
+            line.setAttribute("stroke-width", strokeWidth);
+            if (!e.isRelated && e.sharedTags.length === 1) {
+                line.setAttribute("stroke-dasharray", "4,3");
+            }
+            line.setAttribute("class", "stella-link-line");
+            line.dataset.source = e.source.relPath;
+            line.dataset.target = e.target.relPath;
+            line.dataset.isRelated = e.isRelated ? "true" : "false";
+            line.dataset.sharedCount = e.sharedTags.length;
+
+            gLinks.appendChild(line);
         });
 
-        // Draw Nodes
+        // 3. 星ノード (SVG Circle + Text) の描画
         nodes.forEach(function(n) {
             var g = document.createElementNS("http://www.w3.org/2000/svg", "g");
             g.setAttribute("transform", "translate(" + n.x + "," + n.y + ")");
@@ -1900,31 +1990,38 @@ $controlPanelHtml
             g.dataset.relpath = n.relPath;
             g.style.cursor = "pointer";
 
+            // 星の半径とカラー（ステータス・重要度）
+            var rSize = (n.tags && n.tags.length >= 4) ? 8 : 6;
+            var dotColor = (n.status === 'stable' || n.status === 'active') ? '#58a6ff' : (n.status === 'draft' ? '#d29922' : '#f85149');
+
             var circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-            circle.setAttribute("r", "6");
-            circle.setAttribute("fill", "#8b949e");
-            circle.setAttribute("opacity", "0.6");
+            circle.setAttribute("r", rSize.toString());
+            circle.setAttribute("fill", dotColor);
+            circle.setAttribute("opacity", "0.85");
             circle.setAttribute("class", "stella-dot");
+            circle.style.transition = "all 0.2s ease";
 
             var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-            text.setAttribute("x", "10");
+            text.setAttribute("x", (rSize + 5).toString());
             text.setAttribute("y", "4");
             text.setAttribute("fill", "#c9d1d9");
             text.setAttribute("font-size", "11px");
-            text.setAttribute("opacity", "0.8");
+            text.setAttribute("font-weight", "500");
+            text.setAttribute("opacity", "0.85");
             text.textContent = n.title;
 
             g.appendChild(circle);
             g.appendChild(text);
 
-            // Node Click -> Fly To & Slide-in Pane
+            // ノードクリック -> 星座発光 & プレビュー表示
             g.addEventListener("click", function(e) {
                 e.stopPropagation();
                 flyToNode(n);
+                highlightConstellation(n);
                 openStellaPane(n);
             });
 
-            // Drag Node Persistence
+            // ノードドラッグによる位置のカスタマイズと永続化
             var isDraggingNode = false;
             var dragStartX = 0, dragStartY = 0;
 
@@ -1945,7 +2042,19 @@ $controlPanelHtml
                     dragStartY = me.clientY;
                     g.setAttribute("transform", "translate(" + n.x + "," + n.y + ")");
 
-                    // Update local storage
+                    // 接続線の位置もリアルタイム追従
+                    var lines = gLinks.querySelectorAll(".stella-link-line");
+                    lines.forEach(function(l) {
+                        if (l.dataset.source === n.relPath) {
+                            l.setAttribute("x1", n.x);
+                            l.setAttribute("y1", n.y);
+                        } else if (l.dataset.target === n.relPath) {
+                            l.setAttribute("x2", n.x);
+                            l.setAttribute("y2", n.y);
+                        }
+                    });
+
+                    // 位置を localStorage に保存
                     customPositions[n.relPath] = { x: n.x, y: n.y };
                     try { localStorage.setItem(localStorageKey, JSON.stringify(customPositions)); } catch(err){}
                 };
@@ -1964,30 +2073,160 @@ $controlPanelHtml
         });
     }
 
+    // キャンバス全体のパン（背景ドラッグ）
+    var isPanning = false;
+    var panStartX = 0, panStartY = 0;
+
+    svg.addEventListener("mousedown", function(e) {
+        if (e.button !== 0) return;
+        isPanning = true;
+        panStartX = e.clientX - viewX;
+        panStartY = e.clientY - viewY;
+        svg.style.cursor = "grabbing";
+    });
+
+    window.addEventListener("mousemove", function(e) {
+        if (!isPanning) return;
+        viewX = e.clientX - panStartX;
+        viewY = e.clientY - panStartY;
+        updateTransform(false);
+    });
+
+    window.addEventListener("mouseup", function() {
+        if (isPanning) {
+            isPanning = false;
+            svg.style.cursor = "grab";
+        }
+    });
+
+    // マウスホイールによるスムーズズーム
+    svg.addEventListener("wheel", function(e) {
+        e.preventDefault();
+        var zoomFactor = e.deltaY < 0 ? 1.12 : 0.89;
+        var newScale = Math.max(0.35, Math.min(3.2, viewScale * zoomFactor));
+
+        // マウス位置を中心としたズーム
+        var rect = svg.getBoundingClientRect();
+        var mouseX = e.clientX - rect.left;
+        var mouseY = e.clientY - rect.top;
+
+        viewX = mouseX - (mouseX - viewX) * (newScale / viewScale);
+        viewY = mouseY - (mouseY - viewY) * (newScale / viewScale);
+        viewScale = newScale;
+
+        updateTransform(false);
+    }, { passive: false });
+
     function flyToNode(n) {
         selectedNode = n;
-        var targetX = 500 - n.x;
-        var targetY = 400 - n.y;
-        gGroup.style.transition = "transform 0.4s ease-out";
-        gGroup.setAttribute("transform", "translate(" + targetX + "," + targetY + ") scale(1.3)");
-        setTimeout(function() { gGroup.style.transition = "none"; }, 400);
+        viewScale = 1.35;
+        viewX = 500 - (n.x * viewScale);
+        viewY = 400 - (n.y * viewScale);
+        updateTransform(true);
+    }
+
+    window.flyToRelPath = function(rel) {
+        var target = nodes.filter(function(n) { return n.relPath === rel; })[0];
+        if (target) {
+            flyToNode(target);
+            highlightConstellation(target);
+            openStellaPane(target);
+        }
+    };
+
+    // 星座発光 (Constellation Lighting)
+    function highlightConstellation(centerNode) {
+        var connectedRels = {};
+        connectedRels[centerNode.relPath] = true;
+
+        edges.forEach(function(e) {
+            if (e.source.relPath === centerNode.relPath) { connectedRels[e.target.relPath] = true; }
+            if (e.target.relPath === centerNode.relPath) { connectedRels[e.source.relPath] = true; }
+        });
+
+        // ノードの発光効果
+        var nodeElems = gNodes.querySelectorAll(".stella-node");
+        nodeElems.forEach(function(el) {
+            var rel = el.dataset.relpath;
+            var dot = el.querySelector("circle");
+            var text = el.querySelector("text");
+
+            if (rel === centerNode.relPath) {
+                dot.setAttribute("fill", "#58a6ff");
+                dot.setAttribute("r", "10");
+                dot.setAttribute("opacity", "1");
+                text.setAttribute("opacity", "1");
+                text.setAttribute("font-weight", "bold");
+            } else if (connectedRels[rel]) {
+                dot.setAttribute("fill", "#79c0ff");
+                dot.setAttribute("r", "8");
+                dot.setAttribute("opacity", "1");
+                text.setAttribute("opacity", "0.95");
+            } else {
+                dot.setAttribute("opacity", "0.2");
+                text.setAttribute("opacity", "0.2");
+            }
+        });
+
+        // 接続線の発光
+        var linkElems = gLinks.querySelectorAll(".stella-link-line");
+        linkElems.forEach(function(line) {
+            var s = line.dataset.source;
+            var t = line.dataset.target;
+            if (s === centerNode.relPath || t === centerNode.relPath) {
+                line.setAttribute("stroke", "rgba(88, 166, 255, 0.95)");
+                line.setAttribute("stroke-width", "2.8");
+                line.style.filter = "drop-shadow(0 0 4px #388bfd)";
+            } else {
+                line.setAttribute("stroke", "rgba(88, 166, 255, 0.08)");
+                line.setAttribute("stroke-width", "1");
+                line.style.filter = "none";
+            }
+        });
     }
 
     function openStellaPane(n) {
         document.getElementById("stellaPaneTitle").textContent = n.title;
-        var statusBadge = "<span style='padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; background: " + (n.status === 'active' ? '#1f6feb' : n.status === 'draft' ? '#d29922' : '#f85149') + "; color: #fff;'>" + n.status.toUpperCase() + "</span>";
+        var statusBadge = "<span style='padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; background: " + (n.status === 'active' || n.status === 'stable' ? '#238636' : n.status === 'draft' ? '#d29922' : '#f85149') + "; color: #fff;'>" + n.status.toUpperCase() + "</span>";
+        var domainBadge = "<span style='padding: 2px 8px; border-radius: 10px; font-size: 11px; background: #21262d; color: #8b949e; border: 1px solid #30363d;'>📁 " + (n.domain || "root") + "</span>";
         var dateStr = n.lastUpdated ? n.lastUpdated.substring(0, 10) : "";
-        document.getElementById("stellaPaneMeta").innerHTML = statusBadge + " <span>📅 " + dateStr + "</span>";
+        document.getElementById("stellaPaneMeta").innerHTML = statusBadge + " " + domainBadge + " <span>📅 " + dateStr + "</span>";
         document.getElementById("stellaPaneDesc").textContent = n.description || "概要はありません。";
         document.getElementById("stellaPaneLink").href = "/" + encodeURIComponent(n.relPath.replace(/\\/g, '/')).replace(/%2F/g, '/');
+
+        // 繋がっている星一覧の生成
+        var connectedListEl = document.getElementById("stellaConnectedList");
+        var connectedItems = [];
+        edges.forEach(function(e) {
+            var other = null;
+            if (e.source.relPath === n.relPath) other = e.target;
+            else if (e.target.relPath === n.relPath) other = e.source;
+
+            if (other) {
+                var reason = e.isRelated ? "🔗 関連指定" : ("🏷️ " + e.sharedTags.join(", "));
+                connectedItems.push("<div onclick=\"flyToRelPath('" + other.relPath.replace(/'/g, "\\'") + "')\" style='cursor: pointer; padding: 6px 10px; background: #0d1117; border-radius: 6px; border: 1px solid #21262d; display: flex; justify-content: space-between; align-items: center; transition: all 0.2s;' onmouseover=\"this.style.borderColor='#58a6ff'\" onmouseout=\"this.style.borderColor='#21262d'\"><span style='color: #c9d1d9; font-weight: 500;'>🌟 " + other.title + "</span><span style='color: #8b949e; font-size: 11px;'>" + reason + "</span></div>");
+            }
+        });
+
+        if (connectedItems.length > 0) {
+            connectedListEl.innerHTML = connectedItems.join("");
+            document.getElementById("stellaConnectedSection").style.display = "block";
+        } else {
+            connectedListEl.innerHTML = "<span style='color: #6e7681; font-size: 11px;'>関連する星はありません</span>";
+        }
+
         pane.style.right = "0px";
     }
 
     window.closeStellaPane = function() {
-        pane.style.right = "-360px";
+        pane.style.right = "-380px";
+        if (selectedNode) {
+            applyFilter();
+            selectedNode = null;
+        }
     };
 
-    // Filter and Search Reaction
+    // フィルター & 検索の連動
     function applyFilter() {
         var query = (document.getElementById("stellaSearchInput").value || "").toLowerCase().trim();
         var statusVal = document.getElementById("stellaStatusSelect").value;
@@ -1996,20 +2235,17 @@ $controlPanelHtml
         var matchingRels = {};
         nodes.forEach(function(n) {
             var matchQ = !query || (n.title.toLowerCase().indexOf(query) !== -1 || n.description.toLowerCase().indexOf(query) !== -1);
-            var matchS = statusVal === "all" || n.status === statusVal;
+            var matchS = statusVal === "all" || n.status === statusVal || (statusVal === "active" && n.status === "stable");
             var matchT = tagVal === "all" || (n.tags && n.tags.indexOf(tagVal) !== -1);
 
             if (matchQ && matchS && matchT && (query || statusVal !== "all" || tagVal !== "all")) {
                 matchingRels[n.relPath] = true;
-                if (n.links) {
-                    n.links.forEach(function(l) { matchingRels[l] = true; });
-                }
             }
         });
 
         var isActiveFilter = (query !== "" || statusVal !== "all" || tagVal !== "all");
 
-        // Highlight Nodes
+        // ノードのハイライト
         var nodeElems = gNodes.querySelectorAll(".stella-node");
         nodeElems.forEach(function(el) {
             var rel = el.dataset.relpath;
@@ -2017,13 +2253,15 @@ $controlPanelHtml
             var text = el.querySelector("text");
 
             if (!isActiveFilter) {
-                dot.setAttribute("fill", "#8b949e");
-                dot.setAttribute("r", "6");
-                dot.setAttribute("opacity", "0.6");
-                text.setAttribute("opacity", "0.8");
+                var nodeObj = nodes.filter(function(x) { return x.relPath === rel; })[0];
+                var dotColor = (nodeObj && (nodeObj.status === 'stable' || nodeObj.status === 'active')) ? '#58a6ff' : (nodeObj && nodeObj.status === 'draft' ? '#d29922' : '#f85149');
+                dot.setAttribute("fill", dotColor);
+                dot.setAttribute("r", (nodeObj && nodeObj.tags && nodeObj.tags.length >= 4) ? "8" : "6");
+                dot.setAttribute("opacity", "0.85");
+                text.setAttribute("opacity", "0.85");
             } else if (matchingRels[rel]) {
                 dot.setAttribute("fill", "#388bfd");
-                dot.setAttribute("r", "8");
+                dot.setAttribute("r", "9");
                 dot.setAttribute("opacity", "1");
                 text.setAttribute("opacity", "1");
             } else {
@@ -2034,17 +2272,23 @@ $controlPanelHtml
             }
         });
 
-        // Highlight Constellation Lines
+        // 星座線のハイライト
         var linkElems = gLinks.querySelectorAll(".stella-link-line");
         linkElems.forEach(function(line) {
             var s = line.dataset.source;
             var t = line.dataset.target;
+            line.style.filter = "none";
             if (isActiveFilter && (matchingRels[s] && matchingRels[t])) {
-                line.setAttribute("stroke", "rgba(56, 139, 253, 0.8)");
-                line.setAttribute("stroke-width", "2");
+                line.setAttribute("stroke", "rgba(56, 139, 253, 0.85)");
+                line.setAttribute("stroke-width", "2.2");
+            } else if (!isActiveFilter) {
+                var isRelated = line.dataset.isRelated === "true";
+                var sharedCount = parseInt(line.dataset.sharedCount || "0", 10);
+                line.setAttribute("stroke", isRelated ? "rgba(138, 180, 248, 0.55)" : (sharedCount > 1 ? "rgba(88, 166, 255, 0.4)" : "rgba(88, 166, 255, 0.2)"));
+                line.setAttribute("stroke-width", isRelated ? "2.2" : (sharedCount > 1 ? "1.6" : "1.1"));
             } else {
-                line.setAttribute("stroke", "rgba(88, 166, 255, 0.15)");
-                line.setAttribute("stroke-width", "1.5");
+                line.setAttribute("stroke", "rgba(88, 166, 255, 0.08)");
+                line.setAttribute("stroke-width", "1");
             }
         });
     }

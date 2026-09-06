@@ -195,6 +195,11 @@ $script:I18n = @{
         "stella_preview_title"      = "📄 ノードプレビュー"
         "stella_stale_warning"      = "⚠️ 180日以上未更新 (要確認)"
         "stella_tree_lineage"       = "🌲 仕様系統樹 (Tree Lineage)"
+        "stella_btn_reset"          = "🔄 視点リセット"
+        "stella_help_drag"          = "🖱️ ドラッグ: 星図の移動 / 星の再配置"
+        "stella_help_zoom"          = "🔍 ホイール: 拡大・縮小"
+        "stella_help_click"         = "🌟 クリック: 星座を発光 ＆ プレビュー"
+        "stella_connected_nodes"    = "🔗 関連する星 (共通タグ・関連文書)"
     }
     "en" = @{
         "brand_title"               = "📖 SimpleWiki"
@@ -386,6 +391,11 @@ $script:I18n = @{
         "stella_preview_title"      = "📄 Node Preview"
         "stella_stale_warning"      = "⚠️ Stale (>180 days)"
         "stella_tree_lineage"       = "🌲 Tree Lineage"
+        "stella_btn_reset"          = "🔄 Reset View"
+        "stella_help_drag"          = "🖱️ Drag: Pan canvas / Move star"
+        "stella_help_zoom"          = "🔍 Wheel: Zoom in / out"
+        "stella_help_click"         = "🌟 Click: Light up constellation & preview"
+        "stella_connected_nodes"    = "🔗 Connected Stars (Shared Tags & Related)"
     }
 }
 
