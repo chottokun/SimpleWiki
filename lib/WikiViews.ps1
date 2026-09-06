@@ -1711,24 +1711,26 @@ function clearAllCachesNow() {
 
 function Get-StellaControlPanelHtml {
     param (
-        [string]$ActiveView = "stella", # "stella" または "timeline"
+        [string]$ActiveView = "stella",
         [string]$Lang = "ja"
     )
 
     Ensure-WikiIndexLoaded -TargetWikiDir $wikiDir
 
-    $navStella   = Get-LocalizedStr -Key "stella_view_nav" -Lang $Lang
-    $navTimeline = Get-LocalizedStr -Key "timeline_view_nav" -Lang $Lang
-    $searchHolder= Get-LocalizedStr -Key "stella_search_holder" -Lang $Lang
+    $navStella    = Get-LocalizedStr -Key "stella_view_nav" -Lang $Lang
+    $searchHolder = Get-LocalizedStr -Key "stella_search_holder" -Lang $Lang
 
-    $stAll       = Get-LocalizedStr -Key "stella_status_all" -Lang $Lang
-    $stActive    = Get-LocalizedStr -Key "stella_status_active" -Lang $Lang
-    $stDraft     = Get-LocalizedStr -Key "stella_status_draft" -Lang $Lang
-    $stDep       = Get-LocalizedStr -Key "stella_status_deprecated" -Lang $Lang
-    $stArch      = Get-LocalizedStr -Key "stella_status_archived" -Lang $Lang
-    $tagAll      = Get-LocalizedStr -Key "stella_tag_all" -Lang $Lang
-    $editBtnTxt  = Get-LocalizedStr -Key "edit_doc_btn" -Lang $Lang
-    $resetBtnTxt = Get-LocalizedStr -Key "stella_btn_reset" -Lang $Lang
+    $stAll        = Get-LocalizedStr -Key "stella_status_all" -Lang $Lang
+    $stActive     = Get-LocalizedStr -Key "stella_status_active" -Lang $Lang
+    $stDraft      = Get-LocalizedStr -Key "stella_status_draft" -Lang $Lang
+    $stDep        = Get-LocalizedStr -Key "stella_status_deprecated" -Lang $Lang
+    $stArch       = Get-LocalizedStr -Key "stella_status_archived" -Lang $Lang
+    $tagAll       = Get-LocalizedStr -Key "stella_tag_all" -Lang $Lang
+    $resetBtnTxt  = Get-LocalizedStr -Key "stella_btn_reset" -Lang $Lang
+
+    $preset3dTxt  = Get-LocalizedStr -Key "stella_preset_3d" -Lang $Lang
+    $presetTopTxt = Get-LocalizedStr -Key "stella_preset_top" -Lang $Lang
+    $presetTlTxt  = Get-LocalizedStr -Key "stella_preset_timeline" -Lang $Lang
 
     $allTags = [System.Collections.Generic.HashSet[string]]::new()
     foreach ($item in $script:WikiIndex) {
@@ -1745,16 +1747,16 @@ function Get-StellaControlPanelHtml {
     }
     $tagOptionsStr = $tagOptions -join ""
 
-    $stellaClass   = if ($ActiveView -eq "stella") { "active" } else { "" }
-    $timelineClass = if ($ActiveView -eq "timeline") { "active" } else { "" }
-    $resetBtnHtml  = if ($ActiveView -eq "stella") { "<button class='stella-reset-btn' onclick='resetStellaView()' title='$resetBtnTxt'>$resetBtnTxt</button>" } else { "" }
-
     return @"
 <div class="stella-control-panel">
     <div class="stella-control-left">
-        <a href="/stella" class="stella-nav-btn $stellaClass">$navStella</a>
-        <a href="/timeline" class="stella-nav-btn $timelineClass">$navTimeline</a>
-        $resetBtnHtml
+        <span style="font-weight: bold; color: #58a6ff; font-size: 13px; margin-right: 4px;">$navStella</span>
+        <div class="stella-preset-group">
+            <button class="stella-preset-btn active" data-preset="3d" onclick="setStellaPreset('3d')" title="$preset3dTxt">$preset3dTxt</button>
+            <button class="stella-preset-btn" data-preset="top" onclick="setStellaPreset('top')" title="$presetTopTxt">$presetTopTxt</button>
+            <button class="stella-preset-btn" data-preset="timeline" onclick="setStellaPreset('timeline')" title="$presetTlTxt">$presetTlTxt</button>
+        </div>
+        <button class="stella-reset-btn" onclick="resetStellaView()" title="$resetBtnTxt">$resetBtnTxt</button>
     </div>
     <div class="stella-control-center">
         <input type="text" id="stellaSearchInput" placeholder="$searchHolder" class="stella-input">
@@ -1770,23 +1772,20 @@ function Get-StellaControlPanelHtml {
             $tagOptionsStr
         </select>
     </div>
-    <div class="stella-control-right">
-        <button class="stella-editor-btn" onclick="openWikiEditor(this)">$editBtnTxt</button>
-    </div>
 </div>
 <style>
     .stella-control-panel { display: flex; align-items: center; justify-content: space-between; background: #161b22; padding: 10px 16px; border-radius: 8px; border: 1px solid #30363d; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
-    .stella-control-left, .stella-control-center, .stella-control-right { display: flex; align-items: center; gap: 8px; }
-    .stella-nav-btn { color: #8b949e; text-decoration: none; font-size: 13px; font-weight: bold; padding: 6px 12px; border-radius: 6px; background: #21262d; border: 1px solid #30363d; transition: all 0.2s; }
-    .stella-nav-btn:hover { color: #58a6ff; background: #30363d; }
-    .stella-nav-btn.active { color: #ffffff; background: #1f6feb; border-color: #388bfd; }
-    .stella-reset-btn { color: #8b949e; background: #21262d; border: 1px solid #30363d; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+    .stella-control-left, .stella-control-center { display: flex; align-items: center; gap: 8px; }
+    .stella-preset-group { display: inline-flex; border-radius: 6px; overflow: hidden; border: 1px solid #30363d; }
+    .stella-preset-btn { background: #21262d; color: #8b949e; border: none; border-right: 1px solid #30363d; padding: 6px 12px; font-size: 12px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+    .stella-preset-btn:last-child { border-right: none; }
+    .stella-preset-btn:hover { background: #30363d; color: #c9d1d9; }
+    .stella-preset-btn.active { background: #1f6feb; color: #ffffff; }
+    .stella-reset-btn { color: #8b949e; background: #21262d; border: 1px solid #30363d; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
     .stella-reset-btn:hover { color: #58a6ff; background: #30363d; border-color: #58a6ff; }
     .stella-input, .stella-select { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; font-size: 12px; padding: 6px 10px; border-radius: 6px; outline: none; }
-    .stella-input { width: 220px; }
+    .stella-input { width: 200px; }
     .stella-input:focus, .stella-select:focus { border-color: #58a6ff; }
-    .stella-editor-btn { background: #238636; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; }
-    .stella-editor-btn:hover { background: #2ea043; }
 </style>
 "@
 }
@@ -1803,9 +1802,11 @@ function Get-StellaViewHtml {
     $openDocTxt     = Get-LocalizedStr -Key "search_btn" -Lang $Lang
     $navStellaTitle = Get-LocalizedStr -Key "stella_view_nav" -Lang $Lang
     $helpDrag       = Get-LocalizedStr -Key "stella_help_drag" -Lang $Lang
-    $helpWheel      = Get-LocalizedStr -Key "stella_help_wheel" -Lang $Lang
+    $helpWheel      = Get-LocalizedStr -Key "stella_help_zoom" -Lang $Lang
     $helpClick      = Get-LocalizedStr -Key "stella_help_click" -Lang $Lang
     $connectedTitle = Get-LocalizedStr -Key "stella_connected_nodes" -Lang $Lang
+    $timePastTxt    = Get-LocalizedStr -Key "stella_time_past" -Lang $Lang
+    $timePresTxt    = Get-LocalizedStr -Key "stella_time_present" -Lang $Lang
 
     # Index items serialization
     $indexJson = Get-ApiIndexJson -QueryParams @{ limit = "all" }
@@ -1813,7 +1814,7 @@ function Get-StellaViewHtml {
     return @"
 $controlPanelHtml
 
-<div class="stella-container" style="position: relative; width: 100%; height: calc(100vh - 180px); min-height: 550px; background: radial-gradient(circle at 50% 50%, #0d131f 0%, #070a0f 100%); border-radius: 8px; border: 1px solid #30363d; overflow: hidden; display: flex;">
+<div class="stella-container" style="position: relative; width: 100%; height: calc(100vh - 180px); min-height: 580px; background: radial-gradient(circle at 50% 50%, #0d131f 0%, #06090e 100%); border-radius: 8px; border: 1px solid #30363d; overflow: hidden; display: flex; user-select: none;">
     <!-- Graphical Operation Guide Overlay -->
     <div class="stella-help-overlay" style="position: absolute; top: 12px; left: 12px; background: rgba(22, 27, 34, 0.88); backdrop-filter: blur(6px); padding: 10px 14px; border-radius: 8px; border: 1px solid #30363d; color: #8b949e; font-size: 11px; z-index: 50; pointer-events: none; line-height: 1.6; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
         <div style="font-weight: bold; color: #58a6ff; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">$navStellaTitle</div>
@@ -1822,11 +1823,17 @@ $controlPanelHtml
         <div>$helpClick</div>
     </div>
 
+    <!-- Time Axis HUD Indicator -->
+    <div id="stellaTimeHud" style="position: absolute; bottom: 12px; left: 12px; background: rgba(22, 27, 34, 0.82); backdrop-filter: blur(4px); padding: 6px 12px; border-radius: 6px; border: 1px solid #30363d; color: #8b949e; font-size: 11px; z-index: 50; pointer-events: none; display: flex; align-items: center; gap: 8px;">
+        <span>⏳ 時間軸 (Z):</span>
+        <span style="color: #79c0ff;">◀ $timePastTxt</span>
+        <span style="color: #30363d;">──────────</span>
+        <span style="color: #58a6ff; font-weight: bold;">$timePresTxt ▶</span>
+    </div>
+
     <svg id="stellaCanvas" style="width: 100%; height: 100%; cursor: grab;" viewBox="0 0 1000 800">
-        <g id="stellaTransformGroup">
-            <g id="stellaLinksGroup"></g>
-            <g id="stellaNodesGroup"></g>
-        </g>
+        <g id="stellaLinksGroup"></g>
+        <g id="stellaNodesGroup"></g>
     </svg>
 
     <!-- Slide-in preview pane -->
@@ -1843,7 +1850,7 @@ $controlPanelHtml
         </div>
 
         <div style="margin-top: 18px;">
-            <a id="stellaPaneLink" href="#" style="display: inline-block; padding: 8px 16px; background: #1f6feb; color: #fff; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: bold;">📄 記事を開く</a>
+            <a id="stellaPaneLink" href="#" style="display: inline-block; padding: 8px 16px; background: #1f6feb; color: #fff; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: bold;">📄 $openDocTxt</a>
         </div>
     </div>
 </div>
@@ -1852,18 +1859,9 @@ $controlPanelHtml
 (function() {
     var rawData = $indexJson;
     var rawItems = (rawData && rawData.Items) ? rawData.Items : [];
-    var localStorageKey = "simplewiki_stella_positions";
-    var customPositions = {};
-    try {
-        var stored = localStorage.getItem(localStorageKey);
-        if (stored) { customPositions = JSON.parse(stored); }
-    } catch(e){}
 
-    // Merge node positions from localStorage if tweaked by user
     var nodes = rawItems.map(function(item) {
         var rel = item.RelPath || item.relPath || "";
-        var x = (customPositions[rel] && customPositions[rel].x !== undefined) ? customPositions[rel].x : (item.X || item.x || 100);
-        var y = (customPositions[rel] && customPositions[rel].y !== undefined) ? customPositions[rel].y : (item.Y || item.y || 100);
         return {
             relPath: rel,
             title: item.Title || item.title || "Untitled",
@@ -1874,71 +1872,170 @@ $controlPanelHtml
             lastUpdated: item.LastUpdated || item.lastUpdated || "",
             related: item.Related || item.related || [],
             links: item.Links || item.links || [],
-            x: x,
-            y: y
+            x: item.X !== undefined ? item.X : 500,
+            y: item.Y !== undefined ? item.Y : 400,
+            z: item.Z !== undefined ? item.Z : 0,
+            screenX: 500,
+            screenY: 400,
+            projZ: 0,
+            scale: 1,
+            el: null,
+            circleEl: null,
+            textEl: null
         };
     });
 
     var svg = document.getElementById("stellaCanvas");
-    var gGroup = document.getElementById("stellaTransformGroup");
     var gLinks = document.getElementById("stellaLinksGroup");
     var gNodes = document.getElementById("stellaNodesGroup");
     var pane = document.getElementById("stellaSlidePane");
 
-    var viewX = 0, viewY = 0, viewScale = 1;
+    // 3D カメラ状態変数 (Z軸 = 時間軸)
+    var rotX = 0.38;       // ピッチ角 (上下)
+    var rotY = 0.45;       // ヨー角 (左右)
+    var panX = 0, panY = 0; // 平行移動
+    var zoom = 1.0;        // ズーム倍率
+    var centerWorldX = 500, centerWorldY = 400;
+
+    // キャンバス基準サイズ
+    if (nodes.length > 0) {
+        var sumX = 0, sumY = 0;
+        nodes.forEach(function(n) { sumX += n.x; sumY += n.y; });
+        centerWorldX = sumX / nodes.length;
+        centerWorldY = sumY / nodes.length;
+    }
+
     var selectedNode = null;
     var allEdges = [];
+    var fov = 950;
+    var camDist = 1100;
 
-    function updateTransform(animate) {
-        if (animate) {
-            gGroup.style.transition = "transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1)";
-            setTimeout(function() { gGroup.style.transition = "none"; }, 350);
-        } else {
-            gGroup.style.transition = "none";
-        }
-        gGroup.setAttribute("transform", "translate(" + viewX + "," + viewY + ") scale(" + viewScale + ")");
+    // 3D 透視投影関数 (Perspective 3D Projection)
+    function project3D(wx, wy, wz) {
+        var x0 = wx - centerWorldX;
+        var y0 = wy - centerWorldY;
+        var z0 = wz;
 
-        // LOD (Level of Detail): ズームアウト時は一般ノードのラベルを淡くし、過密を防ぐ
-        var nodeElems = gNodes.querySelectorAll(".stella-node");
-        nodeElems.forEach(function(el) {
-            var isHub = el.dataset.isHub === "true";
-            var text = el.querySelector("text");
-            if (text && !selectedNode) {
-                if (viewScale < 0.75 && !isHub) {
-                    text.style.opacity = "0.15";
-                } else {
-                    text.style.opacity = "0.85";
+        // 1. Yaw (Y軸回転: 左右)
+        var cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+        var x1 = x0 * cosY + z0 * sinY;
+        var z1 = -x0 * sinY + z0 * cosY;
+
+        // 2. Pitch (X軸回転: 上下)
+        var cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+        var y2 = y0 * cosX - z1 * sinX;
+        var z2 = y0 * sinX + z1 * cosX;
+
+        // 3. 透視投影 (Perspective Projection)
+        var depth = camDist + z2;
+        if (depth < 80) depth = 80;
+        var k = (fov / depth) * zoom;
+
+        return {
+            x: 500 + panX + (x1 * k),
+            y: 400 + panY + (y2 * k),
+            z: z2,
+            k: k
+        };
+    }
+
+    // 3D 空間位置の全体更新
+    function update3DPositions() {
+        // 1. ノードの画面投影
+        nodes.forEach(function(n) {
+            var p = project3D(n.x, n.y, n.z);
+            n.screenX = p.x;
+            n.screenY = p.y;
+            n.projZ = p.z;
+            n.scale = p.k;
+
+            if (n.el) {
+                n.el.setAttribute("transform", "translate(" + p.x.toFixed(1) + "," + p.y.toFixed(1) + ")");
+                var isHub = (n.tags && n.tags.length >= 4);
+                var baseR = isHub ? 8 : 6;
+                var currentR = Math.max(3, Math.min(18, baseR * Math.pow(p.k, 0.85)));
+                n.circleEl.setAttribute("r", currentR.toFixed(1));
+
+                var depthFade = Math.max(0.2, Math.min(1.0, 0.35 + (0.65 * (p.k / Math.max(0.1, zoom)))));
+                n.circleEl.setAttribute("opacity", (selectedNode ? n.circleEl.getAttribute("opacity") : depthFade.toFixed(2)));
+
+                if (n.textEl && !selectedNode) {
+                    var textAlpha = (p.k < 0.7 && !isHub) ? "0.15" : depthFade.toFixed(2);
+                    n.textEl.style.opacity = textAlpha;
+                    var fontSize = Math.max(9, Math.min(14, 11 * p.k));
+                    n.textEl.setAttribute("font-size", fontSize.toFixed(1) + "px");
+                    n.textEl.setAttribute("x", (currentR + 5).toFixed(1));
                 }
+            }
+        });
+
+        // 2. 星座線の画面投影
+        allEdges.forEach(function(e) {
+            if (e.lineEl) {
+                e.lineEl.setAttribute("x1", e.source.screenX.toFixed(1));
+                e.lineEl.setAttribute("y1", e.source.screenY.toFixed(1));
+                e.lineEl.setAttribute("x2", e.target.screenX.toFixed(1));
+                e.lineEl.setAttribute("y2", e.target.screenY.toFixed(1));
+            }
+        });
+
+        // 3. Z-Sorting (Painter's Algorithm: 奥にある星から順に DOM を再配置)
+        var sortedNodes = nodes.slice().sort(function(a, b) { return a.projZ - b.projZ; });
+        sortedNodes.forEach(function(n) {
+            if (n.el && n.el.parentNode === gNodes) {
+                gNodes.appendChild(n.el);
             }
         });
     }
 
-    function autoFitView(animate) {
-        if (!nodes || nodes.length === 0) return;
-        var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        nodes.forEach(function(n) {
-            if (n.x < minX) minX = n.x;
-            if (n.x > maxX) maxX = n.x;
-            if (n.y < minY) minY = n.y;
-            if (n.y > maxY) maxY = n.y;
-        });
+    // 視点プリセット切り替え (Smooth Tweening Animation)
+    var animId = null;
+    function tweenCameraTo(targetRotX, targetRotY, targetPanX, targetPanY, targetZoom) {
+        if (animId) cancelAnimationFrame(animId);
+        var sRotX = rotX, sRotY = rotY;
+        var sPanX = panX, sPanY = panY;
+        var sZoom = zoom;
+        var startTime = performance.now();
+        var duration = 550;
 
-        var boundingWidth = Math.max(300, maxX - minX + 160);
-        var boundingHeight = Math.max(240, maxY - minY + 160);
-        var centerNodeX = (minX + maxX) / 2;
-        var centerNodeY = (minY + maxY) / 2;
+        function step(now) {
+            var progress = Math.min(1, (now - startTime) / duration);
+            var ease = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2;
 
-        var scaleW = 920 / boundingWidth;
-        var scaleH = 720 / boundingHeight;
-        viewScale = Math.min(1.3, Math.max(0.35, Math.min(scaleW, scaleH)));
-        viewX = 500 - (centerNodeX * viewScale);
-        viewY = 400 - (centerNodeY * viewScale);
-        selectedNode = null;
-        updateTransform(animate);
+            rotX = sRotX + (targetRotX - sRotX) * ease;
+            rotY = sRotY + (targetRotY - sRotY) * ease;
+            panX = sPanX + (targetPanX - sPanX) * ease;
+            panY = sPanY + (targetPanY - sPanY) * ease;
+            zoom = sZoom + (targetZoom - sZoom) * ease;
+
+            update3DPositions();
+
+            if (progress < 1) {
+                animId = requestAnimationFrame(step);
+            } else {
+                animId = null;
+            }
+        }
+        animId = requestAnimationFrame(step);
     }
 
+    window.setStellaPreset = function(mode) {
+        var buttons = document.querySelectorAll(".stella-preset-btn");
+        buttons.forEach(function(b) {
+            b.classList.toggle("active", b.dataset.preset === mode);
+        });
+
+        if (mode === "3d") {
+            tweenCameraTo(0.38, 0.45, 0, 0, 1.0);
+        } else if (mode === "top") {
+            tweenCameraTo(0.0, 0.0, 0, 0, 1.0);
+        } else if (mode === "timeline") {
+            tweenCameraTo(0.0, 1.57079, 0, 0, 0.95);
+        }
+    };
+
     window.resetStellaView = function() {
-        autoFitView(true);
+        window.setStellaPreset("3d");
         applyFilter();
         closeStellaPane();
     };
@@ -1948,14 +2045,12 @@ $controlPanelHtml
         gNodes.innerHTML = "";
         allEdges = [];
 
-        // 1. メタデータ（共通タグ & related）による全関係性エッジの算出
         var nodeCount = nodes.length;
         for (var i = 0; i < nodeCount; i++) {
             for (var j = i + 1; j < nodeCount; j++) {
                 var n1 = nodes[i];
                 var n2 = nodes[j];
 
-                // 共通タグの抽出
                 var sharedTags = [];
                 if (n1.tags && n2.tags) {
                     n1.tags.forEach(function(t) {
@@ -1965,7 +2060,6 @@ $controlPanelHtml
                     });
                 }
 
-                // related 指定の相互参照
                 var isRelated = false;
                 var r1 = n1.relPath.replace(/\\/g, '/').toLowerCase();
                 var r2 = n2.relPath.replace(/\\/g, '/').toLowerCase();
@@ -1986,14 +2080,14 @@ $controlPanelHtml
                         target: n2,
                         sharedTags: sharedTags,
                         isRelated: isRelated,
-                        weight: (isRelated ? 6 : 0) + (sharedTags.length * 2)
+                        weight: (isRelated ? 6 : 0) + (sharedTags.length * 2),
+                        lineEl: null
                     });
                 }
             }
         }
 
-        // 2. 毛糸玉化防止（次数制限 k-NN フィルタ）:
-        // 常時描画するエッジは「related指定」または「各ノードの親和性上位4件」に限定
+        // 次数制限 k-NN フィルタ (毛糸玉防止)
         var nodeEdgeCount = {};
         var backboneEdgeMap = {};
         var sortedEdges = allEdges.slice().sort(function(a, b) { return b.weight - a.weight; });
@@ -2012,7 +2106,7 @@ $controlPanelHtml
             }
         });
 
-        // 3. 星座線 (SVG Line) の描画（backbone 以外は初期非表示、選択時に全展開）
+        // 星座線の DOM 生成
         allEdges.forEach(function(e) {
             var sKey = e.source.relPath;
             var tKey = e.target.relPath;
@@ -2020,11 +2114,6 @@ $controlPanelHtml
             var isBackbone = !!backboneEdgeMap[edgeId];
 
             var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-            line.setAttribute("x1", e.source.x);
-            line.setAttribute("y1", e.source.y);
-            line.setAttribute("x2", e.target.x);
-            line.setAttribute("y2", e.target.y);
-
             var strokeColor = e.isRelated ? "rgba(138, 180, 248, 0.55)" : (e.sharedTags.length > 1 ? "rgba(88, 166, 255, 0.4)" : "rgba(88, 166, 255, 0.2)");
             var strokeWidth = e.isRelated ? "2.2" : (e.sharedTags.length > 1 ? "1.6" : "1.1");
             line.setAttribute("stroke", strokeColor);
@@ -2032,42 +2121,38 @@ $controlPanelHtml
             if (!e.isRelated && e.sharedTags.length === 1) {
                 line.setAttribute("stroke-dasharray", "4,3");
             }
-            line.setAttribute("class", "stella-link-line" + (isBackbone ? " stella-backbone" : " stella-secondary"));
-            line.dataset.source = e.source.relPath;
-            line.dataset.target = e.target.relPath;
+            line.dataset.isBackbone = isBackbone ? "true" : "false";
             line.dataset.isRelated = e.isRelated ? "true" : "false";
             line.dataset.sharedCount = e.sharedTags.length;
-            line.dataset.isBackbone = isBackbone ? "true" : "false";
 
             if (!isBackbone) {
                 line.style.display = "none";
             }
 
+            e.lineEl = line;
             gLinks.appendChild(line);
         });
 
-        // 4. 星ノード (SVG Circle + Text) の描画
+        // 星ノードの DOM 生成
         nodes.forEach(function(n) {
             var g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-            g.setAttribute("transform", "translate(" + n.x + "," + n.y + ")");
             g.setAttribute("class", "stella-node");
             g.dataset.relpath = n.relPath;
             var isHub = (n.tags && n.tags.length >= 4);
             g.dataset.isHub = isHub ? "true" : "false";
             g.style.cursor = "pointer";
 
-            var rSize = isHub ? 8 : 6;
             var dotColor = (n.status === 'stable' || n.status === 'active') ? '#58a6ff' : (n.status === 'draft' ? '#d29922' : '#f85149');
 
             var circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-            circle.setAttribute("r", rSize.toString());
+            circle.setAttribute("r", isHub ? "8" : "6");
             circle.setAttribute("fill", dotColor);
             circle.setAttribute("opacity", "0.85");
             circle.setAttribute("class", "stella-dot");
-            circle.style.transition = "all 0.2s ease";
+            circle.style.transition = "fill 0.2s ease, r 0.2s ease";
 
             var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-            text.setAttribute("x", (rSize + 5).toString());
+            text.setAttribute("x", (isHub ? 13 : 11).toString());
             text.setAttribute("y", "4");
             text.setAttribute("fill", "#c9d1d9");
             text.setAttribute("font-size", "11px");
@@ -2078,7 +2163,10 @@ $controlPanelHtml
             g.appendChild(circle);
             g.appendChild(text);
 
-            // ノードクリック -> 星座発光 & プレビュー表示
+            n.el = g;
+            n.circleEl = circle;
+            n.textEl = text;
+
             g.addEventListener("click", function(e) {
                 e.stopPropagation();
                 flyToNode(n);
@@ -2086,109 +2174,73 @@ $controlPanelHtml
                 openStellaPane(n);
             });
 
-            // ノードドラッグによる位置のカスタマイズと永続化
-            var isDraggingNode = false;
-            var dragStartX = 0, dragStartY = 0;
-
-            g.addEventListener("mousedown", function(e) {
-                if (e.button !== 0) return;
-                isDraggingNode = true;
-                dragStartX = e.clientX;
-                dragStartY = e.clientY;
-                e.stopPropagation();
-
-                var onMouseMove = function(me) {
-                    if (!isDraggingNode) return;
-                    var dx = (me.clientX - dragStartX) / viewScale;
-                    var dy = (me.clientY - dragStartY) / viewScale;
-                    n.x += dx;
-                    n.y += dy;
-                    dragStartX = me.clientX;
-                    dragStartY = me.clientY;
-                    g.setAttribute("transform", "translate(" + n.x + "," + n.y + ")");
-
-                    // 接続線の位置もリアルタイム追従
-                    var lines = gLinks.querySelectorAll(".stella-link-line");
-                    lines.forEach(function(l) {
-                        if (l.dataset.source === n.relPath) {
-                            l.setAttribute("x1", n.x);
-                            l.setAttribute("y1", n.y);
-                        } else if (l.dataset.target === n.relPath) {
-                            l.setAttribute("x2", n.x);
-                            l.setAttribute("y2", n.y);
-                        }
-                    });
-
-                    // 位置を localStorage に保存
-                    customPositions[n.relPath] = { x: n.x, y: n.y };
-                    try { localStorage.setItem(localStorageKey, JSON.stringify(customPositions)); } catch(err){}
-                };
-
-                var onMouseUp = function() {
-                    isDraggingNode = false;
-                    window.removeEventListener("mousemove", onMouseMove);
-                    window.removeEventListener("mouseup", onMouseUp);
-                };
-
-                window.addEventListener("mousemove", onMouseMove);
-                window.addEventListener("mouseup", onMouseUp);
-            });
-
             gNodes.appendChild(g);
         });
 
-        autoFitView(false);
+        update3DPositions();
     }
 
-    // キャンバス全体のパン（背景ドラッグ）
-    var isPanning = false;
-    var panStartX = 0, panStartY = 0;
+    // マウスドラッグによる 3D Orbit 回転 & パン
+    var isDragging = false;
+    var isPanMode = false;
+    var lastMouseX = 0, lastMouseY = 0;
 
     svg.addEventListener("mousedown", function(e) {
-        if (e.button !== 0) return;
-        isPanning = true;
-        panStartX = e.clientX - viewX;
-        panStartY = e.clientY - viewY;
-        svg.style.cursor = "grabbing";
+        if (e.button !== 0 && e.button !== 2) return;
+        isDragging = true;
+        isPanMode = (e.shiftKey || e.button === 2);
+        lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
+        svg.style.cursor = isPanMode ? "move" : "grabbing";
+        e.preventDefault();
     });
 
     window.addEventListener("mousemove", function(e) {
-        if (!isPanning) return;
-        viewX = e.clientX - panStartX;
-        viewY = e.clientY - panStartY;
-        updateTransform(false);
+        if (!isDragging) return;
+        var dx = e.clientX - lastMouseX;
+        var dy = e.clientY - lastMouseY;
+        lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
+
+        if (isPanMode) {
+            panX += dx;
+            panY += dy;
+        } else {
+            rotY += dx * 0.006;
+            rotX -= dy * 0.006;
+            // ピッチ角をクランプ (-85度〜+85度)
+            rotX = Math.max(-1.48, Math.min(1.48, rotX));
+        }
+
+        update3DPositions();
     });
 
     window.addEventListener("mouseup", function() {
-        if (isPanning) {
-            isPanning = false;
+        if (isDragging) {
+            isDragging = false;
             svg.style.cursor = "grab";
         }
     });
 
-    // マウスホイールによるスムーズズーム
+    svg.addEventListener("contextmenu", function(e) {
+        e.preventDefault();
+    });
+
+    // マウスホイールによるズーム
     svg.addEventListener("wheel", function(e) {
         e.preventDefault();
-        var zoomFactor = e.deltaY < 0 ? 1.12 : 0.89;
-        var newScale = Math.max(0.35, Math.min(3.2, viewScale * zoomFactor));
-
-        var rect = svg.getBoundingClientRect();
-        var mouseX = e.clientX - rect.left;
-        var mouseY = e.clientY - rect.top;
-
-        viewX = mouseX - (mouseX - viewX) * (newScale / viewScale);
-        viewY = mouseY - (mouseY - viewY) * (newScale / viewScale);
-        viewScale = newScale;
-
-        updateTransform(false);
+        var factor = e.deltaY < 0 ? 1.12 : 0.89;
+        zoom = Math.max(0.35, Math.min(3.2, zoom * factor));
+        update3DPositions();
     }, { passive: false });
 
     function flyToNode(n) {
         selectedNode = n;
-        viewScale = 1.35;
-        viewX = 500 - (n.x * viewScale);
-        viewY = 400 - (n.y * viewScale);
-        updateTransform(true);
+        // 選択ノードが中央に来るように panX, panY を計算
+        var p = project3D(n.x, n.y, n.z);
+        var targetPanX = panX + (500 - p.x);
+        var targetPanY = panY + (400 - p.y);
+        tweenCameraTo(rotX, rotY, targetPanX, targetPanY, 1.25);
     }
 
     window.flyToRelPath = function(rel) {
@@ -2200,7 +2252,7 @@ $controlPanelHtml
         }
     };
 
-    // 星座発光 (Constellation Lighting) - 選択ノードに繋がる全エッジを動的展開
+    // 星座発光 (Constellation Lighting)
     function highlightConstellation(centerNode) {
         var connectedRels = {};
         connectedRels[centerNode.relPath] = true;
@@ -2210,51 +2262,44 @@ $controlPanelHtml
             if (e.target.relPath === centerNode.relPath) { connectedRels[e.source.relPath] = true; }
         });
 
-        // ノードの発光効果
-        var nodeElems = gNodes.querySelectorAll(".stella-node");
-        nodeElems.forEach(function(el) {
-            var rel = el.dataset.relpath;
-            var dot = el.querySelector("circle");
-            var text = el.querySelector("text");
-
-            if (rel === centerNode.relPath) {
-                dot.setAttribute("fill", "#58a6ff");
-                dot.setAttribute("r", "10");
-                dot.setAttribute("opacity", "1");
-                text.style.opacity = "1";
-                text.setAttribute("font-weight", "bold");
-            } else if (connectedRels[rel]) {
-                dot.setAttribute("fill", "#79c0ff");
-                dot.setAttribute("r", "8");
-                dot.setAttribute("opacity", "1");
-                text.style.opacity = "0.95";
+        // ノード発光
+        nodes.forEach(function(n) {
+            if (n.relPath === centerNode.relPath) {
+                n.circleEl.setAttribute("fill", "#58a6ff");
+                n.circleEl.setAttribute("opacity", "1");
+                if (n.textEl) { n.textEl.style.opacity = "1"; n.textEl.setAttribute("font-weight", "bold"); }
+            } else if (connectedRels[n.relPath]) {
+                n.circleEl.setAttribute("fill", "#79c0ff");
+                n.circleEl.setAttribute("opacity", "1");
+                if (n.textEl) { n.textEl.style.opacity = "0.95"; }
             } else {
-                dot.setAttribute("opacity", "0.2");
-                text.style.opacity = "0.15";
+                n.circleEl.setAttribute("opacity", "0.18");
+                if (n.textEl) { n.textEl.style.opacity = "0.12"; }
             }
         });
 
-        // 接続線の発光（選択ノードに繋がる全線を全展開）
-        var linkElems = gLinks.querySelectorAll(".stella-link-line");
-        linkElems.forEach(function(line) {
-            var s = line.dataset.source;
-            var t = line.dataset.target;
-            var isConnected = (s === centerNode.relPath || t === centerNode.relPath);
+        // 星座線発光
+        allEdges.forEach(function(e) {
+            if (e.lineEl) {
+                var s = e.source.relPath;
+                var t = e.target.relPath;
+                var isConn = (s === centerNode.relPath || t === centerNode.relPath);
 
-            if (isConnected) {
-                line.style.display = "block";
-                line.setAttribute("stroke", "rgba(88, 166, 255, 0.95)");
-                line.setAttribute("stroke-width", "2.8");
-                line.style.filter = "drop-shadow(0 0 5px #388bfd)";
-            } else {
-                var isBackbone = line.dataset.isBackbone === "true";
-                if (isBackbone) {
-                    line.style.display = "block";
-                    line.setAttribute("stroke", "rgba(88, 166, 255, 0.08)");
-                    line.setAttribute("stroke-width", "1");
-                    line.style.filter = "none";
+                if (isConn) {
+                    e.lineEl.style.display = "block";
+                    e.lineEl.setAttribute("stroke", "rgba(88, 166, 255, 0.95)");
+                    e.lineEl.setAttribute("stroke-width", "2.8");
+                    e.lineEl.style.filter = "drop-shadow(0 0 5px #388bfd)";
                 } else {
-                    line.style.display = "none";
+                    var isBackbone = e.lineEl.dataset.isBackbone === "true";
+                    if (isBackbone) {
+                        e.lineEl.style.display = "block";
+                        e.lineEl.setAttribute("stroke", "rgba(88, 166, 255, 0.08)");
+                        e.lineEl.setAttribute("stroke-width", "1");
+                        e.lineEl.style.filter = "none";
+                    } else {
+                        e.lineEl.style.display = "none";
+                    }
                 }
             }
         });
@@ -2269,7 +2314,6 @@ $controlPanelHtml
         document.getElementById("stellaPaneDesc").textContent = n.description || "概要はありません。";
         document.getElementById("stellaPaneLink").href = "/" + encodeURIComponent(n.relPath.replace(/\\/g, '/')).replace(/%2F/g, '/');
 
-        // 繋がっている星一覧の生成
         var connectedListEl = document.getElementById("stellaConnectedList");
         var connectedItems = [];
         allEdges.forEach(function(e) {
@@ -2296,12 +2340,11 @@ $controlPanelHtml
     window.closeStellaPane = function() {
         pane.style.right = "-380px";
         if (selectedNode) {
-            applyFilter();
             selectedNode = null;
+            applyFilter();
         }
     };
 
-    // フィルター & 検索の連動
     function applyFilter() {
         var query = (document.getElementById("stellaSearchInput").value || "").toLowerCase().trim();
         var statusVal = document.getElementById("stellaStatusSelect").value;
@@ -2320,64 +2363,52 @@ $controlPanelHtml
 
         var isActiveFilter = (query !== "" || statusVal !== "all" || tagVal !== "all");
 
-        // ノードのハイライト
-        var nodeElems = gNodes.querySelectorAll(".stella-node");
-        nodeElems.forEach(function(el) {
-            var rel = el.dataset.relpath;
-            var dot = el.querySelector("circle");
-            var text = el.querySelector("text");
-            var isHub = el.dataset.isHub === "true";
-
+        nodes.forEach(function(n) {
+            var isHub = (n.tags && n.tags.length >= 4);
             if (!isActiveFilter) {
-                var nodeObj = nodes.filter(function(x) { return x.relPath === rel; })[0];
-                var dotColor = (nodeObj && (nodeObj.status === 'stable' || nodeObj.status === 'active')) ? '#58a6ff' : (nodeObj && nodeObj.status === 'draft' ? '#d29922' : '#f85149');
-                dot.setAttribute("fill", dotColor);
-                dot.setAttribute("r", isHub ? "8" : "6");
-                dot.setAttribute("opacity", "0.85");
-                if (text) {
-                    text.style.opacity = (viewScale < 0.75 && !isHub) ? "0.15" : "0.85";
-                }
-            } else if (matchingRels[rel]) {
-                dot.setAttribute("fill", "#388bfd");
-                dot.setAttribute("r", "9");
-                dot.setAttribute("opacity", "1");
-                if (text) { text.style.opacity = "1"; }
+                var dotColor = (n.status === 'stable' || n.status === 'active') ? '#58a6ff' : (n.status === 'draft' ? '#d29922' : '#f85149');
+                n.circleEl.setAttribute("fill", dotColor);
+            } else if (matchingRels[n.relPath]) {
+                n.circleEl.setAttribute("fill", "#388bfd");
+                n.circleEl.setAttribute("opacity", "1");
+                if (n.textEl) n.textEl.style.opacity = "1";
             } else {
-                dot.setAttribute("fill", "#21262d");
-                dot.setAttribute("r", "4");
-                dot.setAttribute("opacity", "0.2");
-                if (text) { text.style.opacity = "0.15"; }
+                n.circleEl.setAttribute("fill", "#21262d");
+                n.circleEl.setAttribute("opacity", "0.2");
+                if (n.textEl) n.textEl.style.opacity = "0.15";
             }
         });
 
-        // 星座線のハイライト
-        var linkElems = gLinks.querySelectorAll(".stella-link-line");
-        linkElems.forEach(function(line) {
-            var s = line.dataset.source;
-            var t = line.dataset.target;
-            var isBackbone = line.dataset.isBackbone === "true";
-            line.style.filter = "none";
+        allEdges.forEach(function(e) {
+            if (e.lineEl) {
+                var s = e.source.relPath;
+                var t = e.target.relPath;
+                var isBackbone = e.lineEl.dataset.isBackbone === "true";
+                e.lineEl.style.filter = "none";
 
-            if (isActiveFilter) {
-                if (matchingRels[s] && matchingRels[t]) {
-                    line.style.display = "block";
-                    line.setAttribute("stroke", "rgba(56, 139, 253, 0.85)");
-                    line.setAttribute("stroke-width", "2.2");
+                if (isActiveFilter) {
+                    if (matchingRels[s] && matchingRels[t]) {
+                        e.lineEl.style.display = "block";
+                        e.lineEl.setAttribute("stroke", "rgba(56, 139, 253, 0.85)");
+                        e.lineEl.setAttribute("stroke-width", "2.2");
+                    } else {
+                        e.lineEl.style.display = "none";
+                    }
                 } else {
-                    line.style.display = "none";
-                }
-            } else {
-                if (isBackbone) {
-                    line.style.display = "block";
-                    var isRelated = line.dataset.isRelated === "true";
-                    var sharedCount = parseInt(line.dataset.sharedCount || "0", 10);
-                    line.setAttribute("stroke", isRelated ? "rgba(138, 180, 248, 0.55)" : (sharedCount > 1 ? "rgba(88, 166, 255, 0.4)" : "rgba(88, 166, 255, 0.2)"));
-                    line.setAttribute("stroke-width", isRelated ? "2.2" : (sharedCount > 1 ? "1.6" : "1.1"));
-                } else {
-                    line.style.display = "none";
+                    if (isBackbone) {
+                        e.lineEl.style.display = "block";
+                        var isRelated = e.lineEl.dataset.isRelated === "true";
+                        var sharedCount = parseInt(e.lineEl.dataset.sharedCount || "0", 10);
+                        e.lineEl.setAttribute("stroke", isRelated ? "rgba(138, 180, 248, 0.55)" : (sharedCount > 1 ? "rgba(88, 166, 255, 0.4)" : "rgba(88, 166, 255, 0.2)"));
+                        e.lineEl.setAttribute("stroke-width", isRelated ? "2.2" : (sharedCount > 1 ? "1.6" : "1.1"));
+                    } else {
+                        e.lineEl.style.display = "none";
+                    }
                 }
             }
         });
+
+        update3DPositions();
     }
 
     document.getElementById("stellaSearchInput").addEventListener("input", applyFilter);
@@ -2387,124 +2418,6 @@ $controlPanelHtml
     renderCanvas();
 })();
 </script>
-"@
-}
-
-function Get-TimelineViewHtml {
-    param (
-        [string]$Lang = "ja"
-    )
-
-    Ensure-WikiIndexLoaded -TargetWikiDir $wikiDir
-    $controlPanelHtml = Get-StellaControlPanelHtml -ActiveView "timeline" -Lang $Lang
-
-    $staleNoticeTxt = Get-LocalizedStr -Key "stella_stale_warning" -Lang $Lang
-    $treeTitleTxt   = Get-LocalizedStr -Key "stella_tree_lineage" -Lang $Lang
-
-    # Timeline calculation
-    $now = Get-Date
-    $docs = $script:WikiIndex | Sort-Object UpdatedAt -Descending
-
-    $tagsSet = [System.Collections.Generic.HashSet[string]]::new()
-    foreach ($d in $docs) {
-        if ($d.Tags) {
-            foreach ($t in $d.Tags) {
-                if ($t -is [string] -and -not [string]::IsNullOrWhiteSpace($t)) { [void]$tagsSet.Add($t.Trim()) }
-            }
-        }
-    }
-    if ($tagsSet.Count -eq 0) { [void]$tagsSet.Add("Uncategorized") }
-    $sortedTags = @($tagsSet | Sort-Object)
-
-    $timelineRowsHtml = foreach ($tag in $sortedTags) {
-        $tagEnc = [System.Net.WebUtility]::HtmlEncode($tag)
-        $docsInTag = @($docs | Where-Object { ($_.Tags -contains $tag) -or ($tag -eq "Uncategorized" -and (-not $_.Tags -or $_.Tags.Count -eq 0)) })
-
-        $dotsHtml = foreach ($d in $docsInTag) {
-            $relUri = "/" + [Uri]::EscapeUriString($d.RelPath.Replace('\', '/'))
-            $titleEnc = [System.Net.WebUtility]::HtmlEncode($d.Title)
-            $dateStr = if ($d.UpdatedAt) { $d.UpdatedAt.ToString("yyyy-MM-dd") } else { "" }
-
-            $isStale = ($d.Status -eq "active" -and $d.UpdatedAt -and ($now - $d.UpdatedAt).TotalDays -ge 180)
-            $staleClass = if ($isStale) { "stale-warning-ring" } else { "" }
-            $staleIcon = if ($isStale) { "<span style='color:#f85149; font-weight:bold;' title='$staleNoticeTxt'> ⚠️</span>" } else { "" }
-
-            $color = switch ($d.Status) {
-                "active"     { "#2ea043" }
-                "draft"      { "#d29922" }
-                "deprecated" { "#f85149" }
-                "archived"   { "#8b949e" }
-                default      { "#2ea043" }
-            }
-
-            "<a href='$relUri' class='timeline-dot-item $staleClass' style='background:$color;' title='$titleEnc ($dateStr)'>$staleIcon</a>"
-        }
-
-        @"
-        <div class="timeline-matrix-row">
-            <div class="timeline-row-label">🏷️ $tagEnc</div>
-            <div class="timeline-row-dots">
-                $($dotsHtml -join "")
-            </div>
-        </div>
-"@
-    }
-
-    # Tree Lineage Visualization (Parent-child from links)
-    $treeNodesHtml = foreach ($d in $docs) {
-        $titleEnc = [System.Net.WebUtility]::HtmlEncode($d.Title)
-        $relUri = "/" + [Uri]::EscapeUriString($d.RelPath.Replace('\', '/'))
-
-        $childHtml = ""
-        if ($d.Links -and $d.Links.Count -gt 0) {
-            $childItems = foreach ($l in $d.Links) {
-                $linkedDoc = $docs | Where-Object { $_.RelPath -eq $l } | Select-Object -First 1
-                if ($linkedDoc) {
-                    $lTitleEnc = [System.Net.WebUtility]::HtmlEncode($linkedDoc.Title)
-                    $lRelUri = "/" + [Uri]::EscapeUriString($linkedDoc.RelPath.Replace('\', '/'))
-                    "<li>└── 📄 <a href='$lRelUri'>$lTitleEnc</a></li>"
-                }
-            }
-            if ($childItems) {
-                $childHtml = "<ul class='tree-branches'>" + ($childItems -join "") + "</ul>"
-            }
-        }
-
-        "<div class='tree-root-item'>🌱 <a href='$relUri' class='tree-root-link'>$titleEnc</a>$childHtml</div>"
-    }
-
-    return @"
-$controlPanelHtml
-
-<div class="timeline-matrix-container" style="background: #161b22; padding: 20px; border-radius: 8px; border: 1px solid #30363d; margin-bottom: 30px; color: #c9d1d9;">
-    <h2 style="margin-top:0; font-size: 18px; border-bottom: 1px solid #30363d; padding-bottom: 10px; color: #58a6ff;">⏳ タイムライン・マトリックス</h2>
-    <div class="timeline-matrix">
-        $($timelineRowsHtml -join "")
-    </div>
-</div>
-
-<div class="tree-lineage-container" style="background: #161b22; padding: 20px; border-radius: 8px; border: 1px solid #30363d; color: #c9d1d9;">
-    <h2 style="margin-top:0; font-size: 18px; border-bottom: 1px solid #30363d; padding-bottom: 10px; color: #58a6ff;">$treeTitleTxt</h2>
-    <div class="tree-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
-        $($treeNodesHtml -join "")
-    </div>
-</div>
-
-<style>
-    .timeline-matrix-row { display: flex; align-items: center; border-bottom: 1px solid #21262d; padding: 10px 0; }
-    .timeline-row-label { width: 140px; font-weight: bold; font-size: 12px; color: #8b949e; flex-shrink: 0; }
-    .timeline-row-dots { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    .timeline-dot-item { width: 14px; height: 14px; border-radius: 50%; display: inline-block; text-decoration: none; position: relative; transition: transform 0.2s; }
-    .timeline-dot-item:hover { transform: scale(1.4); z-index: 10; }
-    .stale-warning-ring { border: 2px solid #f85149; animation: pulseStale 1.5s infinite; }
-    @keyframes pulseStale { 0% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.7); } 70% { box-shadow: 0 0 0 6px rgba(248, 81, 73, 0); } 100% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0); } }
-
-    .tree-root-item { background: #0d1117; padding: 12px; border-radius: 6px; border: 1px solid #21262d; font-size: 13px; }
-    .tree-root-link { font-weight: bold; color: #58a6ff; text-decoration: none; }
-    .tree-branches { list-style: none; padding-left: 12px; margin: 6px 0 0 0; font-size: 12px; color: #8b949e; }
-    .tree-branches a { color: #8b949e; text-decoration: none; }
-    .tree-branches a:hover { color: #58a6ff; }
-</style>
 "@
 }
 
@@ -2584,7 +2497,6 @@ function Get-MainViewHtml {
     $navSettings  = Get-LocalizedStr -Key "settings" -Lang $Lang
     $navApi       = Get-LocalizedStr -Key "api_json" -Lang $Lang
     $navStella    = Get-LocalizedStr -Key "stella_view_nav" -Lang $Lang
-    $navTimeline  = Get-LocalizedStr -Key "timeline_view_nav" -Lang $Lang
     $searchHolder = Get-LocalizedStr -Key "search_placeholder" -Lang $Lang
     $searchBtnTxt = Get-LocalizedStr -Key "search_btn" -Lang $Lang
     $docListTitle = Get-LocalizedStr -Key "doc_list_title" -Lang $Lang
@@ -2717,7 +2629,6 @@ function Get-MainViewHtml {
         <nav class="top-nav">
             <a href="/">{3}</a>
             <a href="/stella">{25}</a>
-            <a href="/timeline">{26}</a>
             <a href="/recent">{4}</a>
             <a href="/tags">{5}</a>
             <a href="/maintenance">{6}</a>
@@ -2797,7 +2708,7 @@ function Get-MainViewHtml {
 </html>
 '@
 
-    $fullHtml = $template.Replace("{0}", $PageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $BodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{18}", $Lang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $navStella).Replace("{26}", $navTimeline).Replace("{31}", $searchLoadingTxtJs).Replace("{222}", $editorModalHtml)
+    $fullHtml = $template.Replace("{0}", $PageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $BodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{18}", $Lang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $navStella).Replace("{31}", $searchLoadingTxtJs).Replace("{222}", $editorModalHtml)
 
     if (-not [string]::IsNullOrWhiteSpace($chatWidgetHtml)) {
         $fullHtml = $fullHtml.Replace("</body>", "$chatWidgetHtml`n</body>")
