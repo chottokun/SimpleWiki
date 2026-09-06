@@ -376,7 +376,7 @@ function Build-WikiIndex {
             }
         }
     } finally {
-        $placedIndex = Calculate-WikiNodeCoordinates -DocList $indexList.ToArray()
+        $placedIndex = Get-WikiNodeCoordinates -DocList $indexList.ToArray()
         $script:WikiIndex = $placedIndex
         $script:WikiIndexDirWriteTime = $currentWriteTime
         $script:WikiIndexLastScan = Get-Date

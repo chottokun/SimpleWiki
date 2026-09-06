@@ -2029,7 +2029,7 @@ $controlPanelHtml
         var matchingRels = {};
         nodes.forEach(function(n) {
             var matchQ = !query || (n.title.toLowerCase().indexOf(query) !== -1 || n.description.toLowerCase().indexOf(query) !== -1);
-            var matchS = statusVal === "all" || n.status === statusVal;
+            var matchS = statusVal === "all" || n.status === statusVal || (statusVal === "active" && n.status === "stable") || (statusVal === "draft" && (n.status === "wip" || n.status === "review" || n.status === "in-review")) || (statusVal === "deprecated" && n.status === "obsolete");
             var matchT = tagVal === "all" || (n.tags && n.tags.indexOf(tagVal) !== -1);
 
             if (matchQ && matchS && matchT && (query || statusVal !== "all" || tagVal !== "all")) {
@@ -2123,14 +2123,19 @@ function Get-TimelineViewHtml {
             $titleEnc = [System.Net.WebUtility]::HtmlEncode($d.Title)
             $dateStr = if ($d.UpdatedAt) { $d.UpdatedAt.ToString("yyyy-MM-dd") } else { "" }
 
-            $isStale = ($d.Status -eq "active" -and $d.UpdatedAt -and ($now - $d.UpdatedAt).TotalDays -ge 180)
+            $isStale = (($d.Status -eq "active" -or $d.Status -eq "stable") -and $d.UpdatedAt -and ($now - $d.UpdatedAt).TotalDays -ge 180)
             $staleClass = if ($isStale) { "stale-warning-ring" } else { "" }
             $staleIcon = if ($isStale) { "<span style='color:#f85149; font-weight:bold;' title='$staleNoticeTxt'> ⚠️</span>" } else { "" }
 
             $color = switch ($d.Status) {
                 "active"     { "#2ea043" }
+                "stable"     { "#2ea043" }
                 "draft"      { "#d29922" }
+                "wip"        { "#d29922" }
+                "review"     { "#d29922" }
+                "in-review"  { "#d29922" }
                 "deprecated" { "#f85149" }
+                "obsolete"   { "#f85149" }
                 "archived"   { "#8b949e" }
                 default      { "#2ea043" }
             }

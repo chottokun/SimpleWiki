@@ -266,18 +266,8 @@ function Get-DocumentMetadata {
         $rawStatus = $yamlDict["status"].ToString().ToLower().Trim()
     }
 
-    $status = switch ($rawStatus) {
-        "active"      { "active" }
-        "draft"       { "draft" }
-        "deprecated"  { "deprecated" }
-        "archived"    { "archived" }
-        "stable"      { "active" }
-        "wip"         { "draft" }
-        "review"      { "draft" }
-        "in-review"   { "draft" }
-        "obsolete"    { "deprecated" }
-        default       { "active" }
-    }
+    $allowedStatuses = @("active", "draft", "deprecated", "archived", "stable", "wip", "review", "in-review", "obsolete")
+    $status = if ($allowedStatuses -contains $rawStatus) { $rawStatus } else { "active" }
 
     $version = if ($yamlDict.ContainsKey("version") -and -not [string]::IsNullOrWhiteSpace($yamlDict["version"])) { $yamlDict["version"].ToString().Trim() } else { "" }
     $reviewer = if ($yamlDict.ContainsKey("reviewer") -and -not [string]::IsNullOrWhiteSpace($yamlDict["reviewer"])) { $yamlDict["reviewer"].ToString().Trim() } else { "" }
@@ -348,7 +338,8 @@ function Get-DocumentMetadata {
     }
 }
 
-function Calculate-WikiNodeCoordinates {
+function Get-WikiNodeCoordinates {
+    [CmdletBinding()]
     param (
         [array]$DocList = @(),
         [int]$CanvasWidth = 1000,
