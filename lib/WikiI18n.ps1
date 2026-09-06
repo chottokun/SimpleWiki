@@ -183,6 +183,18 @@ $script:I18n = @{
         "settings_server_title"     = "🛑 サーバー制御"
         "settings_shutdown_desc"    = "現在稼働中の Wiki サーバープロセスを安全に停止します。"
         "settings_shutdown_btn"     = "🛑 サーバーを停止する"
+        "stella_view_nav"           = "🌌 ステラビュー"
+        "timeline_view_nav"         = "⏳ タイムライン ＆ 系統樹"
+        "stella_search_holder"      = "🔍 ナレッジを横断検索..."
+        "stella_status_all"         = "Status: すべて"
+        "stella_status_active"      = "Status: active"
+        "stella_status_draft"       = "Status: draft"
+        "stella_status_deprecated"  = "Status: deprecated"
+        "stella_status_archived"    = "Status: archived"
+        "stella_tag_all"            = "Tag: すべて"
+        "stella_preview_title"      = "📄 ノードプレビュー"
+        "stella_stale_warning"      = "⚠️ 180日以上未更新 (要確認)"
+        "stella_tree_lineage"       = "🌲 仕様系統樹 (Tree Lineage)"
     }
     "en" = @{
         "brand_title"               = "📖 SimpleWiki"
@@ -362,6 +374,18 @@ $script:I18n = @{
         "settings_server_title"     = "🛑 Server Control"
         "settings_shutdown_desc"    = "Safely shut down the running Wiki server process."
         "settings_shutdown_btn"     = "🛑 Stop Server"
+        "stella_view_nav"           = "🌌 Stella View"
+        "timeline_view_nav"         = "⏳ Timeline & Tree"
+        "stella_search_holder"      = "🔍 Search Knowledge Base..."
+        "stella_status_all"         = "Status: All"
+        "stella_status_active"      = "Status: Active"
+        "stella_status_draft"       = "Status: Draft"
+        "stella_status_deprecated"  = "Status: Deprecated"
+        "stella_status_archived"    = "Status: Archived"
+        "stella_tag_all"            = "Tag: All"
+        "stella_preview_title"      = "📄 Node Preview"
+        "stella_stale_warning"      = "⚠️ Stale (>180 days)"
+        "stella_tree_lineage"       = "🌲 Tree Lineage"
     }
 }
 

@@ -261,9 +261,22 @@ function Get-DocumentMetadata {
         }
     }
 
-    $status = "active"
+    $rawStatus = "active"
     if ($yamlDict.ContainsKey("status") -and -not [string]::IsNullOrWhiteSpace($yamlDict["status"])) {
-        $status = $yamlDict["status"].ToString().ToLower().Trim()
+        $rawStatus = $yamlDict["status"].ToString().ToLower().Trim()
+    }
+
+    $status = switch ($rawStatus) {
+        "active"      { "active" }
+        "draft"       { "draft" }
+        "deprecated"  { "deprecated" }
+        "archived"    { "archived" }
+        "stable"      { "active" }
+        "wip"         { "draft" }
+        "review"      { "draft" }
+        "in-review"   { "draft" }
+        "obsolete"    { "deprecated" }
+        default       { "active" }
     }
 
     $version = if ($yamlDict.ContainsKey("version") -and -not [string]::IsNullOrWhiteSpace($yamlDict["version"])) { $yamlDict["version"].ToString().Trim() } else { "" }
@@ -286,7 +299,25 @@ function Get-DocumentMetadata {
     }
 
     $contributors = Get-YamlListProperty -YamlDict $yamlDict -Key "contributors"
-    $related = Get-YamlListProperty -YamlDict $yamlDict -Key "related"
+    $related      = Get-YamlListProperty -YamlDict $yamlDict -Key "related"
+    $links        = Get-YamlListProperty -YamlDict $yamlDict -Key "links"
+
+    $createdAt = $null
+    if ($yamlDict.ContainsKey("created_at") -and -not [string]::IsNullOrWhiteSpace($yamlDict["created_at"])) {
+        try { $createdAt = [DateTime]::Parse($yamlDict["created_at"]) } catch {}
+    }
+
+    $updatedAt = $lastUpdated
+    if ($yamlDict.ContainsKey("updated_at") -and -not [string]::IsNullOrWhiteSpace($yamlDict["updated_at"])) {
+        try { $updatedAt = [DateTime]::Parse($yamlDict["updated_at"]) } catch {}
+    }
+
+    if ($null -eq $createdAt) {
+        $createdAt = if ($updatedAt) { $updatedAt } elseif ($lastUpdated) { $lastUpdated } else { Get-Date }
+    }
+    if ($null -eq $updatedAt) {
+        $updatedAt = if ($lastUpdated) { $lastUpdated } else { Get-Date }
+    }
 
     return [PSCustomObject]@{
         Title        = $title
@@ -295,6 +326,8 @@ function Get-DocumentMetadata {
         Domain       = $domain
         Tags         = $tags
         LastUpdated  = $lastUpdated
+        CreatedAt    = $createdAt
+        UpdatedAt    = $updatedAt
         Status       = $status
         Version      = $version
         Reviewer     = $reviewer
@@ -304,12 +337,108 @@ function Get-DocumentMetadata {
         Computations = $computations
         Contributors = $contributors
         Related      = $related
+        Links        = $links
         HasYaml      = $hasYaml
         RelPath      = $RelPath
         FullPath     = if ($File) { $File.FullName } else { "" }
         BodyText     = $bodyText
         RawYamlDict  = $yamlDict
+        X            = 0
+        Y            = 0
     }
+}
+
+function Calculate-WikiNodeCoordinates {
+    param (
+        [array]$DocList = @(),
+        [int]$CanvasWidth = 1000,
+        [int]$CanvasHeight = 800,
+        [double]$MinDistance = 40.0
+    )
+
+    if ($null -eq $DocList -or $DocList.Count -eq 0) {
+        return @()
+    }
+
+    # Group documents by Domain to form semantic clusters in space
+    $domainGroups = $DocList | Group-Object Domain
+    $domainCount = $domainGroups.Count
+    if ($domainCount -eq 0) { $domainCount = 1 }
+
+    $centerX = [int]($CanvasWidth / 2)
+    $centerY = [int]($CanvasHeight / 2)
+    $domainRadius = [Math]::Min($CanvasWidth, $CanvasHeight) * 0.35
+
+    $placedNodes = [System.Collections.Generic.List[PSObject]]::new()
+
+    for ($dIdx = 0; $dIdx -lt $domainCount; $dIdx++) {
+        $group = $domainGroups[$dIdx]
+        $angle = (2 * [Math]::PI / $domainCount) * $dIdx
+        $clusterCenterX = $centerX + [int]($domainRadius * [Math]::Cos($angle))
+        $clusterCenterY = $centerY + [int]($domainRadius * [Math]::Sin($angle))
+
+        $docsInGroup = @($group.Group)
+        $docCount = $docsInGroup.Count
+
+        for ($i = 0; $i -lt $docCount; $i++) {
+            $doc = $docsInGroup[$i]
+            if ($null -eq $doc) { continue }
+
+            # Spiral offset within domain cluster for deterministic placement
+            $spiralRadius = 35 * [Math]::Sqrt($i + 1)
+            $spiralAngle  = $i * 2.4 # Golden ratio angle approximation
+
+            $posX = [Math]::Round($clusterCenterX + ($spiralRadius * [Math]::Cos($spiralAngle)))
+            $posY = [Math]::Round($clusterCenterY + ($spiralRadius * [Math]::Sin($spiralAngle)))
+
+            # Collision avoidance check against already placed nodes
+            $hasCollision = $true
+            $attempts = 0
+            while ($hasCollision -and $attempts -lt 50) {
+                $hasCollision = $false
+                foreach ($pn in $placedNodes) {
+                    $dx = $posX - $pn.X
+                    $dy = $posY - $pn.Y
+                    $dist = [Math]::Sqrt(($dx * $dx) + ($dy * $dy))
+                    if ($dist -lt $MinDistance) {
+                        $hasCollision = $true
+                        $overlap = $MinDistance - $dist + 1.0
+                        if ($dist -gt 0) {
+                            $posX += [Math]::Round(($dx / $dist) * $overlap)
+                            $posY += [Math]::Round(($dy / $dist) * $overlap)
+                        } else {
+                            $posX += [Math]::Round($MinDistance)
+                        }
+                        break
+                    }
+                }
+                $attempts++
+            }
+
+            # Clamp coordinates to canvas bounds
+            $posX = [Math]::Max(40, [Math]::Min($CanvasWidth - 40, $posX))
+            $posY = [Math]::Max(40, [Math]::Min($CanvasHeight - 40, $posY))
+
+            if ($doc.PSObject -and $doc.PSObject.Properties["X"]) {
+                $doc.X = [int]$posX
+            } else {
+                Add-Member -InputObject $doc -NotePropertyName X -NotePropertyValue ([int]$posX) -Force
+            }
+
+            if ($doc.PSObject -and $doc.PSObject.Properties["Y"]) {
+                $doc.Y = [int]$posY
+            } else {
+                Add-Member -InputObject $doc -NotePropertyName Y -NotePropertyValue ([int]$posY) -Force
+            }
+
+            $doc.X = [int]$posX
+            $doc.Y = [int]$posY
+
+            [void]$placedNodes.Add($doc)
+        }
+    }
+
+    return @($DocList)
 }
 
 function Get-GlossaryTerms {

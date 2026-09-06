@@ -433,7 +433,7 @@ related:
 
         # TopBar and Footer HTML rendering
         $topBar = Get-OkfTopBarHtml -Meta $meta -Lang "ja"
-        $topBar | Should Match "🌟 Stable"
+        $topBar | Should Match "✅ Active"
         $topBar | Should Match "v0.2.0"
 
         $footer = Get-OkfFooterCardHtml -Meta $meta -Lang "ja"
@@ -2999,5 +2999,90 @@ Describe "Refactoring Specific Behavior Tests" {
 
         $emptyBox = Render-GlossaryBoxHtml -Term "NonExistentTerm12345" -TargetWikiDir $sampleWikiDir
         $emptyBox | Should Be ""
+    }
+}
+
+Describe 'Stella View & Timeline/Tree Specification Tests' {
+    BeforeAll {
+        . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -DotSourceOnly
+    }
+
+    It "Parses links, created_at, updated_at, and enforces schema status validation in Get-DocumentMetadata" {
+        $mdText = @"
+---
+title: "Stella Spec Doc"
+status: active
+created_at: 2025-01-15
+updated_at: 2025-06-20
+links:
+  - "docs/api.md"
+  - "docs/architecture.md"
+---
+# Stella Spec Body
+"@
+        $meta = Get-DocumentMetadata -File $null -RelPath "docs/stella-spec.md" -MdText $mdText
+        $meta.Title | Should Be "Stella Spec Doc"
+        $meta.Status | Should Be "active"
+        $meta.CreatedAt.ToString("yyyy-MM-dd") | Should Be "2025-01-15"
+        $meta.UpdatedAt.ToString("yyyy-MM-dd") | Should Be "2025-06-20"
+        $meta.Links.Count | Should Be 2
+        $meta.Links -contains "docs/api.md" | Should Be $true
+
+        # Validate invalid/unknown status falls back to active
+        $mdInvalidStatus = @"
+---
+title: "Invalid Status Doc"
+status: invalid_unknown_status
+---
+"@
+        $metaInvalid = Get-DocumentMetadata -File $null -RelPath "docs/invalid.md" -MdText $mdInvalidStatus
+        $metaInvalid.Status | Should Be "active"
+    }
+
+    It "Computes deterministic 2D coordinates (x, y) with collision avoidance" {
+        $docs = @(
+            [PSCustomObject]@{ Title = "Doc A"; RelPath = "a.md"; Domain = "domain1"; Status = "active"; Links = @() },
+            [PSCustomObject]@{ Title = "Doc B"; RelPath = "b.md"; Domain = "domain1"; Status = "active"; Links = @() },
+            [PSCustomObject]@{ Title = "Doc C"; RelPath = "c.md"; Domain = "domain2"; Status = "draft"; Links = @() }
+        )
+
+        $placedDocs = Calculate-WikiNodeCoordinates -DocList $docs
+        $placedDocs.Count | Should Be 3
+        foreach ($d in $placedDocs) {
+            ($null -ne $d.X) | Should Be $true
+            ($null -ne $d.Y) | Should Be $true
+        }
+
+        # Verify coordinates are not all overlapping (distance >= minDistance)
+        $dist = [Math]::Sqrt([Math]::Pow(($placedDocs[0].X - $placedDocs[1].X), 2) + [Math]::Pow(($placedDocs[0].Y - $placedDocs[1].Y), 2))
+        ($dist -ge 30) | Should Be $true
+    }
+
+    It "Get-StellaViewHtml renders canvas, control panel, slide-in pane, and localStorage JS" {
+        $sampleWikiDir = Join-Path $projectRoot "markdown_sample"
+        Ensure-WikiIndexLoaded -TargetWikiDir $sampleWikiDir
+        $html = Get-StellaViewHtml -Lang "ja"
+        $html | Should Match "stellaCanvas"
+        $html | Should Match "stella-control-panel"
+        $html | Should Match "stella-slidein-pane"
+        $html | Should Match "localStorage"
+        $html | Should Match "flyToNode"
+        $html | Should Match "ステラビュー"
+    }
+
+    It "Get-TimelineViewHtml renders time vs tag matrix, status colored dots, stale warnings, and tree lineage" {
+        $sampleWikiDir = Join-Path $projectRoot "markdown_sample"
+        Ensure-WikiIndexLoaded -TargetWikiDir $sampleWikiDir
+        $html = Get-TimelineViewHtml -Lang "ja"
+        $html | Should Match "timeline-matrix"
+        $html | Should Match "stale-warning-ring"
+        $html | Should Match "tree-lineage-container"
+        $html | Should Match "タイムライン"
+    }
+
+    It "HTTP route requests handle /stella and /timeline endpoints" {
+        $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
+        $scriptContent | Should Match 'rawPath -eq "/stella"'
+        $scriptContent | Should Match 'rawPath -eq "/timeline"'
     }
 }

@@ -706,6 +706,14 @@ function Invoke-WikiRouteRequest {
             $stValue       = if (-not [string]::IsNullOrWhiteSpace($stParam)) { $stParam } else { "active" }
             $pageTitle     = if ($qParam) { (Get-LocalizedStr -Key "search_btn" -Lang $reqLang) + ": " + $qParam } else { Get-LocalizedStr -Key "search_btn" -Lang $reqLang }
             $bodyContent   = Get-SearchViewHtml -Query $qParam -StatusFilter $stValue -DomainFilter $domParam -Lang $reqLang
+        } elseif ($rawPath -eq "/stella") {
+            $isDynamicView = $true
+            $pageTitle     = Get-LocalizedStr -Key "stella_view_nav" -Lang $reqLang
+            $bodyContent   = Get-StellaViewHtml -Lang $reqLang
+        } elseif ($rawPath -eq "/timeline") {
+            $isDynamicView = $true
+            $pageTitle     = Get-LocalizedStr -Key "timeline_view_nav" -Lang $reqLang
+            $bodyContent   = Get-TimelineViewHtml -Lang $reqLang
         }
 
         $relPath  = $rawPath.TrimStart("/").Replace("/", "\")
