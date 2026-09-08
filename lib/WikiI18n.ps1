@@ -202,6 +202,7 @@ $script:I18n = @{
         "stella_help_zoom"          = "🔍 ホイール: 拡大・縮小"
         "stella_help_click"         = "🌟 クリック: 星座を発光 ＆ プレビュー"
         "stella_connected_nodes"    = "🔗 関連する星 (共通タグ・関連文書)"
+        "nav_tools"                 = "🔧 ツール"
     }
     "en" = @{
         "brand_title"               = "📖 SimpleWiki"
@@ -400,6 +401,7 @@ $script:I18n = @{
         "stella_help_zoom"          = "🔍 Wheel: Zoom in / out"
         "stella_help_click"         = "🌟 Click: Light up constellation & preview"
         "stella_connected_nodes"    = "🔗 Connected Stars (Shared Tags & Related)"
+        "nav_tools"                 = "🔧 Tools"
     }
 }
 

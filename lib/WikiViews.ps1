@@ -2497,6 +2497,7 @@ function Get-MainViewHtml {
     $navSettings  = Get-LocalizedStr -Key "settings" -Lang $Lang
     $navApi       = Get-LocalizedStr -Key "api_json" -Lang $Lang
     $navStella    = Get-LocalizedStr -Key "stella_view_nav" -Lang $Lang
+    $navTools     = Get-LocalizedStr -Key "nav_tools" -Lang $Lang
     $searchHolder = Get-LocalizedStr -Key "search_placeholder" -Lang $Lang
     $searchBtnTxt = Get-LocalizedStr -Key "search_btn" -Lang $Lang
     $docListTitle = Get-LocalizedStr -Key "doc_list_title" -Lang $Lang
@@ -2526,14 +2527,25 @@ function Get-MainViewHtml {
 <style>
     * { box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "BIZ UDPGothic", "Yu Gothic UI", "Meiryo", "Hiragino Sans", sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; color: #24292e; background-color: #fff; }
-    header.top-header { background: #1b1f23; color: #fff; padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-    header.top-header a.brand { color: #fff; font-weight: bold; font-size: 16px; text-decoration: none; display: flex; align-items: center; gap: 8px; }
-    header.top-header nav.top-nav { display: flex; gap: 15px; align-items: center; }
-    header.top-header nav.top-nav a { color: #d1d5da; text-decoration: none; font-size: 13px; padding: 4px 8px; border-radius: 4px; }
+    header.top-header { background: #1b1f23; color: #fff; padding: 10px 20px; display: flex; align-items: center; gap: 16px; flex-shrink: 0; flex-wrap: nowrap; }
+    header.top-header .brand { color: #fff; font-weight: bold; font-size: 16px; text-decoration: none; white-space: nowrap; }
+    header.top-header nav.top-nav { display: flex; gap: 8px; align-items: center; }
+    header.top-header nav.top-nav a { color: #d1d5da; text-decoration: none; font-size: 13px; padding: 4px 8px; border-radius: 4px; white-space: nowrap; }
     header.top-header nav.top-nav a:hover { color: #fff; background: rgba(255,255,255,0.1); }
-    header.top-header form.search-form { display: flex; gap: 4px; }
-    header.top-header form.search-form input { padding: 4px 8px; font-size: 12px; border: 1px solid #444; border-radius: 4px; background: #2f363d; color: #fff; }
-    header.top-header form.search-form button { padding: 4px 8px; font-size: 12px; border: none; border-radius: 4px; background: #0366d6; color: #fff; cursor: pointer; }
+    header.top-header form.search-form { display: flex; gap: 4px; flex: 1; min-width: 0; max-width: 320px; }
+    header.top-header form.search-form input { padding: 4px 8px; font-size: 12px; border: 1px solid #444; border-radius: 4px; background: #2f363d; color: #fff; flex: 1; min-width: 80px; }
+    header.top-header form.search-form button { padding: 4px 8px; font-size: 12px; border: none; border-radius: 4px; background: #0366d6; color: #fff; cursor: pointer; white-space: nowrap; }
+    .nav-dropdown { position: relative; display: inline-flex; align-items: center; }
+    .nav-dropdown-trigger { color: #d1d5da; text-decoration: none; font-size: 13px; padding: 4px 8px; border-radius: 4px; cursor: pointer; background: none; border: none; font-family: inherit; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+    .nav-dropdown-trigger:hover { color: #fff; background: rgba(255,255,255,0.1); }
+    .nav-dropdown-menu { display: none; position: absolute; top: 100%; left: 0; margin-top: 4px; background: #2f363d; border: 1px solid #444; border-radius: 6px; min-width: 200px; padding: 4px 0; z-index: 1000; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+    .nav-dropdown-menu::before { content: ''; position: absolute; top: -10px; left: 0; right: 0; height: 10px; background: transparent; }
+    .nav-dropdown:hover .nav-dropdown-menu, .nav-dropdown:focus-within .nav-dropdown-menu { display: block; }
+    .nav-dropdown-menu a { display: block; padding: 8px 16px; color: #d1d5da; text-decoration: none; font-size: 13px; white-space: nowrap; }
+    .nav-dropdown-menu a:hover { background: rgba(255,255,255,0.1); color: #fff; }
+    .nav-dropdown-menu .dropdown-divider { border-top: 1px solid #444; margin: 4px 0; }
+    .nav-dropdown-menu .dropdown-item-widget { padding: 8px 16px; }
+    .nav-dropdown-menu .dropdown-item-widget select { background: #1b1f23; color: #fff; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; width: 100%; }
     .layout-container { display: flex; flex: 1; overflow: hidden; }
     nav.sidebar { width: 260px; background-color: #f6f8fa; border-right: 1px solid #e1e4e8; padding: 20px 10px; overflow-y: auto; flex-shrink: 0; }
     nav.sidebar h2 { font-size: 13px; text-transform: uppercase; color: #586069; margin: 0 0 10px 10px; letter-spacing: 0.5px; }
@@ -2625,25 +2637,37 @@ function Get-MainViewHtml {
 </head>
 <body>
     <header class="top-header">
-        <a href="/" class="brand">📖 {20}</a>
-        <nav class="top-nav">
-            <a href="/">{3}</a>
-            <a href="/stella">{25}</a>
-            <a href="/recent">{4}</a>
-            <a href="/tags">{5}</a>
-            <a href="/maintenance">{6}</a>
-            <a href="/authors">{7}</a>
-            <a href="/settings">{19}</a>
-            <a href="/api/index.json" target="_blank">{8}</a>
-            <select onchange="switchWikiLanguage(this.value)" style="background: #2f363d; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 2px 6px; font-size: 12px; cursor: pointer;">
-                {9}
-            </select>
-            <button class="shutdown-btn" onclick="shutdownWikiServer()" title="{21}" style="background: #dc3545; color: #fff; border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer; font-weight: bold;">✕ {21}</button>
-        </nav>
+        <div class="nav-dropdown">
+            <button type="button" class="brand nav-dropdown-trigger">📖 {20} ▾</button>
+            <div class="nav-dropdown-menu">
+                <a href="/">{3}</a>
+                <a href="/recent">{4}</a>
+                <a href="/tags">{5}</a>
+                <a href="/authors">{7}</a>
+            </div>
+        </div>
         <form action="/search" method="GET" accept-charset="UTF-8" class="search-form">
             <input type="text" name="q" placeholder="{10}">
             <button type="submit">🔍 {11}</button>
         </form>
+        <nav class="top-nav">
+            <a href="/stella">{25}</a>
+        </nav>
+        <div class="nav-dropdown">
+            <button class="nav-dropdown-trigger">{33} ▾</button>
+            <div class="nav-dropdown-menu">
+                <a href="/maintenance">{6}</a>
+                <a href="/settings">{19}</a>
+                <a href="/api/index.json" target="_blank">{8}</a>
+                <div class="dropdown-divider"></div>
+                <div class="dropdown-item-widget">
+                    <select onchange="switchWikiLanguage(this.value)">
+                        {9}
+                    </select>
+                </div>
+            </div>
+        </div>
+        <button class="shutdown-btn" onclick="shutdownWikiServer()" title="{21}" style="background: #dc3545; color: #fff; border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer; font-weight: bold;">✕</button>
     </header>
 
     <div class="layout-container">
@@ -2708,7 +2732,7 @@ function Get-MainViewHtml {
 </html>
 '@
 
-    $fullHtml = $template.Replace("{0}", $PageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $BodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{18}", $Lang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $navStella).Replace("{31}", $searchLoadingTxtJs).Replace("{222}", $editorModalHtml)
+    $fullHtml = $template.Replace("{0}", $PageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $BodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{18}", $Lang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $navStella).Replace("{31}", $searchLoadingTxtJs).Replace("{33}", $navTools).Replace("{222}", $editorModalHtml)
 
     if (-not [string]::IsNullOrWhiteSpace($chatWidgetHtml)) {
         $fullHtml = $fullHtml.Replace("</body>", "$chatWidgetHtml`n</body>")
