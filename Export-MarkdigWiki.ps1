@@ -442,11 +442,34 @@ $commonStyle = @'
     .okf-desc { font-size: 13px; color: #586069; margin: 6px 0 10px 0; }
     .okf-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
     .tag-badge { background: #e1e4e8; color: #0366d6; text-decoration: none; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
+    .tag-badge:hover { background: #0366d6; color: #fff; }
     .badge { padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
     .badge-active { background: #28a745; color: #fff; }
     .badge-draft { background: #ffc107; color: #212529; }
     .badge-deprecated { background: #dc3545; color: #fff; }
     .warning-banner { background: #fff3cd; border: 1px solid #ffeeba; color: #856404; padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; }
+
+    /* Tags & Glossary Static Views */
+    .tag-cloud { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    .tag-cloud-item { background: #f1f8ff; color: #0366d6; border: 1px solid #c8e1ff; padding: 6px 12px; border-radius: 16px; text-decoration: none; font-size: 13px; font-weight: bold; }
+    .tag-cloud-item:hover { background: #0366d6; color: #fff; text-decoration: none; }
+    .tag-count { font-size: 11px; opacity: 0.8; font-weight: normal; }
+    .glossary-box { background: #e8f4fd; border-left: 4px solid #0366d6; padding: 14px 18px; border-radius: 6px; margin-bottom: 24px; }
+    .glossary-title { font-weight: bold; color: #0366d6; font-size: 15px; margin-bottom: 8px; }
+    .glossary-content { font-size: 13px; color: #24292e; line-height: 1.6; }
+    .tag-card, .search-item { border-bottom: 1px solid #e1e4e8; padding: 12px 0; }
+    .tag-card h3, .search-item h3 { margin: 0 0 6px 0; font-size: 16px; }
+    .tag-card a, .search-item a { color: #0366d6; text-decoration: none; }
+    .tag-card a:hover, .search-item a:hover { text-decoration: underline; }
+    .tag-card p, .search-item p { margin: 4px 0 0 0; font-size: 13px; color: #586069; }
+
+    /* Single File Modal / Drawer */
+    .single-file-modal-backdrop { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 10000; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; }
+    .single-file-modal-backdrop.active { display: flex; }
+    .single-file-modal-card { background: #fff; width: 90vw; max-width: 720px; max-height: 85vh; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); display: flex; flex-direction: column; overflow: hidden; }
+    .single-file-modal-header { background: #f6f8fa; padding: 12px 20px; border-bottom: 1px solid #e1e4e8; display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
+    .single-file-modal-close { background: none; border: none; font-size: 18px; cursor: pointer; color: #586069; }
+    .single-file-modal-body { padding: 20px; overflow-y: auto; flex: 1; }
 
     /* Single page section divider */
     html { scroll-behavior: smooth; }
@@ -470,6 +493,7 @@ if ($SingleFile) {
 
     $pagesHtmlList = [System.Collections.Generic.List[string]]::new()
     $globalImageCache = @{}
+    $allApiItems = [System.Collections.Generic.List[PSCustomObject]]::new()
 
     foreach ($file in $allMdFiles) {
         $relPath  = $file.FullName.Substring($wikiDir.Length).TrimStart("\", "/")
@@ -477,10 +501,12 @@ if ($SingleFile) {
 
         $mdText   = Get-Content -Path $file.FullName -Raw -Encoding UTF8
         $meta     = Get-DocumentMetadata -File $file -RelPath $relPath -MdText $mdText
+        [void]$allApiItems.Add($meta)
+
         $bodyHtml = [Markdig.Markdown]::ToHtml($mdText, $pipeline)
 
-        $okfTopBar   = Get-OkfTopBarHtml -Meta $meta -Lang $exportLang
-        $okfFooter   = Get-OkfFooterCardHtml -Meta $meta -Lang $exportLang
+        $okfTopBar   = Get-OkfTopBarHtml -Meta $meta -RelPath $relPath -Lang $exportLang -IsExportMode -IsSingleFileMode
+        $okfFooter   = Get-OkfFooterCardHtml -Meta $meta -Lang $exportLang -IsExportMode -IsSingleFileMode
         $bodyHtml    = $okfTopBar + $bodyHtml + $okfFooter
 
         # リンク書き換え (相対 .md / .html リンクを #pageId または #anchorId に変換)
@@ -662,6 +688,158 @@ document.addEventListener("DOMContentLoaded", function() {
 </script>
 "@
 
+    $glossaryPath = Join-Path $wikiDir "glossary.md"
+    $glossaryTerms = Get-GlossaryTerms -GlossaryPath $glossaryPath
+    $glossaryJsonText = $glossaryTerms | ConvertTo-Json -Depth 3
+
+    # api/index.json の出力
+    $apiEnvelope = [PSCustomObject]@{
+        Total       = $allApiItems.Count
+        Count       = $allApiItems.Count
+        Offset      = 0
+        Limit       = $allApiItems.Count
+        IsTruncated = $false
+        Items       = @($allApiItems | ForEach-Object {
+            $lastUpdStr = if ($_.LastUpdated -is [DateTime]) { $_.LastUpdated.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $_.LastUpdated }
+            $createdStr = if ($_.CreatedAt -is [DateTime]) { $_.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $_.CreatedAt }
+            $updatedStr = if ($_.UpdatedAt -is [DateTime]) { $_.UpdatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $_.UpdatedAt }
+            [PSCustomObject]@{
+                Title       = $_.Title
+                Description = $_.Description
+                Author      = $_.Author
+                Domain      = $_.Domain
+                Tags        = @($_.Tags)
+                LastUpdated = $lastUpdStr
+                CreatedAt   = $createdStr
+                UpdatedAt   = $updatedStr
+                Status      = $_.Status
+                HasYaml     = $_.HasYaml
+                RelPath     = $_.RelPath
+                Links       = @($_.Links)
+            }
+        })
+    }
+    $apiJsonText = $apiEnvelope | ConvertTo-Json -Depth 5
+    $apiDestDir  = Join-Path $targetDistDir "api"
+    if (-not (Test-Path $apiDestDir)) { New-Item -ItemType Directory -Path $apiDestDir -Force | Out-Null }
+    [System.IO.File]::WriteAllText((Join-Path $apiDestDir "index.json"), $apiJsonText, [System.Text.Encoding]::UTF8)
+    Write-Host "  [API JSON 出力] -> api/index.json" -ForegroundColor Green
+
+    $singleFileModalHtml = @"
+<div id="singleFileModalBackdrop" class="single-file-modal-backdrop">
+    <div class="single-file-modal-card">
+        <div class="single-file-modal-header">
+            <span id="singleFileModalTitle">🏷️ タグ</span>
+            <button class="single-file-modal-close" onclick="closeSingleFileModal()">✕</button>
+        </div>
+        <div id="singleFileModalBody" class="single-file-modal-body"></div>
+    </div>
+</div>
+<script id="wiki-index-data" type="application/json">
+$apiJsonText
+</script>
+<script id="wiki-glossary-data" type="application/json">
+$glossaryJsonText
+</script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var rawIndex = JSON.parse(document.getElementById("wiki-index-data").textContent || "{}");
+    var rawGlossary = JSON.parse(document.getElementById("wiki-glossary-data").textContent || "{}");
+    var items = rawIndex.Items || [];
+
+    function escapeHtml(str) {
+        return (str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    function renderGlossaryText(str) {
+        return escapeHtml(str).replace(/\r?\n/g, "<br>");
+    }
+
+    function getSinglePageId(relPath) {
+        if (!relPath) return "index";
+        var norm = relPath.replace(/\\/g, "/").replace(/^\//, "");
+        var clean = norm.replace(/\.md$/, "").replace(/\.html$/, "");
+        if (clean === "index") return "index";
+        var pageId = clean.replace(/[^a-zA-Z0-9_\-\u4e00-\u9faf\u3040-\u309f\u30a0-\u30ff]/g, "_");
+        return pageId ? "page_" + pageId : "index";
+    }
+
+    window.closeSingleFileModal = function() {
+        var backdrop = document.getElementById("singleFileModalBackdrop");
+        if (backdrop) backdrop.classList.remove("active");
+    };
+
+    function checkHash() {
+        var hash = location.hash || "";
+        var backdrop = document.getElementById("singleFileModalBackdrop");
+        var titleEl = document.getElementById("singleFileModalTitle");
+        var bodyEl = document.getElementById("singleFileModalBody");
+        if (!backdrop || !titleEl || !bodyEl) return;
+
+        if (hash.indexOf("#tag=") === 0) {
+            var tag = decodeURIComponent(hash.substring(5));
+            titleEl.textContent = "🏷️ タグ: " + tag;
+            var matching = items.filter(function(item) {
+                return item.Tags && Array.isArray(item.Tags) && item.Tags.indexOf(tag) !== -1;
+            });
+
+            var html = "";
+            if (rawGlossary[tag]) {
+                html += "<div class='glossary-box'><div class='glossary-title'>📖 用語解説: " + escapeHtml(tag) + "</div><div class='glossary-content'>" + renderGlossaryText(rawGlossary[tag]) + "</div></div>";
+            }
+
+            if (matching.length === 0) {
+                html += "<p style='color:#6a737d;'>該当するドキュメントはありません。</p>";
+            } else {
+                html += "<div class='tag-results'>";
+                matching.forEach(function(item) {
+                    var pid = getSinglePageId(item.RelPath);
+                    var title = escapeHtml(item.Title || "Untitled");
+                    var desc = escapeHtml(item.Description || "");
+                    html += "<div class='tag-card'><h3><a href='#" + pid + "' onclick='closeSingleFileModal()'>📄 " + title + "</a></h3><p>" + desc + "</p></div>";
+                });
+                html += "</div>";
+            }
+            bodyEl.innerHTML = html;
+            backdrop.classList.add("active");
+        } else if (hash.indexOf("#author=") === 0) {
+            var author = decodeURIComponent(hash.substring(8));
+            titleEl.textContent = "👤 著者: " + author;
+            var matching = items.filter(function(item) {
+                return item.Author && item.Author === author;
+            });
+
+            var html = "";
+            if (matching.length === 0) {
+                html += "<p style='color:#6a737d;'>該当するドキュメントはありません。</p>";
+            } else {
+                html += "<div class='tag-results'>";
+                matching.forEach(function(item) {
+                    var pid = getSinglePageId(item.RelPath);
+                    var title = escapeHtml(item.Title || "Untitled");
+                    var desc = escapeHtml(item.Description || "");
+                    html += "<div class='tag-card'><h3><a href='#" + pid + "' onclick='closeSingleFileModal()'>📄 " + title + "</a></h3><p>" + desc + "</p></div>";
+                });
+                html += "</div>";
+            }
+            bodyEl.innerHTML = html;
+            backdrop.classList.add("active");
+        }
+    }
+
+    var backdrop = document.getElementById("singleFileModalBackdrop");
+    if (backdrop) {
+        backdrop.addEventListener("click", function(e) {
+            if (e.target === backdrop) closeSingleFileModal();
+        });
+    }
+
+    window.addEventListener("hashchange", checkHash);
+    checkHash();
+});
+</script>
+"@
+
     $monolithHtml = @"
 <!DOCTYPE html>
 <html lang="$exportLang">
@@ -681,6 +859,7 @@ $mermaidScriptInline
     <main>
         $allPagesContent
     </main>
+    $singleFileModalHtml
     $mermaidInitScript
     $navScript
 </body>
@@ -720,6 +899,8 @@ $commonStyle
 "@
 
     $globalImageCache = @{}
+    $allApiItems = [System.Collections.Generic.List[PSCustomObject]]::new()
+
     foreach ($file in $allMdFiles) {
         $relPath  = $file.FullName.Substring($wikiDir.Length).TrimStart("\", "/")
         $htmlRel  = $relPath -replace '\.md$', '.html'
@@ -732,10 +913,13 @@ $commonStyle
 
         $mdText   = Get-Content -Path $file.FullName -Raw -Encoding UTF8
         $meta     = Get-DocumentMetadata -File $file -RelPath $relPath -MdText $mdText
+        [void]$allApiItems.Add($meta)
+
         $bodyHtml = [Markdig.Markdown]::ToHtml($mdText, $pipeline)
 
-        $okfTopBar   = Get-OkfTopBarHtml -Meta $meta -Lang $exportLang
-        $okfFooter   = Get-OkfFooterCardHtml -Meta $meta -Lang $exportLang
+        $relToRoot   = Get-RelToRootPath -RelPath $relPath
+        $okfTopBar   = Get-OkfTopBarHtml -Meta $meta -RelPath $relPath -Lang $exportLang -IsExportMode -RelToRoot $relToRoot
+        $okfFooter   = Get-OkfFooterCardHtml -Meta $meta -Lang $exportLang -IsExportMode -RelToRoot $relToRoot
         $bodyHtml    = $okfTopBar + $bodyHtml + $okfFooter
 
         # 本文中の .md ハイパーリンクを .html に自動変換
@@ -836,6 +1020,244 @@ $commonStyle
         [System.IO.File]::WriteAllText($destFile, $fullHtml, [System.Text.Encoding]::UTF8)
         Write-Host "  [HTML 変換] $relPath -> $htmlRel" -ForegroundColor Green
     }
+
+    $glossaryPath = Join-Path $wikiDir "glossary.md"
+    $glossaryTerms = Get-GlossaryTerms -GlossaryPath $glossaryPath
+    $glossaryJsonText = $glossaryTerms | ConvertTo-Json -Depth 3
+
+    # api/index.json の静的ファイル出力
+    $apiEnvelope = [PSCustomObject]@{
+        Total       = $allApiItems.Count
+        Count       = $allApiItems.Count
+        Offset      = 0
+        Limit       = $allApiItems.Count
+        IsTruncated = $false
+        Items       = @($allApiItems | ForEach-Object {
+            $lastUpdStr = if ($_.LastUpdated -is [DateTime]) { $_.LastUpdated.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $_.LastUpdated }
+            $createdStr = if ($_.CreatedAt -is [DateTime]) { $_.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $_.CreatedAt }
+            $updatedStr = if ($_.UpdatedAt -is [DateTime]) { $_.UpdatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $_.UpdatedAt }
+            [PSCustomObject]@{
+                Title       = $_.Title
+                Description = $_.Description
+                Author      = $_.Author
+                Domain      = $_.Domain
+                Tags        = @($_.Tags)
+                LastUpdated = $lastUpdStr
+                CreatedAt   = $createdStr
+                UpdatedAt   = $updatedStr
+                Status      = $_.Status
+                HasYaml     = $_.HasYaml
+                RelPath     = $_.RelPath
+                Links       = @($_.Links)
+            }
+        })
+    }
+    $apiJsonText = $apiEnvelope | ConvertTo-Json -Depth 5
+    $apiDestDir  = Join-Path $targetDistDir "api"
+    if (-not (Test-Path $apiDestDir)) { New-Item -ItemType Directory -Path $apiDestDir -Force | Out-Null }
+    [System.IO.File]::WriteAllText((Join-Path $apiDestDir "index.json"), $apiJsonText, [System.Text.Encoding]::UTF8)
+    Write-Host "  [API JSON 出力] -> api/index.json" -ForegroundColor Green
+
+    # 1. tags.html 出力
+    $tagsHtmlFile = Join-Path $targetDistDir "tags.html"
+    $dummyCurrentFile = [PSCustomObject]@{ FullName = Join-Path $wikiDir "tags.md" }
+    $sidebarForSub = Get-ExportSidebarHtml -currentFile $dummyCurrentFile -allMdFiles $allMdFiles -wikiDir $wikiDir
+    $tagListTitle = Get-LocalizedStr -Key "tag_list_title" -Lang $exportLang
+    $docListTitle = Get-LocalizedStr -Key "doc_list_title" -Lang $exportLang
+
+    $tagsBodyContent = @"
+<div id="tagViewContainer"></div>
+<script id="wiki-index-data" type="application/json">
+$apiJsonText
+</script>
+<script id="wiki-glossary-data" type="application/json">
+$glossaryJsonText
+</script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var rawIndex = JSON.parse(document.getElementById("wiki-index-data").textContent || "{}");
+    var rawGlossary = JSON.parse(document.getElementById("wiki-glossary-data").textContent || "{}");
+    var items = rawIndex.Items || [];
+
+    function getParam() {
+        var params = new URLSearchParams(location.search);
+        var t = params.get("tag");
+        if (!t && location.hash && location.hash.indexOf("#tag=") === 0) {
+            t = decodeURIComponent(location.hash.substring(5));
+        }
+        return t ? t.trim() : "";
+    }
+
+    function render() {
+        var tag = getParam();
+        var container = document.getElementById("tagViewContainer");
+        if (!container) return;
+
+        if (tag) {
+            var matching = items.filter(function(item) {
+                return item.Tags && Array.isArray(item.Tags) && item.Tags.indexOf(tag) !== -1;
+            });
+
+            var html = "<h1>🏷️ タグ 「" + escapeHtml(tag) + "」 のドキュメント (" + matching.length + "件)</h1>";
+            html += "<p><a href='tags.html' onclick='clearTagFilter(event)'>← すべてのタグ一覧に戻る</a></p>";
+
+            if (rawGlossary[tag]) {
+                html += "<div class='glossary-box'><div class='glossary-title'>📖 用語解説: " + escapeHtml(tag) + "</div><div class='glossary-content'>" + renderGlossaryText(rawGlossary[tag]) + "</div></div>";
+            }
+
+            if (matching.length === 0) {
+                html += "<p style='color:#6a737d;'>該当するドキュメントはありません。</p>";
+            } else {
+                html += "<div class='tag-results'>";
+                matching.forEach(function(item) {
+                    var rel = (item.RelPath || "").replace(/\\/g, "/").replace(/\.md$/, ".html");
+                    var title = escapeHtml(item.Title || "Untitled");
+                    var desc = escapeHtml(item.Description || "");
+                    html += "<div class='tag-card'><h3><a href='" + encodeURI(rel) + "'>📄 " + title + "</a></h3><p>" + desc + "</p></div>";
+                });
+                html += "</div>";
+            }
+            container.innerHTML = html;
+        } else {
+            var tagCounts = {};
+            items.forEach(function(item) {
+                if (item.Tags && Array.isArray(item.Tags)) {
+                    item.Tags.forEach(function(t) {
+                        if (t) tagCounts[t] = (tagCounts[t] || 0) + 1;
+                    });
+                }
+            });
+
+            var html = "<h1>$tagListTitle</h1><div class='tag-cloud'>";
+            var sortedTags = Object.keys(tagCounts).sort();
+            if (sortedTags.length === 0) {
+                html += "<p style='color:#6a737d;'>登録されているタグはありません。</p>";
+            } else {
+                sortedTags.forEach(function(t) {
+                    html += "<a href='#tag=" + encodeURIComponent(t) + "' class='tag-cloud-item'>🏷️ " + escapeHtml(t) + " <span class='tag-count'>(" + tagCounts[t] + ")</span></a>";
+                });
+            }
+            html += "</div>";
+            container.innerHTML = html;
+        }
+    }
+
+    function escapeHtml(str) {
+        return (str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    function renderGlossaryText(str) {
+        return escapeHtml(str).replace(/\r?\n/g, "<br>");
+    }
+
+    window.clearTagFilter = function(e) {
+        if (e) e.preventDefault();
+        history.pushState("", document.title, window.location.pathname);
+        render();
+    };
+
+    window.addEventListener("hashchange", render);
+    render();
+});
+</script>
+"@
+
+    $fullTagsHtml = $template.Replace("{0}", $tagListTitle).Replace("{1}", $sidebarForSub).Replace("{2}", $tagsBodyContent).Replace("{3}", "").Replace("{4}", $exportLang).Replace("{5}", $docListTitle)
+    $fullTagsHtml = $fullTagsHtml -replace "\r?\n", "`r`n"
+    [System.IO.File]::WriteAllText($tagsHtmlFile, $fullTagsHtml, [System.Text.Encoding]::UTF8)
+    Write-Host "  [HTML 変換] tags.html" -ForegroundColor Green
+
+    # 2. authors.html 出力
+    $authorsHtmlFile = Join-Path $targetDistDir "authors.html"
+    $authorListTitle = Get-LocalizedStr -Key "author_list_title" -Lang $exportLang
+
+    $authorsBodyContent = @"
+<div id="authorViewContainer"></div>
+<script id="wiki-index-data" type="application/json">
+$apiJsonText
+</script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var rawIndex = JSON.parse(document.getElementById("wiki-index-data").textContent || "{}");
+    var items = rawIndex.Items || [];
+
+    function getParam() {
+        var params = new URLSearchParams(location.search);
+        var name = params.get("name");
+        if (!name && location.hash && location.hash.indexOf("#name=") === 0) {
+            name = decodeURIComponent(location.hash.substring(6));
+        }
+        return name ? name.trim() : "";
+    }
+
+    function render() {
+        var author = getParam();
+        var container = document.getElementById("authorViewContainer");
+        if (!container) return;
+
+        if (author) {
+            var matching = items.filter(function(item) {
+                return item.Author && item.Author === author;
+            });
+
+            var html = "<h1>👤 著者 「" + escapeHtml(author) + "」 のドキュメント (" + matching.length + "件)</h1>";
+            html += "<p><a href='authors.html' onclick='clearAuthorFilter(event)'>← すべての著者一覧に戻る</a></p>";
+
+            if (matching.length === 0) {
+                html += "<p style='color:#6a737d;'>該当するドキュメントはありません。</p>";
+            } else {
+                html += "<div class='tag-results'>";
+                matching.forEach(function(item) {
+                    var rel = (item.RelPath || "").replace(/\\/g, "/").replace(/\.md$/, ".html");
+                    var title = escapeHtml(item.Title || "Untitled");
+                    var desc = escapeHtml(item.Description || "");
+                    html += "<div class='tag-card'><h3><a href='" + encodeURI(rel) + "'>📄 " + title + "</a></h3><p>" + desc + "</p></div>";
+                });
+                html += "</div>";
+            }
+            container.innerHTML = html;
+        } else {
+            var authorCounts = {};
+            items.forEach(function(item) {
+                if (item.Author) {
+                    authorCounts[item.Author] = (authorCounts[item.Author] || 0) + 1;
+                }
+            });
+
+            var html = "<h1>$authorListTitle</h1><ul>";
+            var sortedAuthors = Object.keys(authorCounts).sort();
+            if (sortedAuthors.length === 0) {
+                html += "<p style='color:#6a737d;'>登録されている著者はありません。</p>";
+            } else {
+                sortedAuthors.forEach(function(a) {
+                    html += "<li><a href='#name=" + encodeURIComponent(a) + "'>👤 " + escapeHtml(a) + "</a> <span style='color:#586069;'>(" + authorCounts[a] + "件)</span></li>";
+                });
+            }
+            html += "</ul>";
+            container.innerHTML = html;
+        }
+    }
+
+    function escapeHtml(str) {
+        return (str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    window.clearAuthorFilter = function(e) {
+        if (e) e.preventDefault();
+        history.pushState("", document.title, window.location.pathname);
+        render();
+    };
+
+    window.addEventListener("hashchange", render);
+    render();
+});
+</script>
+"@
+
+    $fullAuthorsHtml = $template.Replace("{0}", $authorListTitle).Replace("{1}", $sidebarForSub).Replace("{2}", $authorsBodyContent).Replace("{3}", "").Replace("{4}", $exportLang).Replace("{5}", $docListTitle)
+    $fullAuthorsHtml = $fullAuthorsHtml -replace "\r?\n", "`r`n"
+    [System.IO.File]::WriteAllText($authorsHtmlFile, $fullAuthorsHtml, [System.Text.Encoding]::UTF8)
+    Write-Host "  [HTML 変換] authors.html" -ForegroundColor Green
 }
 
 # --- 4. 静的アセット (画像、CSS、JS 等) のコピー ---

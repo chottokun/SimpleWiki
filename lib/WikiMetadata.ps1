@@ -651,6 +651,30 @@ function Get-GlossaryTermDefinition {
     return $null
 }
 
+function Get-SinglePageId {
+    param ([string]$relPath)
+
+    if ([string]::IsNullOrWhiteSpace($relPath)) { return "index" }
+    $norm = $relPath.Replace('\', '/').TrimStart('/')
+    $clean = $norm -replace '\.md$', '' -replace '\.html$', ''
+    if ($clean -eq "index") { return "index" }
+
+    $pageId = $clean -replace '[^a-zA-Z0-9_\-\u4e00-\u9faf\u3040-\u309f\u30a0-\u30ff]', '_'
+    if ([string]::IsNullOrWhiteSpace($pageId)) { return "index" }
+    return "page_$pageId"
+}
+
+function Get-RelToRootPath {
+    param ([string]$relPath)
+
+    if ([string]::IsNullOrWhiteSpace($relPath)) { return "." }
+    $norm = $relPath.Replace('\', '/').TrimStart('/')
+    $parts = $norm -split '/'
+    $depth = $parts.Length - 1
+    if ($depth -le 0) { return "." }
+    return ((1..$depth | ForEach-Object { ".." }) -join "/")
+}
+
 $script:WikiIndex = @()
 $script:WikiIndexLastScan = [DateTime]::MinValue
 $script:WikiIndexDirWriteTime = [DateTime]::MinValue

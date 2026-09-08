@@ -137,6 +137,34 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
         $htmlContent | Should Match "class=""okf-footer-card"""
     }
 
+    It "Multi-file export generates static api/index.json, tags.html, and authors.html with relative tag and API links" {
+        $apiJsonPath = Join-Path (Join-Path $testExportDir "api") "index.json"
+        (Test-Path $apiJsonPath) | Should Be $true
+        $apiJsonText = [System.IO.File]::ReadAllText($apiJsonPath)
+        $apiJsonText | Should Match '"Total":'
+        $apiJsonText | Should Match '"Items":'
+
+        $tagsHtmlPath = Join-Path $testExportDir "tags.html"
+        (Test-Path $tagsHtmlPath) | Should Be $true
+        $tagsHtmlContent = [System.IO.File]::ReadAllText($tagsHtmlPath)
+        $tagsHtmlContent | Should Match 'id="tagViewContainer"'
+        $tagsHtmlContent | Should Match 'id="wiki-index-data"'
+
+        $authorsHtmlPath = Join-Path $testExportDir "authors.html"
+        (Test-Path $authorsHtmlPath) | Should Be $true
+        $authorsHtmlContent = [System.IO.File]::ReadAllText($authorsHtmlPath)
+        $authorsHtmlContent | Should Match 'id="authorViewContainer"'
+
+        # Check subfolder document has relative tag, author, and API links
+        $subHtmlPath = Join-Path $testExportDir "docs\api\REST-API.html"
+        if (Test-Path $subHtmlPath) {
+            $subContent = [System.IO.File]::ReadAllText($subHtmlPath)
+            $subContent | Should Match 'href=[''"]\.\./\.\./tags\.html\?tag='
+            $subContent | Should Match 'href=[''"]\.\./\.\./authors\.html\?name='
+            $subContent | Should Match 'href=[''"]\.\./\.\./api/index\.json["'']'
+        }
+    }
+
     It "Defines CSS style block cleanly without duplication" {
         $indexHtmlPath = Join-Path $testExportDir "index.html"
         $htmlContent   = [System.IO.File]::ReadAllText($indexHtmlPath)
@@ -161,7 +189,7 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
             # Verify single page sections exist and are not hidden
             $htmlContent | Should Match '<section class="wiki-page" id="index">'
             $htmlContent | Should Match '<section class="wiki-page" id="page_'
-            $htmlContent | Should Not Match 'display: none'
+            $htmlContent | Should Not Match '<section[^>]*class="wiki-page"[^>]*style="[^"]*display:\s*none'
 
             # Verify links rewritten to anchor hash fragments
             $htmlContent | Should Match 'href="#index"'
@@ -178,6 +206,14 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
             $htmlContent | Should Match 'src="data:image/svg\+xml;base64,'
             $htmlContent | Should Not Match 'src="\.\./\.\./images/'
             $htmlContent | Should Not Match 'src="\.\./images/'
+
+            # Verify static api/index.json exists and single file contains modal UI
+            $singleApiJson = Join-Path (Join-Path $singleExportDir "api") "index.json"
+            (Test-Path $singleApiJson) | Should Be $true
+
+            $htmlContent | Should Match 'id="singleFileModalBackdrop"'
+            $htmlContent | Should Match 'href=[''"]#tag='
+            $htmlContent | Should Match 'href=[''"]api/index\.json[''"]'
 
             # Verify physical images folder was not copied (pure self-contained HTML)
             $imagesDir = Join-Path $singleExportDir "images"
