@@ -99,8 +99,13 @@ function Get-OkfTopBarHtml {
         [Parameter(Mandatory = $true)]$Meta,
         [string]$RelPath = "",
         [string]$Lang = "ja",
-        [bool]$EditorEnabled = $true
+        [bool]$EditorEnabled = $true,
+        [switch]$IsExportMode,
+        [switch]$IsSingleFileMode,
+        [string]$RelToRoot = "."
     )
+
+    if ([string]::IsNullOrWhiteSpace($RelToRoot)) { $RelToRoot = "." }
 
     $domain = [System.Net.WebUtility]::HtmlEncode($Meta.Domain)
     $statusBadge = switch ($Meta.Status) {
@@ -125,7 +130,16 @@ function Get-OkfTopBarHtml {
         $tagBadges = foreach ($t in $Meta.Tags) {
             $encTag = [System.Net.WebUtility]::HtmlEncode($t)
             $urlTag = [Uri]::EscapeDataString($t)
-            "<a href='/tags?tag=$urlTag' class='tag-badge'>🏷️ $encTag</a>"
+            $tagHref = if ($IsExportMode) {
+                if ($IsSingleFileMode) {
+                    "#tag=$urlTag"
+                } else {
+                    "$RelToRoot/tags.html?tag=$urlTag#tag=$urlTag"
+                }
+            } else {
+                "/tags?tag=$urlTag"
+            }
+            "<a href='$tagHref' class='tag-badge'>🏷️ $encTag</a>"
         }
         $tagsHtml = "<div class='okf-tags'>" + ($tagBadges -join " ") + "</div>"
     }
@@ -137,14 +151,23 @@ function Get-OkfTopBarHtml {
         if ($Meta.SupersededBy -and -not [string]::IsNullOrWhiteSpace($Meta.SupersededBy)) {
             $supNotice = Get-LocalizedStr -Key "superseded_by_notice" -Lang $Lang
             $encSup = [System.Net.WebUtility]::HtmlEncode($Meta.SupersededBy)
-            $urlSup = "/" + [Uri]::EscapeUriString($Meta.SupersededBy.Replace('\', '/').TrimStart('/'))
-            $supersededHtml = "<br><span style='margin-top:4px; display:inline-block;'>$supNotice<a href='$urlSup' style='color:#735c0f; font-weight:bold; text-decoration:underline;'>📄 $encSup</a></span>"
+            $supHref = if ($IsExportMode) {
+                if ($IsSingleFileMode) {
+                    "#" + (Get-SinglePageId -relPath $Meta.SupersededBy)
+                } else {
+                    $cleanSup = $Meta.SupersededBy.Replace('\', '/').TrimStart('/') -replace '\.md$', '.html'
+                    "$RelToRoot/" + [Uri]::EscapeUriString($cleanSup)
+                }
+            } else {
+                "/" + [Uri]::EscapeUriString($Meta.SupersededBy.Replace('\', '/').TrimStart('/'))
+            }
+            $supersededHtml = "<br><span style='margin-top:4px; display:inline-block;'>$supNotice<a href='$supHref' style='color:#735c0f; font-weight:bold; text-decoration:underline;'>📄 $encSup</a></span>"
         }
         "<div class=""warning-banner"">$warnText$supersededHtml</div>"
     } else { "" }
 
     $editBtnHtml = ""
-    if ($EditorEnabled -and -not [string]::IsNullOrWhiteSpace($RelPath)) {
+    if (-not $IsExportMode -and $EditorEnabled -and -not [string]::IsNullOrWhiteSpace($RelPath)) {
         $safeRel = [System.Net.WebUtility]::HtmlEncode($RelPath.Replace("\", "/"))
         $editBtnText = Get-LocalizedStr -Key "edit_doc_btn" -Lang $Lang
         $editBtnHtml = "<button class='edit-doc-btn' data-relpath='$safeRel' onclick='openWikiEditor(this)'>$editBtnText</button>"
@@ -167,8 +190,13 @@ $warningBanner
 function Get-OkfFooterCardHtml {
     param (
         [Parameter(Mandatory = $true)]$Meta,
-        [string]$Lang = "ja"
+        [string]$Lang = "ja",
+        [switch]$IsExportMode,
+        [switch]$IsSingleFileMode,
+        [string]$RelToRoot = "."
     )
+
+    if ([string]::IsNullOrWhiteSpace($RelToRoot)) { $RelToRoot = "." }
 
     $desc    = [System.Net.WebUtility]::HtmlEncode($Meta.Description)
     $author  = [System.Net.WebUtility]::HtmlEncode($Meta.Author)
@@ -193,15 +221,43 @@ function Get-OkfFooterCardHtml {
         $tagBadges = foreach ($t in $Meta.Tags) {
             $encTag = [System.Net.WebUtility]::HtmlEncode($t)
             $urlTag = [Uri]::EscapeDataString($t)
-            "<a href='/tags?tag=$urlTag' class='tag-badge'>🏷️ $encTag</a>"
+            $tagHref = if ($IsExportMode) {
+                if ($IsSingleFileMode) {
+                    "#tag=$urlTag"
+                } else {
+                    "$RelToRoot/tags.html?tag=$urlTag#tag=$urlTag"
+                }
+            } else {
+                "/tags?tag=$urlTag"
+            }
+            "<a href='$tagHref' class='tag-badge'>🏷️ $encTag</a>"
         }
         $tagsHtml = "<div class='okf-tags'>" + ($tagBadges -join " ") + "</div>"
     }
 
     $authorHtml = if (-not [string]::IsNullOrWhiteSpace($author)) {
         $urlAuthor = [Uri]::EscapeDataString($Meta.Author)
-        "<span class='okf-author'>$authorLbl<a href='/authors?name=$urlAuthor'>$author</a></span>"
+        $authorHref = if ($IsExportMode) {
+            if ($IsSingleFileMode) {
+                "#author=$urlAuthor"
+            } else {
+                "$RelToRoot/authors.html?name=$urlAuthor#name=$urlAuthor"
+            }
+        } else {
+            "/authors?name=$urlAuthor"
+        }
+        "<span class='okf-author'>$authorLbl<a href='$authorHref'>$author</a></span>"
     } else { "" }
+
+    $apiHref = if ($IsExportMode) {
+        if ($IsSingleFileMode) {
+            "api/index.json"
+        } else {
+            "$RelToRoot/api/index.json"
+        }
+    } else {
+        "/api/index.json"
+    }
 
     $versionHtml = if ($Meta.Version -and -not [string]::IsNullOrWhiteSpace($Meta.Version)) {
         $encV = [System.Net.WebUtility]::HtmlEncode($Meta.Version)
@@ -221,8 +277,17 @@ function Get-OkfFooterCardHtml {
     $relatedHtml = if ($Meta.Related -and $Meta.Related.Count -gt 0) {
         $rLinks = foreach ($r in $Meta.Related) {
             $encRel = [System.Net.WebUtility]::HtmlEncode($r)
-            $urlRel = "/" + [Uri]::EscapeUriString($r.Replace('\', '/').TrimStart('/'))
-            "<a href='$urlRel' style='color:#0366d6; text-decoration:none;'>📄 $encRel</a>"
+            $relHref = if ($IsExportMode) {
+                if ($IsSingleFileMode) {
+                    "#" + (Get-SinglePageId -relPath $r)
+                } else {
+                    $cleanRel = $r.Replace('\', '/').TrimStart('/') -replace '\.md$', '.html'
+                    "$RelToRoot/" + [Uri]::EscapeUriString($cleanRel)
+                }
+            } else {
+                "/" + [Uri]::EscapeUriString($r.Replace('\', '/').TrimStart('/'))
+            }
+            "<a href='$relHref' style='color:#0366d6; text-decoration:none;'>📄 $encRel</a>"
         }
         "<div style='margin-top:8px; font-size:12px; color:#586069;'>$relatedLbl" + ($rLinks -join " &nbsp;|&nbsp; ") + "</div>"
     } else { "" }
@@ -235,7 +300,7 @@ function Get-OkfFooterCardHtml {
 <footer class="okf-footer-card">
     <div class="okf-footer-header">
         <span class="okf-footer-title">$cardTitle</span>
-        <a href="/api/index.json" target="_blank" class="okf-api-link">$apiJsonLbl</a>
+        <a href="$apiHref" target="_blank" class="okf-api-link">$apiJsonLbl</a>
     </div>
     $descHtml
     <div class="okf-footer-meta" style="display:flex; flex-wrap:wrap; gap:16px;">

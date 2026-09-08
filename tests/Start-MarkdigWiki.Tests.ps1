@@ -137,6 +137,77 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
         $htmlContent | Should Match "class=""okf-footer-card"""
     }
 
+    It "Multi-file export generates static api/index.json, tags.html, and authors.html with relative tag and API links" {
+        $apiJsonPath = Join-Path (Join-Path $testExportDir "api") "index.json"
+        (Test-Path $apiJsonPath) | Should Be $true
+        $apiJsonText = [System.IO.File]::ReadAllText($apiJsonPath)
+        $apiJsonText | Should Match '"Total":'
+        $apiJsonText | Should Match '"Items":'
+
+        $tagsHtmlPath = Join-Path $testExportDir "tags.html"
+        (Test-Path $tagsHtmlPath) | Should Be $true
+        $tagsHtmlContent = [System.IO.File]::ReadAllText($tagsHtmlPath)
+        $tagsHtmlContent | Should Match 'id="tagViewContainer"'
+        $tagsHtmlContent | Should Match 'id="wiki-index-data"'
+
+        $authorsHtmlPath = Join-Path $testExportDir "authors.html"
+        (Test-Path $authorsHtmlPath) | Should Be $true
+        $authorsHtmlContent = [System.IO.File]::ReadAllText($authorsHtmlPath)
+        $authorsHtmlContent | Should Match 'id="authorViewContainer"'
+
+        # Check subfolder document has relative tag, author, and API links
+        $subHtmlPath = Join-Path $testExportDir "docs\api\REST-API.html"
+        if (Test-Path $subHtmlPath) {
+            $subContent = [System.IO.File]::ReadAllText($subHtmlPath)
+            $subContent | Should Match 'href=[''"]\.\./\.\./tags\.html\?tag='
+            $subContent | Should Match 'href=[''"]\.\./\.\./authors\.html\?name='
+            $subContent | Should Match 'href=[''"]\.\./\.\./api/index\.json["'']'
+        }
+    }
+
+    It "Static export with -Language en localizes tags.html and authors.html UI text" {
+        $enExportDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestEnExport"
+        if (Test-Path $enExportDir) { Remove-Item -Path $enExportDir -Recurse -Force }
+
+        try {
+            $exportScript = Join-Path $projectRoot "Export-MarkdigWiki.ps1"
+            $sampleDir    = Join-Path $projectRoot "markdown_sample"
+            & $exportScript -RootFolder $sampleDir -OutputDir $enExportDir -Language "en"
+
+            $tagsPath = Join-Path $enExportDir "tags.html"
+            (Test-Path $tagsPath) | Should Be $true
+            $tagsContent = [System.IO.File]::ReadAllText($tagsPath)
+            $tagsContent | Should Match 'Back to all tags'
+            $tagsContent | Should Match 'Documents tagged'
+
+            $authorsPath = Join-Path $enExportDir "authors.html"
+            (Test-Path $authorsPath) | Should Be $true
+            $authorsContent = [System.IO.File]::ReadAllText($authorsPath)
+            $authorsContent | Should Match 'Back to all authors'
+            $authorsContent | Should Match 'Documents by'
+        } finally {
+            if (Test-Path $enExportDir) { Remove-Item -Path $enExportDir -Recurse -Force }
+        }
+    }
+
+    It "Multi-file export respects -NoApiJson, -NoTagsPage, and -NoAuthorsPage switches" {
+        $noOptDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestNoOptExport"
+        if (Test-Path $noOptDir) { Remove-Item -Path $noOptDir -Recurse -Force }
+
+        try {
+            $exportScript = Join-Path $projectRoot "Export-MarkdigWiki.ps1"
+            $sampleDir    = Join-Path $projectRoot "markdown_sample"
+            & $exportScript -RootFolder $sampleDir -OutputDir $noOptDir -NoApiJson -NoTagsPage -NoAuthorsPage
+
+            (Test-Path (Join-Path $noOptDir "index.html")) | Should Be $true
+            (Test-Path (Join-Path (Join-Path $noOptDir "api") "index.json")) | Should Be $false
+            (Test-Path (Join-Path $noOptDir "tags.html")) | Should Be $false
+            (Test-Path (Join-Path $noOptDir "authors.html")) | Should Be $false
+        } finally {
+            if (Test-Path $noOptDir) { Remove-Item -Path $noOptDir -Recurse -Force }
+        }
+    }
+
     It "Defines CSS style block cleanly without duplication" {
         $indexHtmlPath = Join-Path $testExportDir "index.html"
         $htmlContent   = [System.IO.File]::ReadAllText($indexHtmlPath)
@@ -159,9 +230,9 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
 
             $htmlContent = [System.IO.File]::ReadAllText($indexPath)
             # Verify single page sections exist and are not hidden
-            $htmlContent | Should Match '<section class="wiki-page" id="index">'
+            $htmlContent | Should Match '<section class="wiki-page" id="index"'
             $htmlContent | Should Match '<section class="wiki-page" id="page_'
-            $htmlContent | Should Not Match 'display: none'
+            $htmlContent | Should Not Match '<section[^>]*class="wiki-page"[^>]*style="[^"]*display:\s*none'
 
             # Verify links rewritten to anchor hash fragments
             $htmlContent | Should Match 'href="#index"'
@@ -178,6 +249,15 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
             $htmlContent | Should Match 'src="data:image/svg\+xml;base64,'
             $htmlContent | Should Not Match 'src="\.\./\.\./images/'
             $htmlContent | Should Not Match 'src="\.\./images/'
+
+            # Verify static api/index.json exists and single file contains filter banner
+            $singleApiJson = Join-Path (Join-Path $singleExportDir "api") "index.json"
+            (Test-Path $singleApiJson) | Should Be $true
+
+            $htmlContent | Should Match 'id="singleFileFilterBanner"'
+            $htmlContent | Should Match 'data-tags='
+            $htmlContent | Should Match 'href=.*#tag='
+            $htmlContent | Should Match 'href=.*api/index\.json'
 
             # Verify physical images folder was not copied (pure self-contained HTML)
             $imagesDir = Join-Path $singleExportDir "images"
@@ -964,16 +1044,19 @@ Describe 'Export-GUI.ps1 GUI Component and Syntax Validation' {
         $content | Should Match "Export-GUI\.ps1"
     }
 
-    It 'Export-GUI.ps1 contains controls for SingleFile, MermaidMode, and EmbedImages' {
+    It 'Export-GUI.ps1 contains controls for SingleFile, MermaidMode, EmbedImages, Language, and Feature Toggles' {
         $guiScript = Join-Path $projectRoot "Export-GUI.ps1"
         $content   = Get-Content -Path $guiScript -Raw
         $content | Should Match 'chkSingleFile'
         $content | Should Match 'cmbMermaid'
         $content | Should Match 'chkEmbedImages'
-        $content | Should Match 'SingleFile'
-        $content | Should Match 'MermaidMode'
-        $content | Should Match 'EmbedImages'
-        $content | Should Match 'NoEmbedImages'
+        $content | Should Match 'cmbLang'
+        $content | Should Match 'chkApiJson'
+        $content | Should Match 'chkTagsPage'
+        $content | Should Match 'chkAuthorsPage'
+        $content | Should Match 'NoApiJson'
+        $content | Should Match 'NoTagsPage'
+        $content | Should Match 'NoAuthorsPage'
     }
 }
 

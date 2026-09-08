@@ -20,7 +20,7 @@ $initialOutputDir = Join-Path $scriptDir "dist"
 # --- Form 作成 ---
 $form               = New-Object System.Windows.Forms.Form
 $form.Text          = "SimpleWiki - 静的 HTML エキスポート"
-$form.Size          = New-Object System.Drawing.Size(560, 380)
+$form.Size          = New-Object System.Drawing.Size(560, 460)
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedSingle
 $form.MaximizeBox   = $false
@@ -115,21 +115,68 @@ $form.Controls.Add($cmbMermaid)
 
 $chkEmbedImages          = New-Object System.Windows.Forms.CheckBox
 $chkEmbedImages.Location = New-Object System.Drawing.Point(20, 170)
-$chkEmbedImages.Size     = New-Object System.Drawing.Size(350, 24)
+$chkEmbedImages.Size     = New-Object System.Drawing.Size(320, 24)
 $chkEmbedImages.Text     = "🖼️ 画像を Base64 埋め込み（完全 1 ファイル化）"
 $chkEmbedImages.Font     = $fontLabel
 $chkEmbedImages.Checked  = $false
 $form.Controls.Add($chkEmbedImages)
 
+$labelLang          = New-Object System.Windows.Forms.Label
+$labelLang.Location = New-Object System.Drawing.Point(350, 172)
+$labelLang.Size     = New-Object System.Drawing.Size(50, 20)
+$labelLang.Text     = "言語:"
+$labelLang.Font     = $fontLabel
+$form.Controls.Add($labelLang)
+
+$cmbLang          = New-Object System.Windows.Forms.ComboBox
+$cmbLang.Location = New-Object System.Drawing.Point(400, 169)
+$cmbLang.Size     = New-Object System.Drawing.Size(120, 23)
+$cmbLang.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+$cmbLang.Font     = $fontLabel
+$null = $cmbLang.Items.Add("ja")
+$null = $cmbLang.Items.Add("en")
+$cmbLang.SelectedIndex = 0
+$form.Controls.Add($cmbLang)
+
+# 4. 追加静的出力機能のトグル選択
+$chkApiJson          = New-Object System.Windows.Forms.CheckBox
+$chkApiJson.Location = New-Object System.Drawing.Point(20, 202)
+$chkApiJson.Size     = New-Object System.Drawing.Size(160, 24)
+$chkApiJson.Text     = "🤖 API JSON 生成"
+$chkApiJson.Font     = $fontLabel
+$chkApiJson.Checked  = $true
+$form.Controls.Add($chkApiJson)
+
+$chkTagsPage          = New-Object System.Windows.Forms.CheckBox
+$chkTagsPage.Location = New-Object System.Drawing.Point(190, 202)
+$chkTagsPage.Size     = New-Object System.Drawing.Size(160, 24)
+$chkTagsPage.Text     = "🏷️ タグ一覧 (tags.html)"
+$chkTagsPage.Font     = $fontLabel
+$chkTagsPage.Checked  = $true
+$form.Controls.Add($chkTagsPage)
+
+$chkAuthorsPage          = New-Object System.Windows.Forms.CheckBox
+$chkAuthorsPage.Location = New-Object System.Drawing.Point(360, 202)
+$chkAuthorsPage.Size     = New-Object System.Drawing.Size(160, 24)
+$chkAuthorsPage.Text     = "👤 著者一覧 (authors.html)"
+$chkAuthorsPage.Font     = $fontLabel
+$chkAuthorsPage.Checked  = $true
+$form.Controls.Add($chkAuthorsPage)
+
 $chkSingleFile.Add_CheckedChanged({
     if ($chkSingleFile.Checked) {
         $chkEmbedImages.Checked = $true
+        $chkTagsPage.Enabled    = $false
+        $chkAuthorsPage.Enabled = $false
+    } else {
+        $chkTagsPage.Enabled    = $true
+        $chkAuthorsPage.Enabled = $true
     }
 })
 
 # ステータスメッセージ
 $lblStatus          = New-Object System.Windows.Forms.Label
-$lblStatus.Location = New-Object System.Drawing.Point(20, 205)
+$lblStatus.Location = New-Object System.Drawing.Point(20, 245)
 $lblStatus.Size     = New-Object System.Drawing.Size(500, 20)
 $lblStatus.Text     = "準備完了。フォルダとオプションを選択して [エキスポート実行] を押してください。"
 $lblStatus.Font     = $fontLabel
@@ -138,7 +185,7 @@ $form.Controls.Add($lblStatus)
 
 # エキスポート実行ボタン
 $btnExport          = New-Object System.Windows.Forms.Button
-$btnExport.Location = New-Object System.Drawing.Point(170, 245)
+$btnExport.Location = New-Object System.Drawing.Point(170, 285)
 $btnExport.Size     = New-Object System.Drawing.Size(180, 40)
 $btnExport.Text     = "🚀 エキスポート実行"
 $btnExport.Font     = $fontBold
@@ -153,6 +200,10 @@ $btnExport.Add_Click({
     $isSingle     = $chkSingleFile.Checked
     $mermaidMode  = $cmbMermaid.SelectedItem.ToString()
     $isEmbedImage = $chkEmbedImages.Checked
+    $selectedLang = $cmbLang.SelectedItem.ToString()
+    $genApi       = $chkApiJson.Checked
+    $genTags      = $chkTagsPage.Checked
+    $genAuthors   = $chkAuthorsPage.Checked
 
     if (-not (Test-Path $inputPath)) {
         [System.Windows.Forms.MessageBox]::Show("入力フォルダが見つかりません:`n$inputPath", "エラー", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
@@ -169,6 +220,7 @@ $btnExport.Add_Click({
         $params = @{
             RootFolder  = $inputPath
             OutputDir   = $outputPath
+            Language    = $selectedLang
             MermaidMode = $mermaidMode
         }
         if ($isSingle) {
@@ -178,6 +230,15 @@ $btnExport.Add_Click({
             $params["EmbedImages"] = $true
         } else {
             $params["NoEmbedImages"] = $true
+        }
+        if (-not $genApi) {
+            $params["NoApiJson"] = $true
+        }
+        if (-not $genTags) {
+            $params["NoTagsPage"] = $true
+        }
+        if (-not $genAuthors) {
+            $params["NoAuthorsPage"] = $true
         }
 
         & $exportScript @params
