@@ -28,6 +28,7 @@ $libDir    = Join-Path $scriptDir "lib"
 . (Join-Path $libDir "WikiI18n.ps1")
 . (Join-Path $libDir "WikiMetadata.ps1")
 . (Join-Path $libDir "WikiViews.ps1")
+. (Join-Path $libDir "WikiExportHelpers.ps1")
 
 Import-ExternalI18n -TargetScriptDir $scriptDir
 

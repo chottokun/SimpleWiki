@@ -226,6 +226,7 @@ function Get-DocumentDomain {
 }
 
 function Get-DocumentMetadata {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]
     param (
         [Parameter(Mandatory = $false)]$File = $null,
         [string]$RelPath = "",
@@ -254,10 +255,9 @@ function Get-DocumentMetadata {
 
     $lastUpdated = if ($File -and (Test-Path $File.FullName)) { $File.LastWriteTime } else { $null }
     if ($yamlDict.ContainsKey("last_updated") -and -not [string]::IsNullOrWhiteSpace($yamlDict["last_updated"])) {
-        try {
-            $lastUpdated = [DateTime]::Parse($yamlDict["last_updated"])
-        } catch {
-            $null = $_ # Keep file time on parse failure
+        $parsedLast = [DateTime]::MinValue
+        if ([DateTime]::TryParse($yamlDict["last_updated"], [ref]$parsedLast)) {
+            $lastUpdated = $parsedLast
         }
     }
 
@@ -304,12 +304,18 @@ function Get-DocumentMetadata {
 
     $createdAt = $null
     if ($yamlDict.ContainsKey("created_at") -and -not [string]::IsNullOrWhiteSpace($yamlDict["created_at"])) {
-        try { $createdAt = [DateTime]::Parse($yamlDict["created_at"]) } catch {}
+        $parsedCreated = [DateTime]::MinValue
+        if ([DateTime]::TryParse($yamlDict["created_at"], [ref]$parsedCreated)) {
+            $createdAt = $parsedCreated
+        }
     }
 
     $updatedAt = $lastUpdated
     if ($yamlDict.ContainsKey("updated_at") -and -not [string]::IsNullOrWhiteSpace($yamlDict["updated_at"])) {
-        try { $updatedAt = [DateTime]::Parse($yamlDict["updated_at"]) } catch {}
+        $parsedUpdated = [DateTime]::MinValue
+        if ([DateTime]::TryParse($yamlDict["updated_at"], [ref]$parsedUpdated)) {
+            $updatedAt = $parsedUpdated
+        }
     }
 
     if ($null -eq $createdAt) {
@@ -348,7 +354,9 @@ function Get-DocumentMetadata {
     }
 }
 
-function Measure-WikiNodeCoordinates {
+function Measure-WikiNodeCoordinate {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param (
         [array]$DocList = @(),
@@ -545,7 +553,8 @@ function Measure-WikiNodeCoordinates {
 
     return @($DocList)
 }
-Set-Alias -Name Calculate-WikiNodeCoordinates -Value Measure-WikiNodeCoordinates -ErrorAction SilentlyContinue
+Set-Alias -Name Measure-WikiNodeCoordinates -Value Measure-WikiNodeCoordinate -ErrorAction SilentlyContinue
+Set-Alias -Name Calculate-WikiNodeCoordinates -Value Measure-WikiNodeCoordinate -ErrorAction SilentlyContinue
 
 function Get-GlossaryTerms {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]
@@ -653,6 +662,7 @@ function Get-GlossaryTermDefinition {
 
 function Get-SinglePageId {
     [CmdletBinding()]
+    [OutputType([string])]
     param (
         [Parameter(Mandatory = $false)]
         [string]$RelPath = ""
@@ -670,6 +680,7 @@ function Get-SinglePageId {
 
 function Get-RelToRootPath {
     [CmdletBinding()]
+    [OutputType([string])]
     param (
         [Parameter(Mandatory = $false)]
         [string]$RelPath = ""

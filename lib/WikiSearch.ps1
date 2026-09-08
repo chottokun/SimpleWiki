@@ -542,7 +542,7 @@ function Test-ExportNodeHasActiveFile {
     return $false
 }
 
-function Render-FileTreeHtml {
+function Get-FileTreeHtml {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param(
         [Parameter(Mandatory = $true)]$node,
@@ -562,7 +562,7 @@ function Render-FileTreeHtml {
     foreach ($folderName in $node.SubFolders.Keys) {
         $subNode     = $node.SubFolders[$folderName]
         $encodedName = [System.Net.WebUtility]::HtmlEncode($folderName)
-        $subHtml     = Render-FileTreeHtml -node $subNode -pageRelPath $pageRelPath -relPrefix $relPrefix
+        $subHtml     = Get-FileTreeHtml -node $subNode -pageRelPath $pageRelPath -relPrefix $relPrefix
 
         $isOpen   = Test-ExportNodeHasActiveFile -node $subNode -pageRelPath $pageRelPath
         $openAttr = if ($isOpen) { " open" } else { "" }
@@ -700,7 +700,7 @@ function Test-ServerNodeHasActiveFile {
     return $false
 }
 
-function Render-ServerFolderTreeHtml {
+function Get-ServerFolderTreeHtml {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param(
         [Parameter(Mandatory = $true)]$node,
@@ -775,7 +775,7 @@ function Render-ServerFolderTreeHtml {
     foreach ($folderName in $node.SubFolders.Keys) {
         $subNode     = $node.SubFolders[$folderName]
         $encodedName = [System.Net.WebUtility]::HtmlEncode($folderName)
-        $subHtml     = Render-ServerFolderTreeHtml -node $subNode -currentRelPath $currentRelPath -wikiDir $wikiDir -allMdFiles $allMdFiles
+        $subHtml     = Get-ServerFolderTreeHtml -node $subNode -currentRelPath $currentRelPath -wikiDir $wikiDir -allMdFiles $allMdFiles
 
         $isOpen   = Test-ServerNodeHasActiveFile -node $subNode -currentRelPath $currentRelPath -wikiDir $wikiDir -allMdFiles $allMdFiles
         $openAttr = if ($isOpen) { " open" } else { "" }
@@ -1189,4 +1189,26 @@ function Search-OkfDocs {
                          Select-Object -First $Limit
 
     return @($sorted)
+}
+
+
+function Render-FileTreeHtml {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
+    param(
+        [Parameter(Mandatory = $true)]$node,
+        [Parameter(Mandatory = $true)][string]$pageRelPath,
+        [Parameter(Mandatory = $true)][string]$relPrefix
+    )
+    return Get-FileTreeHtml -node $node -pageRelPath $pageRelPath -relPrefix $relPrefix
+}
+
+function Render-ServerFolderTreeHtml {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
+    param(
+        [Parameter(Mandatory = $false)]$node,
+        [Parameter(Mandatory = $false)][string]$currentRelPath = "",
+        [Parameter(Mandatory = $false)][string]$wikiDir = "",
+        [Parameter(Mandatory = $false)]$allMdFiles = $null
+    )
+    return Get-ServerFolderTreeHtml -node $node -currentRelPath $currentRelPath -wikiDir $wikiDir -allMdFiles $allMdFiles
 }
