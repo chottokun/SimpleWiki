@@ -566,6 +566,15 @@ Describe 'OKF Dynamic View and API Endpoint Tests' {
         $objFields.Items -is [Array] | Should Be $true
     }
 
+    It "Get-ApiIndexJson guarantees Tags and Links are always JSON arrays across all items" {
+        $json = Get-ApiIndexJson -QueryParams @{ limit = "all" }
+        $obj = $json | ConvertFrom-Json
+        foreach ($item in $obj.Items) {
+            ($item.Tags -is [System.Array]) | Should Be $true
+            ($item.Links -is [System.Array]) | Should Be $true
+        }
+    }
+
     It "Generates pre-chunked JSON for /api/chunks.json containing section-level RAG chunks" {
         $json = Get-ApiChunksJson
         $json | Should Not Be $null
@@ -2395,13 +2404,52 @@ This is body text.
 
         It "Get-YamlListProperty handles arrays, strings, and comma-delimited values" {
             $dict = @{
-                tagsList = @("a", "b", "c")
-                tagsCsv  = "tag1, tag2, tag3"
+                tagsList  = @("a", "b", "c")
+                tagsCsv   = "tag1, tag2, tag3"
                 tagsEmpty = ""
+                tagsSingle = @("single")
+                tagsStr    = "solo"
             }
             (Get-YamlListProperty -YamlDict $dict -Key "tagsList").Count | Should Be 3
             (Get-YamlListProperty -YamlDict $dict -Key "tagsCsv").Count | Should Be 3
             (Get-YamlListProperty -YamlDict $dict -Key "tagsEmpty").Count | Should Be 0
+
+            # 単一要素や空の場合でも配列（Array）として返ることの検証
+            $singleArr = Get-YamlListProperty -YamlDict $dict -Key "tagsSingle"
+            ($singleArr -is [System.Array]) | Should Be $true
+            $singleArr.Count | Should Be 1
+            $singleArr[0] | Should Be "single"
+
+            $singleStr = Get-YamlListProperty -YamlDict $dict -Key "tagsStr"
+            ($singleStr -is [System.Array]) | Should Be $true
+            $singleStr.Count | Should Be 1
+            $singleStr[0] | Should Be "solo"
+
+            $emptyArr = Get-YamlListProperty -YamlDict $dict -Key "tagsEmpty"
+            ($emptyArr -is [System.Array]) | Should Be $true
+            $emptyArr.Count | Should Be 0
+
+            $nullArr = Get-YamlListProperty -YamlDict $dict -Key "tagsNotExist"
+            ($nullArr -is [System.Array]) | Should Be $true
+            $nullArr.Count | Should Be 0
+        }
+
+        It "Get-DocumentMetadata preserves Tags as array and serializes properly to JSON" {
+            $mdSingle = "---`ntags: single`n---`n# Title"
+            $metaSingle = Get-DocumentMetadata -File $null -RelPath "single.md" -MdText $mdSingle
+            ($metaSingle.Tags -is [System.Array]) | Should Be $true
+            $metaSingle.Tags.Count | Should Be 1
+
+            $jsonSingle = $metaSingle | ConvertTo-Json
+            $jsonSingle | Should Match '"Tags":\s*\[\s*"single"\s*\]'
+
+            $mdEmpty = "# No Yaml"
+            $metaEmpty = Get-DocumentMetadata -File $null -RelPath "empty.md" -MdText $mdEmpty
+            ($metaEmpty.Tags -is [System.Array]) | Should Be $true
+            $metaEmpty.Tags.Count | Should Be 0
+
+            $jsonEmpty = $metaEmpty | ConvertTo-Json
+            $jsonEmpty | Should Match '"Tags":\s*\[\s*\]'
         }
 
         It "Get-DocumentTitle resolves YAML title > Markdown H1 > Filename > Untitled" {
@@ -3079,6 +3127,16 @@ status: invalid_unknown_status
         $html | Should Match "resetStellaView"
         $html | Should Match "highlightConstellation"
         $html | Should Match "stellaConnectedSection"
+    }
+
+    It "Get-StellaViewHtml contains defensive tag normalization against string and invalid tag inputs" {
+        $sampleWikiDir = Join-Path $projectRoot "markdown_sample"
+        Ensure-WikiIndexLoaded -TargetWikiDir $sampleWikiDir
+        $html = Get-StellaViewHtml -Lang "ja"
+        $html | Should Match "Array\.isArray\(rawTags\)"
+        $html | Should Match "rawTags\.split"
+        $html | Should Match "Array\.isArray\(n1\.tags\)"
+        $html | Should Match "Array\.isArray\(n\.tags\)"
     }
 
     It "HTTP route requests handle /stella endpoint" {

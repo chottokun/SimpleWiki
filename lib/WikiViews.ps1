@@ -327,19 +327,22 @@ function Get-ApiIndexJson {
         $createdStr = if ($item.CreatedAt -is [DateTime]) { $item.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $item.CreatedAt }
         $updatedStr = if ($item.UpdatedAt -is [DateTime]) { $item.UpdatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $item.UpdatedAt }
 
+        $tagsArr = if ($item.Tags) { @($item.Tags) } else { @() }
+        $linksArr = if ($item.Links) { @($item.Links) } else { @() }
+
         $fullObj = [PSCustomObject]@{
             Title       = $item.Title
             Description = $item.Description
             Author      = $item.Author
             Domain      = $item.Domain
-            Tags        = $item.Tags
+            Tags        = @($tagsArr)
             LastUpdated = $lastUpdStr
             CreatedAt   = $createdStr
             UpdatedAt   = $updatedStr
             Status      = $item.Status
             HasYaml     = $item.HasYaml
             RelPath     = $item.RelPath
-            Links       = $item.Links
+            Links       = @($linksArr)
             X           = if ($null -ne $item.X) { [int]$item.X } else { 0 }
             Y           = if ($null -ne $item.Y) { [int]$item.Y } else { 0 }
         }
@@ -1862,16 +1865,40 @@ $controlPanelHtml
 
     var nodes = rawItems.map(function(item) {
         var rel = item.RelPath || item.relPath || "";
+        var rawTags = item.Tags || item.tags || [];
+        var safeTags = [];
+        if (Array.isArray(rawTags)) {
+            safeTags = rawTags;
+        } else if (typeof rawTags === "string") {
+            safeTags = rawTags.split(",").map(function(t) { return t.trim(); }).filter(Boolean);
+        }
+
+        var rawRelated = item.Related || item.related || [];
+        var safeRelated = [];
+        if (Array.isArray(rawRelated)) {
+            safeRelated = rawRelated;
+        } else if (typeof rawRelated === "string") {
+            safeRelated = rawRelated.split(",").map(function(r) { return r.trim(); }).filter(Boolean);
+        }
+
+        var rawLinks = item.Links || item.links || [];
+        var safeLinks = [];
+        if (Array.isArray(rawLinks)) {
+            safeLinks = rawLinks;
+        } else if (typeof rawLinks === "string") {
+            safeLinks = rawLinks.split(",").map(function(l) { return l.trim(); }).filter(Boolean);
+        }
+
         return {
             relPath: rel,
             title: item.Title || item.title || "Untitled",
             description: item.Description || item.description || "",
             status: (item.Status || item.status || "active").toLowerCase(),
-            tags: item.Tags || item.tags || [],
+            tags: safeTags,
             domain: item.Domain || item.domain || "root",
             lastUpdated: item.LastUpdated || item.lastUpdated || "",
-            related: item.Related || item.related || [],
-            links: item.Links || item.links || [],
+            related: safeRelated,
+            links: safeLinks,
             x: item.X !== undefined ? item.X : 500,
             y: item.Y !== undefined ? item.Y : 400,
             z: item.Z !== undefined ? item.Z : 0,
@@ -1951,7 +1978,7 @@ $controlPanelHtml
 
             if (n.el) {
                 n.el.setAttribute("transform", "translate(" + p.x.toFixed(1) + "," + p.y.toFixed(1) + ")");
-                var isHub = (n.tags && n.tags.length >= 4);
+                var isHub = (Array.isArray(n.tags) && n.tags.length >= 4);
                 var baseR = isHub ? 8 : 6;
                 var currentR = Math.max(3, Math.min(18, baseR * Math.pow(p.k, 0.85)));
                 n.circleEl.setAttribute("r", currentR.toFixed(1));
@@ -2052,7 +2079,7 @@ $controlPanelHtml
                 var n2 = nodes[j];
 
                 var sharedTags = [];
-                if (n1.tags && n2.tags) {
+                if (Array.isArray(n1.tags) && Array.isArray(n2.tags)) {
                     n1.tags.forEach(function(t) {
                         if (typeof t === "string" && t.trim() !== "" && n2.tags.indexOf(t) !== -1 && sharedTags.indexOf(t) === -1) {
                             sharedTags.push(t);
@@ -2063,12 +2090,12 @@ $controlPanelHtml
                 var isRelated = false;
                 var r1 = n1.relPath.replace(/\\/g, '/').toLowerCase();
                 var r2 = n2.relPath.replace(/\\/g, '/').toLowerCase();
-                if (n1.related) {
+                if (Array.isArray(n1.related)) {
                     n1.related.forEach(function(rel) {
                         if (typeof rel === "string" && (rel.toLowerCase() === r2 || rel.toLowerCase() === n2.relPath.toLowerCase())) { isRelated = true; }
                     });
                 }
-                if (n2.related) {
+                if (Array.isArray(n2.related)) {
                     n2.related.forEach(function(rel) {
                         if (typeof rel === "string" && (rel.toLowerCase() === r1 || rel.toLowerCase() === n1.relPath.toLowerCase())) { isRelated = true; }
                     });
@@ -2354,7 +2381,7 @@ $controlPanelHtml
         nodes.forEach(function(n) {
             var matchQ = !query || (n.title.toLowerCase().indexOf(query) !== -1 || n.description.toLowerCase().indexOf(query) !== -1);
             var matchS = statusVal === "all" || n.status === statusVal || (statusVal === "active" && n.status === "stable");
-            var matchT = tagVal === "all" || (n.tags && n.tags.indexOf(tagVal) !== -1);
+            var matchT = tagVal === "all" || (Array.isArray(n.tags) && n.tags.indexOf(tagVal) !== -1);
 
             if (matchQ && matchS && matchT && (query || statusVal !== "all" || tagVal !== "all")) {
                 matchingRels[n.relPath] = true;
@@ -2364,7 +2391,7 @@ $controlPanelHtml
         var isActiveFilter = (query !== "" || statusVal !== "all" || tagVal !== "all");
 
         nodes.forEach(function(n) {
-            var isHub = (n.tags && n.tags.length >= 4);
+            var isHub = (Array.isArray(n.tags) && n.tags.length >= 4);
             if (!isActiveFilter) {
                 var dotColor = (n.status === 'stable' || n.status === 'active') ? '#58a6ff' : (n.status === 'draft' ? '#d29922' : '#f85149');
                 n.circleEl.setAttribute("fill", dotColor);

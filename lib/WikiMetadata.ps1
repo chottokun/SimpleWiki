@@ -164,7 +164,7 @@ function Get-YamlListProperty {
             $list = @($rawStr -split ',\s*' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
         }
     }
-    return $list
+    return ,@($list)
 }
 
 function Get-DocumentTitle {
