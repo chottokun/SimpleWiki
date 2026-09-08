@@ -652,10 +652,14 @@ function Get-GlossaryTermDefinition {
 }
 
 function Get-SinglePageId {
-    param ([string]$relPath)
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $false)]
+        [string]$RelPath = ""
+    )
 
-    if ([string]::IsNullOrWhiteSpace($relPath)) { return "index" }
-    $norm = $relPath.Replace('\', '/').TrimStart('/')
+    if ([string]::IsNullOrWhiteSpace($RelPath)) { return "index" }
+    $norm = $RelPath.Replace('\', '/').TrimStart('/')
     $clean = $norm -replace '\.md$', '' -replace '\.html$', ''
     if ($clean -eq "index") { return "index" }
 
@@ -665,10 +669,14 @@ function Get-SinglePageId {
 }
 
 function Get-RelToRootPath {
-    param ([string]$relPath)
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $false)]
+        [string]$RelPath = ""
+    )
 
-    if ([string]::IsNullOrWhiteSpace($relPath)) { return "." }
-    $norm = $relPath.Replace('\', '/').TrimStart('/')
+    if ([string]::IsNullOrWhiteSpace($RelPath)) { return "." }
+    $norm = $RelPath.Replace('\', '/').TrimStart('/')
     $parts = $norm -split '/'
     $depth = $parts.Length - 1
     if ($depth -le 0) { return "." }

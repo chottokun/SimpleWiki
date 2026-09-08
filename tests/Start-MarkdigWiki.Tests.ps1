@@ -165,6 +165,31 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
         }
     }
 
+    It "Static export with -Language en localizes tags.html and authors.html UI text" {
+        $enExportDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestEnExport"
+        if (Test-Path $enExportDir) { Remove-Item -Path $enExportDir -Recurse -Force }
+
+        try {
+            $exportScript = Join-Path $projectRoot "Export-MarkdigWiki.ps1"
+            $sampleDir    = Join-Path $projectRoot "markdown_sample"
+            & $exportScript -RootFolder $sampleDir -OutputDir $enExportDir -Language "en"
+
+            $tagsPath = Join-Path $enExportDir "tags.html"
+            (Test-Path $tagsPath) | Should Be $true
+            $tagsContent = [System.IO.File]::ReadAllText($tagsPath)
+            $tagsContent | Should Match 'Back to all tags'
+            $tagsContent | Should Match 'Documents tagged'
+
+            $authorsPath = Join-Path $enExportDir "authors.html"
+            (Test-Path $authorsPath) | Should Be $true
+            $authorsContent = [System.IO.File]::ReadAllText($authorsPath)
+            $authorsContent | Should Match 'Back to all authors'
+            $authorsContent | Should Match 'Documents by'
+        } finally {
+            if (Test-Path $enExportDir) { Remove-Item -Path $enExportDir -Recurse -Force }
+        }
+    }
+
     It "Multi-file export respects -NoApiJson, -NoTagsPage, and -NoAuthorsPage switches" {
         $noOptDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestNoOptExport"
         if (Test-Path $noOptDir) { Remove-Item -Path $noOptDir -Recurse -Force }

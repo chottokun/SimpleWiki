@@ -139,18 +139,6 @@ function Test-ExportNodeHasActiveFile {
     return $false
 }
 
-function Get-SinglePageId {
-    param ([string]$relPath)
-
-    $norm = $relPath.Replace('\', '/').TrimStart('/')
-    $clean = $norm -replace '\.md$', '' -replace '\.html$', ''
-    if ($clean -eq "index") { return "index" }
-
-    $pageId = $clean -replace '[^a-zA-Z0-9_\-\u4e00-\u9faf\u3040-\u309f\u30a0-\u30ff]', '_'
-    if ([string]::IsNullOrWhiteSpace($pageId)) { return "index" }
-    return "page_$pageId"
-}
-
 function Render-ExportFolderTreeHtml {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param (
@@ -644,6 +632,10 @@ document.addEventListener("DOMContentLoaded", function() {
         $mermaidInitScript = ""
     }
 
+    $bannerTagTpl    = Get-LocalizedStr -Key "filter_banner_tag" -Lang $exportLang
+    $bannerAuthorTpl = Get-LocalizedStr -Key "filter_banner_author" -Lang $exportLang
+    $bannerClearText = Get-LocalizedStr -Key "filter_banner_clear" -Lang $exportLang
+
     $navScript = @"
 <script>
 function escapeHtml(str) {
@@ -683,7 +675,8 @@ function checkHashFilter() {
             }
         });
         if (banner) {
-            banner.innerHTML = "🏷️ タグ <strong>「" + escapeHtml(tag) + "」</strong> で絞り込み中 (" + matchCount + "件) <a href='javascript:void(0)' onclick='clearFilter()'>[すべてのドキュメントを表示]</a>";
+            var msg = "$bannerTagTpl".replace("{0}", escapeHtml(tag)).replace("{1}", matchCount);
+            banner.innerHTML = msg + " <a href='javascript:void(0)' onclick='clearFilter()'>$bannerClearText</a>";
             banner.style.display = "block";
         }
         updateActiveNav("#tag=");
@@ -700,7 +693,8 @@ function checkHashFilter() {
             }
         });
         if (banner) {
-            banner.innerHTML = "👤 著者 <strong>「" + escapeHtml(author) + "」</strong> で絞り込み中 (" + matchCount + "件) <a href='javascript:void(0)' onclick='clearFilter()'>[すべてのドキュメントを表示]</a>";
+            var msg = "$bannerAuthorTpl".replace("{0}", escapeHtml(author)).replace("{1}", matchCount);
+            banner.innerHTML = msg + " <a href='javascript:void(0)' onclick='clearFilter()'>$bannerClearText</a>";
             banner.style.display = "block";
         }
         updateActiveNav("#author=");
@@ -1004,11 +998,16 @@ $commonStyle
 
     # 1. tags.html 出力
     if (-not $NoTagsPage) {
-        $tagsHtmlFile = Join-Path $targetDistDir "tags.html"
-        $dummyCurrentFile = [PSCustomObject]@{ FullName = Join-Path $wikiDir "tags.md" }
-        $sidebarForSub = Get-ExportSidebarHtml -currentFile $dummyCurrentFile -allMdFiles $allMdFiles -wikiDir $wikiDir
-        $tagListTitle = Get-LocalizedStr -Key "tag_list_title" -Lang $exportLang
-        $docListTitle = Get-LocalizedStr -Key "doc_list_title" -Lang $exportLang
+        $tagsHtmlFile       = Join-Path $targetDistDir "tags.html"
+        $dummyCurrentFile   = [PSCustomObject]@{ FullName = Join-Path $wikiDir "tags.md" }
+        $sidebarForSub      = Get-ExportSidebarHtml -currentFile $dummyCurrentFile -allMdFiles $allMdFiles -wikiDir $wikiDir
+        $tagListTitle       = Get-LocalizedStr -Key "tag_list_title" -Lang $exportLang
+        $docListTitle       = Get-LocalizedStr -Key "doc_list_title" -Lang $exportLang
+        $tagDocsHeadingTpl  = Get-LocalizedStr -Key "tag_docs_heading" -Lang $exportLang
+        $backToTagsText     = Get-LocalizedStr -Key "back_to_tags" -Lang $exportLang
+        $glossaryTitleTpl   = Get-LocalizedStr -Key "tag_glossary_title" -Lang $exportLang
+        $tagEmptyMsg        = Get-LocalizedStr -Key "tag_empty_msg" -Lang $exportLang
+        $tagNoneRegistered  = Get-LocalizedStr -Key "tag_none_registered" -Lang $exportLang
 
         $tagsBodyContent = @"
 <div id="tagViewContainer"></div>
@@ -1043,15 +1042,17 @@ document.addEventListener("DOMContentLoaded", function() {
                 return item.Tags && Array.isArray(item.Tags) && item.Tags.indexOf(tag) !== -1;
             });
 
-            var html = "<h1>🏷️ タグ 「" + escapeHtml(tag) + "」 のドキュメント (" + matching.length + "件)</h1>";
-            html += "<p><a href='tags.html' onclick='clearTagFilter(event)'>← すべてのタグ一覧に戻る</a></p>";
+            var heading = "$tagDocsHeadingTpl".replace("{0}", escapeHtml(tag)).replace("{1}", matching.length);
+            var html = "<h1>" + heading + "</h1>";
+            html += "<p><a href='tags.html' onclick='clearTagFilter(event)'>$backToTagsText</a></p>";
 
             if (rawGlossary[tag]) {
-                html += "<div class='glossary-box'><div class='glossary-title'>📖 用語解説: " + escapeHtml(tag) + "</div><div class='glossary-content'>" + renderGlossaryText(rawGlossary[tag]) + "</div></div>";
+                var glossTitle = "$glossaryTitleTpl".replace("{0}", escapeHtml(tag));
+                html += "<div class='glossary-box'><div class='glossary-title'>" + glossTitle + "</div><div class='glossary-content'>" + renderGlossaryText(rawGlossary[tag]) + "</div></div>";
             }
 
             if (matching.length === 0) {
-                html += "<p style='color:#6a737d;'>該当するドキュメントはありません。</p>";
+                html += "<p style='color:#6a737d;'>$tagEmptyMsg</p>";
             } else {
                 html += "<div class='tag-results'>";
                 matching.forEach(function(item) {
@@ -1076,7 +1077,7 @@ document.addEventListener("DOMContentLoaded", function() {
             var html = "<h1>$tagListTitle</h1><div class='tag-cloud'>";
             var sortedTags = Object.keys(tagCounts).sort();
             if (sortedTags.length === 0) {
-                html += "<p style='color:#6a737d;'>登録されているタグはありません。</p>";
+                html += "<p style='color:#6a737d;'>$tagNoneRegistered</p>";
             } else {
                 sortedTags.forEach(function(t) {
                     html += "<a href='#tag=" + encodeURIComponent(t) + "' class='tag-cloud-item'>🏷️ " + escapeHtml(t) + " <span class='tag-count'>(" + tagCounts[t] + ")</span></a>";
@@ -1115,8 +1116,12 @@ document.addEventListener("DOMContentLoaded", function() {
 
     # 2. authors.html 出力
     if (-not $NoAuthorsPage) {
-        $authorsHtmlFile = Join-Path $targetDistDir "authors.html"
-        $authorListTitle = Get-LocalizedStr -Key "author_list_title" -Lang $exportLang
+        $authorsHtmlFile      = Join-Path $targetDistDir "authors.html"
+        $authorListTitle      = Get-LocalizedStr -Key "author_list_title" -Lang $exportLang
+        $authorDocsHeadingTpl = Get-LocalizedStr -Key "author_docs_heading" -Lang $exportLang
+        $backToAuthorsText    = Get-LocalizedStr -Key "back_to_authors" -Lang $exportLang
+        $authorEmptyMsg       = Get-LocalizedStr -Key "author_empty_msg" -Lang $exportLang
+        $authorNoneRegistered = Get-LocalizedStr -Key "author_none_registered" -Lang $exportLang
 
         $authorsBodyContent = @"
 <div id="authorViewContainer"></div>
@@ -1147,11 +1152,12 @@ document.addEventListener("DOMContentLoaded", function() {
                 return item.Author && item.Author === author;
             });
 
-            var html = "<h1>👤 著者 「" + escapeHtml(author) + "」 のドキュメント (" + matching.length + "件)</h1>";
-            html += "<p><a href='authors.html' onclick='clearAuthorFilter(event)'>← すべての著者一覧に戻る</a></p>";
+            var heading = "$authorDocsHeadingTpl".replace("{0}", escapeHtml(author)).replace("{1}", matching.length);
+            var html = "<h1>" + heading + "</h1>";
+            html += "<p><a href='authors.html' onclick='clearAuthorFilter(event)'>$backToAuthorsText</a></p>";
 
             if (matching.length === 0) {
-                html += "<p style='color:#6a737d;'>該当するドキュメントはありません。</p>";
+                html += "<p style='color:#6a737d;'>$authorEmptyMsg</p>";
             } else {
                 html += "<div class='tag-results'>";
                 matching.forEach(function(item) {
@@ -1174,10 +1180,10 @@ document.addEventListener("DOMContentLoaded", function() {
             var html = "<h1>$authorListTitle</h1><ul>";
             var sortedAuthors = Object.keys(authorCounts).sort();
             if (sortedAuthors.length === 0) {
-                html += "<p style='color:#6a737d;'>登録されている著者はありません。</p>";
+                html += "<p style='color:#6a737d;'>$authorNoneRegistered</p>";
             } else {
                 sortedAuthors.forEach(function(a) {
-                    html += "<li><a href='#name=" + encodeURIComponent(a) + "'>👤 " + escapeHtml(a) + "</a> <span style='color:#586069;'>(" + authorCounts[a] + "件)</span></li>";
+                    html += "<li><a href='#name=" + encodeURIComponent(a) + "'>👤 " + escapeHtml(a) + "</a> <span style='color:#586069;'>(" + authorCounts[a] + ")</span></li>";
                 });
             }
             html += "</ul>";
