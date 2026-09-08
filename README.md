@@ -29,7 +29,7 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
       - 共通レイアウト描画を `lib/WikiViews.ps1`（`Get-MainViewHtml`）へ集約し、保守性とテスト独立性を向上。
   - **🌐 多言語化 (i18n) ＆ 言語セレクタ ＆ 外部辞書拡張 (`lib/WikiI18n.ps1`)**:
     - **日本語 (`ja`) / 英語 (`en`)** の標準ビルトイン辞書を搭載。
-    - ヘッダーの言語セレクタドロップダウンによるワンクリック即時切り替え（Cookie 保存）。
+    - ヘッダーの「🔧 ツール ▾」ドロップダウン内言語セレクタによるワンクリック即時切り替え（Cookie 保存）。
     - クエリパラメータ (`?lang=en`) によるダイレクト言語指定および静的エキスポート (`-Language en`) 対応。
     - ルート直下の `i18n.json` による外部辞書拡張（中国語等の新規言語追加や既存文言の上書き）。
     - チャットプロンプト（Fast RAG / Agentic RAG）およびコンテキスト見出し・思考ログ・フォールバック回答の自動ローカライズ。
@@ -61,7 +61,7 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
   - **🔒 API Key 暗号化ユーティリティ (`Set-ApiKey.bat` / `Set-ApiKey.ps1`)**:
     - Windows DPAPI またはポータブル AES-256 暗号化（`ENC:...` / `DPAPI:...`）により、`config.json` 内の API キーを安全に保護。
   - **🛑 安全なサーバー終了 ＆ UI シャットダウンボタン ＆ 非同期待機 (`/api/shutdown`)**:
-    - **ワンクリック UI 終了**: 画面右上の「⏻ 終了 / ⏻ Shutdown」ボタンおよび設定画面（`/settings`）の「🛑 サーバー制御」からサーバーを安全に停止。
+    - **ワンクリック UI 終了**: 画面右上の「✕」ボタンおよび設定画面（`/settings`）の「🛑 サーバー制御」からサーバーを安全に停止。
     - **誤操作防止 ＆ 全画面案内**: 停止前の確認ダイアログ（`confirm`）と停止完了後の全画面案内オーバーレイ（`#shutdownOverlay`）を表示。
     - **Ctrl + C (SIGINT) 即時終了**: `BeginGetContext` による 200ms 非同期ポーリング待機および `[System.Console]::CancelKeyPress` ハンドラにより、バッチファイル (`.bat`) 起動時やコンソールからの `Ctrl + C` でスレッドをブロッキングさせず即座に正常停止。
   - **Google OKF (Open Knowledge Format) v0.2 思想の準拠**: YAML Front Matter からの文脈抽出・自動補完 (フォールバック)・Version / Reviewer / Contributors / Related メタデータカード描画
@@ -83,7 +83,15 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
     - **自動タグ同期 CLI (`Update-WikiTags.ps1`)**: 全ドキュメント本文をスキャンし、検出用語を既存の `tags:` を壊さず重複なく自動マージ。`-DryRun` および `-WhatIf` (ShouldProcess) に対応。
     - **Web エディタ用語サジェスト**: `/api/glossary-terms` API と連携した `<datalist id="glossaryTagDatalist">` により、タグ入力時に用語候補をサジェスト。
     - **タグ画面用語解説ボックス**: タグ検索画面（`/tags?tag=...`）の上部に、`glossary.md` 由来の用語解説ボックス（太字・リスト・リンク等のリッチな Markdown レンダリング対応）を表示。
-  - **動的ナビゲーション & ビュー**: 最近の更新 (`/recent`), タグ集計/検索 (`/tags`), 品質・メンテナンスダッシュボード (`/maintenance`), 著者ディレクトリ (`/authors`), AND/NOT 検索 (`/search`), システム設定 (`/settings`)
+  - **🧭 整理された新ヘッダーナビゲーション (5要素集約) ＆ ドロップダウン UI**:
+    - 画面幅や項目増による表示崩れを解消するため、ヘッダーを「**Brand (📖 SimpleWiki ▾)**」「**検索バー**」「**3D ステラ (🌌 3D ステラ)**」「**ツール (🔧 ツール ▾)**」「**終了ボタン (✕)**」の 5 要素に機能集約。
+    - ホバーブリッジ疑似要素（`::before`）およびボタンフォーカス（`:focus-within`）により、マウス移動時にも閉じない安定したドロップダウン操作を実現。
+  - **🌌 3D ステラビュー (時空宇宙マップ / `/stella`)**:
+    - ナレッジベース内の全ドキュメントを 3 次元空間上にマッピング。
+    - **時空 Z 軸表現**: 作成日・更新日・時間経過を奥行き（Z 軸）として表現し、ナレッジの進化過程を立体的に把握可能。
+    - **星座ハイライト**: ノード選択時に共通タグや関連文書リンクを持つ星同士を光のライン（星座）で動的接続。
+    - **3 つの視点プリセット**: `🌌 3D 銀河`（全体鳥瞰）、`🗺️ 意味マップ`（XY 平面投影）、`⏳ タイムライン`（横方向時系列視点）のワンクリック切り替えに対応。
+  - **動的ナビゲーション & ビュー**: 最近の更新 (`/recent`), タグ集計/検索 (`/tags`), 品質・メンテナンスダッシュボード (`/maintenance`), 著者ディレクトリ (`/authors`), 全文検索 (`/search`), 3D ステラ (`/stella`), システム設定 (`/settings`)
   - **静的エキスポート**: `Export-MarkdigWiki.ps1` による OKF v0.2 メタデータカード同梱型 HTML 一括出力（日英多言語対応）
     - **📦 単一 HTML（完全自己完結 SPA / `-SingleFile`）**: 全 Markdown ドキュメントを 1 つのモノリス HTML ファイル（`index.html`）に統合。クライアントサイド JavaScript（`showPage` / `popstate` / `hashchange`）による超高速 SPA ページ遷移を実現。アンカーハッシュ移動にも対応。
     - **🖼️ 画像 Base64 インライン埋め込み ＆ 巨大画像自動リサイズ (`-EmbedImages` / `-NoEmbedImages`)**:
@@ -131,6 +139,8 @@ SimpleWiki/
 │   ├── WikiSearch.ps1       <-- 検索エンジン・WinRT 形態素解析・NOT構文・インデックスキャッシュ
 │   ├── WikiRag.ps1          <-- LLM RAG (Fast/Agentic) ＆ チャット API
 │   ├── WikiViews.ps1        <-- 各種 HTML ビュー ＆ UI レンダラー
+│   ├── WikiEditorTemplate.ps1 <-- OKF 分離エディターモーダル HTML/JS テンプレート
+│   ├── WikiServer.ps1       <-- HTTP ルーティング・エンドポイントディスパッチ・SSE モジュール
 │   ├── WikiSecurity.ps1     <-- マシンID指紋・AES-256 / DPAPI 暗号化 ＆ パス検証
 │   └── mermaid.min.js       <-- オフライン用 Mermaid.js (MIT License)
 ├── markdown_sample/         <-- サンプルドキュメントフォルダ (OKF メタデータ記述例付き)
@@ -142,12 +152,13 @@ SimpleWiki/
 │   │   └── api/
 │   │       └── REST-API.md   <-- REST API 仕様書 & AI Agent 連携ガイド
 │   └── images/
-│       └── architecture.svg <-- サンプル SVG 画像
+│       ├── architecture.svg <-- サンプル SVG 画像
+│       └── ui-header.png    <-- ヘッダーナビゲーション画像
 ├── docs/
 │   └── activation/
 │       └── index.html       <-- 完全サーバーレス型 Web Crypto API アクティベーションコード生成 Web アプリ
 ├── tests/
-│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全169件)
+│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全192件)
 └── README.md                <-- プロジェクト記録
 ```
 
@@ -189,11 +200,13 @@ SimpleWiki/
 - **`http://localhost:8080/maintenance`**: 風化ドキュメント (>365日)・下書き・非推奨の管理画面
 - **`http://localhost:8080/authors`**: 著者一覧ディレクトリ
 - **`http://localhost:8080/search?q=キーワード`**: 全文検索 (AND/NOT 検索対応)
+- **`http://localhost:8080/stella`**: 3D ステラビュー（Z軸時間深度・3D銀河・星座リンク・視点プリセット）
 - **`http://localhost:8080/settings`**: システム設定 & インデックス管理画面
 - **`http://localhost:8080/api/index.json`**: AI エージェント / LLM 用機械可読 JSON インデックス
 - **`http://localhost:8080/api/chunks.json`**: RAG 用自動 H2 見出しセマンティック分割済み JSON チャンク API
 - **`http://localhost:8080/api/glossary-terms`**: 用語一覧・タグ・解説取得 API
 - **`http://localhost:8080/api/config`**: 設定情報取得・保存・インデックス再構築 API
+- **`http://localhost:8080/api/shutdown`**: サーバー安全シャットダウン API
 
 ---
 
@@ -272,9 +285,14 @@ SimpleWiki では、API キーを他人に漏洩させずに特定の PC 専用�
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\tests\Start-MarkdigWiki.Tests.ps1"
 ```
-- **検証結果**: 全 179 件の Pester 自動テストが **100% PASS**。
+- **検証結果**: 全 192 件の Pester 自動テストが **100% PASS**。
   - **1. スクリプト構文・AST検証**: 全 `.ps1` ファイルの構文解析・トークン検証に合格
-  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 179 件)**:
+  - **2. Pester 単体・統合・セキュリティ・多言語・OKF v0.2 テスト (全 192 件)**:
+    - **🌌 3D ステラビュー ＆ 時空仕様検証**:
+      - ドキュメントメタデータ（`links`, `created_at`, `updated_at`, ライフサイクルステータス）の厳格検証。
+      - 決定論的 3D 座標計算（X, Y, Z）における衝突回避アルゴリズムおよび時間深度（Z軸）の順序性テスト。
+      - `Get-StellaViewHtml` による 3D Canvas、コントロールパネル、視点プリセット、時間 HUD、星座ハイライト機能の完全レンダリング検証。
+      - HTTP ルーティングにおける `/stella` エンドポイント正常ディスパッチ検証。
     - **🖼️ 画像 Base64 インライン埋め込み ＆ 巨大画像自動リサイズ・圧縮検証**:
       - `-SingleFile` 指定時、全画像（PNG/SVG等）が `data:image/...;base64,...` として HTML 内に自動インライン埋め込みされ、外部 `images/` フォルダなしで 100% 自己完結することを確認。
       - `-NoEmbedImages` スイッチにより、Base64 化を行わず外部 `images/` フォルダへの相対参照を維持できることを検証。

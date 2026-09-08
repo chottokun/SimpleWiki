@@ -2524,6 +2524,8 @@ function Get-MainViewHtml {
 <!-- TOAST UI Editor CDN Assets -->
 <link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/toastui-editor.min.css" />
 <script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
+<!-- Offline Mermaid.js -->
+<script src="/lib/mermaid.min.js"></script>
 <style>
     * { box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "BIZ UDPGothic", "Yu Gothic UI", "Meiryo", "Hiragino Sans", sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; color: #24292e; background-color: #fff; }
@@ -2724,6 +2726,29 @@ function Get-MainViewHtml {
                     }
                 });
             });
+
+            // Offline Mermaid Renderer
+            if (typeof mermaid !== 'undefined') {
+                document.querySelectorAll('pre code.language-mermaid').forEach(function(el) {
+                    var pre = el.parentElement;
+                    var div = document.createElement('div');
+                    div.className = 'mermaid';
+                    div.textContent = el.textContent;
+                    pre.parentElement.replaceChild(div, pre);
+                });
+                document.querySelectorAll('pre.mermaid').forEach(function(pre) {
+                    var div = document.createElement('div');
+                    div.className = 'mermaid';
+                    div.textContent = pre.textContent;
+                    pre.parentElement.replaceChild(div, pre);
+                });
+                try {
+                    mermaid.initialize({ startOnLoad: false, theme: 'default' });
+                    mermaid.run({ nodes: Array.from(document.querySelectorAll('.mermaid:not([data-processed])')) });
+                } catch(e) {
+                    console.error('Mermaid initialization error:', e);
+                }
+            }
         });
     </script>
 
