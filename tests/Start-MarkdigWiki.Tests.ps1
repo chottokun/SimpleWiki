@@ -165,6 +165,24 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
         }
     }
 
+    It "Multi-file export respects -NoApiJson, -NoTagsPage, and -NoAuthorsPage switches" {
+        $noOptDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestNoOptExport"
+        if (Test-Path $noOptDir) { Remove-Item -Path $noOptDir -Recurse -Force }
+
+        try {
+            $exportScript = Join-Path $projectRoot "Export-MarkdigWiki.ps1"
+            $sampleDir    = Join-Path $projectRoot "markdown_sample"
+            & $exportScript -RootFolder $sampleDir -OutputDir $noOptDir -NoApiJson -NoTagsPage -NoAuthorsPage
+
+            (Test-Path (Join-Path $noOptDir "index.html")) | Should Be $true
+            (Test-Path (Join-Path (Join-Path $noOptDir "api") "index.json")) | Should Be $false
+            (Test-Path (Join-Path $noOptDir "tags.html")) | Should Be $false
+            (Test-Path (Join-Path $noOptDir "authors.html")) | Should Be $false
+        } finally {
+            if (Test-Path $noOptDir) { Remove-Item -Path $noOptDir -Recurse -Force }
+        }
+    }
+
     It "Defines CSS style block cleanly without duplication" {
         $indexHtmlPath = Join-Path $testExportDir "index.html"
         $htmlContent   = [System.IO.File]::ReadAllText($indexHtmlPath)
@@ -187,7 +205,7 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
 
             $htmlContent = [System.IO.File]::ReadAllText($indexPath)
             # Verify single page sections exist and are not hidden
-            $htmlContent | Should Match '<section class="wiki-page" id="index">'
+            $htmlContent | Should Match '<section class="wiki-page" id="index"'
             $htmlContent | Should Match '<section class="wiki-page" id="page_'
             $htmlContent | Should Not Match '<section[^>]*class="wiki-page"[^>]*style="[^"]*display:\s*none'
 
@@ -207,13 +225,14 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
             $htmlContent | Should Not Match 'src="\.\./\.\./images/'
             $htmlContent | Should Not Match 'src="\.\./images/'
 
-            # Verify static api/index.json exists and single file contains modal UI
+            # Verify static api/index.json exists and single file contains filter banner
             $singleApiJson = Join-Path (Join-Path $singleExportDir "api") "index.json"
             (Test-Path $singleApiJson) | Should Be $true
 
-            $htmlContent | Should Match 'id="singleFileModalBackdrop"'
-            $htmlContent | Should Match 'href=[''"]#tag='
-            $htmlContent | Should Match 'href=[''"]api/index\.json[''"]'
+            $htmlContent | Should Match 'id="singleFileFilterBanner"'
+            $htmlContent | Should Match 'data-tags='
+            $htmlContent | Should Match 'href=.*#tag='
+            $htmlContent | Should Match 'href=.*api/index\.json'
 
             # Verify physical images folder was not copied (pure self-contained HTML)
             $imagesDir = Join-Path $singleExportDir "images"
@@ -1000,16 +1019,19 @@ Describe 'Export-GUI.ps1 GUI Component and Syntax Validation' {
         $content | Should Match "Export-GUI\.ps1"
     }
 
-    It 'Export-GUI.ps1 contains controls for SingleFile, MermaidMode, and EmbedImages' {
+    It 'Export-GUI.ps1 contains controls for SingleFile, MermaidMode, EmbedImages, Language, and Feature Toggles' {
         $guiScript = Join-Path $projectRoot "Export-GUI.ps1"
         $content   = Get-Content -Path $guiScript -Raw
         $content | Should Match 'chkSingleFile'
         $content | Should Match 'cmbMermaid'
         $content | Should Match 'chkEmbedImages'
-        $content | Should Match 'SingleFile'
-        $content | Should Match 'MermaidMode'
-        $content | Should Match 'EmbedImages'
-        $content | Should Match 'NoEmbedImages'
+        $content | Should Match 'cmbLang'
+        $content | Should Match 'chkApiJson'
+        $content | Should Match 'chkTagsPage'
+        $content | Should Match 'chkAuthorsPage'
+        $content | Should Match 'NoApiJson'
+        $content | Should Match 'NoTagsPage'
+        $content | Should Match 'NoAuthorsPage'
     }
 }
 
