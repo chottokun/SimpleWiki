@@ -39,6 +39,7 @@ if (-not (Test-Path $targetDir)) {
 
 function Parse-FrontmatterMetadata {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]
     param([string]$FilePath)
     $content = [System.IO.File]::ReadAllText($FilePath, [System.Text.Encoding]::UTF8)
     $title = $null
