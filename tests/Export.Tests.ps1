@@ -224,13 +224,10 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
     }
 
     It "Get-OptimizedImageBase64 resizes large images and converts images to Data URIs" {
-        $exportScript = Join-Path $projectRoot "Export-MarkdigWiki.ps1"
-        $svgPath      = Join-Path $projectRoot "markdown_sample\images\architecture.svg"
-        $pngPath      = Join-Path $projectRoot "markdown_sample\images\ui-header.png"
-
-        $scriptContent = Get-Content -Path $exportScript -Raw -Encoding UTF8
-        $funcDef = [regex]::Match($scriptContent, '(?s)function Get-OptimizedImageBase64\s*\{.*?\n\}').Value
-        Invoke-Expression $funcDef
+        $exportHelpers = Join-Path $projectRoot "lib\WikiExportHelpers.ps1"
+        . $exportHelpers
+        $svgPath       = Join-Path $projectRoot "markdown_sample\images\architecture.svg"
+        $pngPath       = Join-Path $projectRoot "markdown_sample\images\ui-header.png"
 
         # 1. Test SVG
         $svgUri = Get-OptimizedImageBase64 -filePath $svgPath
