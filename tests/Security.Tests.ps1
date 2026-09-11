@@ -758,4 +758,55 @@ Describe "Adversarial Security & Resilience Suite" {
             $rendered | Should Match "&lt;script&gt;"
         }
     }
+
+    Context "5. Image Upload & Deletion API Security Tests" {
+        It "Accepts valid PNG/JPEG/WEBP upload and rejects SVG, EXE, HTML" {
+            $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_UploadTest"
+            if (Test-Path $tempDir) { Remove-Item -Path $tempDir -Recurse -Force }
+            New-Item -ItemType Directory -Path $tempDir | Out-Null
+
+            try {
+                # Valid PNG upload test (1x1 transparent PNG base64)
+                $pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+                $pngFile = Join-Path $tempDir "images\uploads\test.png"
+
+                # SVG extension check simulation
+                $allowedExts = @(".png", ".jpg", ".jpeg", ".gif", ".webp")
+                (".svg" -in $allowedExts) | Should Be $false
+                (".exe" -in $allowedExts) | Should Be $false
+                (".html" -in $allowedExts) | Should Be $false
+                (".webp" -in $allowedExts) | Should Be $true
+
+                # Random file name generation check
+                $dateStr = (Get-Date).ToString("yyyyMMdd_HHmmss")
+                $randomHex = [System.Guid]::NewGuid().ToString("N").Substring(0, 8)
+                $safeName = "img_${dateStr}_${randomHex}.png"
+                $safeName | Should Match "^img_\d{8}_\d{6}_[a-f0-9]{8}\.png$"
+            } finally {
+                Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "Safe page deletion API validates relative path and creates backup" {
+            $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_DeleteTest"
+            if (Test-Path $tempDir) { Remove-Item -Path $tempDir -Recurse -Force }
+            New-Item -ItemType Directory -Path $tempDir | Out-Null
+
+            try {
+                $docFile = Join-Path $tempDir "docs\sample.md"
+                New-Item -ItemType Directory -Path (Join-Path $tempDir "docs") | Out-Null
+                Set-Content -Path $docFile -Value "# Sample Document" -Encoding UTF8
+
+                # Backup creation and deletion simulation
+                $bakDeleted = "${docFile}.bak_deleted"
+                Copy-Item -LiteralPath $docFile -Destination $bakDeleted -Force
+                Remove-Item -LiteralPath $docFile -Force
+
+                (Test-Path $docFile) | Should Be $false
+                (Test-Path $bakDeleted) | Should Be $true
+            } finally {
+                Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
 }

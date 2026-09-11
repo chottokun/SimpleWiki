@@ -715,6 +715,17 @@ function Get-MainViewHtml {
         $chatWidgetHtml = Get-ChatWidgetHtml -Lang $Lang
     }
 
+    $btnNewDoc          = Get-LocalizedStr -Key "btn_new_doc" -Lang $Lang
+    $modalNewDocTitle   = Get-LocalizedStr -Key "modal_new_doc_title" -Lang $Lang
+    $modalNewDocFolder  = Get-LocalizedStr -Key "modal_new_doc_folder" -Lang $Lang
+    $modalNewDocFilename = Get-LocalizedStr -Key "modal_new_doc_filename" -Lang $Lang
+    $modalNewDocPageTitle = Get-LocalizedStr -Key "modal_new_doc_page_title" -Lang $Lang
+    $modalNewDocSubmit  = Get-LocalizedStr -Key "modal_new_doc_submit" -Lang $Lang
+    $modalNewDocExists  = Get-LocalizedStr -Key "modal_new_doc_exists" -Lang $Lang
+    $edCancel           = Get-LocalizedStr -Key "editor_cancel_btn" -Lang $Lang
+
+    $modalNewDocExistsJs = ConvertTo-JsString $modalNewDocExists
+
     $navBrand     = Get-LocalizedStr -Key "brand_title" -Lang $Lang
     $navShutdown  = Get-LocalizedStr -Key "shutdown_btn" -Lang $Lang
     $shutdownConfirmJs = ConvertTo-JsString (Get-LocalizedStr -Key "shutdown_confirm" -Lang $Lang)
@@ -885,6 +896,7 @@ function Get-MainViewHtml {
             <button type="submit">🔍 {11}</button>
         </form>
         <nav class="top-nav">
+            <button type="button" onclick="openNewDocModal()" style="background: #28a745; color: #fff; border: none; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; white-space: nowrap;">{34}</button>
             <a href="/stella">{25}</a>
         </nav>
         <div class="nav-dropdown">
@@ -984,12 +996,114 @@ function Get-MainViewHtml {
         });
     </script>
 
+    <!-- New Page Creation Modal -->
+    <div id="newDocModal" class="wiki-editor-modal">
+        <div class="wiki-editor-container" style="width: 480px; height: auto; max-height: 90vh;">
+            <div class="wiki-editor-header">
+                <span>{35}</span>
+                <button type="button" onclick="closeNewDocModal()" style="background:none; border:none; color:#fff; font-size:16px; cursor:pointer;">✕</button>
+            </div>
+            <div style="padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+                <div class="wiki-form-group">
+                    <label for="newDocFolder">{36}</label>
+                    <input type="text" id="newDocFolder" value="docs/" placeholder="docs/">
+                </div>
+                <div class="wiki-form-group">
+                    <label for="newDocFileName">{37}</label>
+                    <input type="text" id="newDocFileName" placeholder="quickstart.md">
+                </div>
+                <div class="wiki-form-group">
+                    <label for="newDocPageTitle">{38}</label>
+                    <input type="text" id="newDocPageTitle" placeholder="クイックスタートガイド">
+                </div>
+                <div id="newDocError" style="color: #dc3545; font-size: 12px; display: none;"></div>
+            </div>
+            <div class="wiki-editor-footer" style="justify-content: flex-end; gap: 8px;">
+                <button class="wiki-editor-cancel-btn" onclick="closeNewDocModal()">{40}</button>
+                <button class="wiki-editor-save-btn" onclick="submitNewDocument()">{39}</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function openNewDocModal() {
+            document.getElementById("newDocFileName").value = "";
+            document.getElementById("newDocPageTitle").value = "";
+            document.getElementById("newDocError").style.display = "none";
+            document.getElementById("newDocModal").style.display = "flex";
+        }
+
+        function closeNewDocModal() {
+            document.getElementById("newDocModal").style.display = "none";
+        }
+
+        function submitNewDocument() {
+            var folder = document.getElementById("newDocFolder").value.trim().replace(/\\/g, '/');
+            var filename = document.getElementById("newDocFileName").value.trim();
+            var title = document.getElementById("newDocPageTitle").value.trim();
+            var errEl = document.getElementById("newDocError");
+
+            if (!filename) {
+                errEl.textContent = "ファイル名を入力してください。";
+                errEl.style.display = "block";
+                return;
+            }
+            if (!filename.toLowerCase().endsWith(".md")) {
+                filename += ".md";
+            }
+
+            if (filename.indexOf("..") !== -1 || folder.indexOf("..") !== -1 || /[\\:*?"<>|]/.test(filename)) {
+                errEl.textContent = "不正な文字またはパス記号が含まれています。";
+                errEl.style.display = "block";
+                return;
+            }
+
+            if (folder && !folder.endsWith("/")) {
+                folder += "/";
+            }
+            var fullRelPath = (folder + filename).replace(/^\/+/, "");
+
+            fetch("/api/raw?relPath=" + encodeURIComponent(fullRelPath))
+                .then(r => {
+                    if (r.ok) {
+                        errEl.textContent = "{41}";
+                        errEl.style.display = "block";
+                        return true;
+                    }
+                    return false;
+                })
+                .then(exists => {
+                    if (exists) return;
+
+                    closeNewDocModal();
+                    var dummyBtn = document.createElement("button");
+                    dummyBtn.setAttribute("data-relpath", fullRelPath);
+
+                    openWikiEditor(dummyBtn);
+
+                    document.getElementById("metaTitle").value = title || filename.replace(/\.md$/i, "");
+                    document.getElementById("metaType").value = "Guide";
+                    document.getElementById("metaStatus").value = "draft";
+                    document.getElementById("metaVersion").value = "1.0.0";
+                    setEditorDateToday();
+                    setEditorContent("# " + (title || filename.replace(/\.md$/i, "")) + "\n\n");
+                    if (typeof updateSavedSnapshot === "function") {
+                        updateSavedSnapshot();
+                    }
+                })
+                .catch(err => {
+                    errEl.textContent = "エラーが発生しました: " + err;
+                    errEl.style.display = "block";
+                });
+        }
+    </script>
+
     {222}
 </body>
 </html>
 '@
 
-    $fullHtml = $template.Replace("{0}", $PageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $BodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{18}", $Lang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $navStella).Replace("{31}", $searchLoadingTxtJs).Replace("{33}", $navTools).Replace("{222}", $editorModalHtml)
+    $fullHtml = $template.Replace("{0}", $PageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $BodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{18}", $Lang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $navStella).Replace("{31}", $searchLoadingTxtJs).Replace("{33}", $navTools).Replace("{34}", $btnNewDoc).Replace("{35}", $modalNewDocTitle).Replace("{36}", $modalNewDocFolder).Replace("{37}", $modalNewDocFilename).Replace("{38}", $modalNewDocPageTitle).Replace("{39}", $modalNewDocSubmit).Replace("{40}", $edCancel).Replace("{41}", $modalNewDocExistsJs).Replace("{222}", $editorModalHtml)
 
     if (-not [string]::IsNullOrWhiteSpace($chatWidgetHtml)) {
         $fullHtml = $fullHtml.Replace("</body>", "$chatWidgetHtml`n</body>")

@@ -48,6 +48,7 @@ function Invoke-WikiRouteRequest {
         ".jpg"  = "image/jpeg"
         ".jpeg" = "image/jpeg"
         ".gif"  = "image/gif"
+        ".webp" = "image/webp"
         ".svg"  = "image/svg+xml"
         ".ico"  = "image/x-icon"
         ".md"   = "text/markdown; charset=utf-8"
@@ -329,6 +330,127 @@ function Invoke-WikiRouteRequest {
 
             $jsonRes = @{ relPath = $cleanRel; version = $version; markdown = $rawContent } | ConvertTo-Json
             Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+            return $false
+        }
+
+        if ($rawPath -eq "/api/upload" -and $request.HttpMethod -eq "POST") {
+            $currCfg = Get-ConfigJson -TargetScriptDir $targetScriptDir
+            $editorEnabled = if ($currCfg.editor -and $null -ne $currCfg.editor.enabled) { [bool]$currCfg.editor.enabled } else { $true }
+            if (-not $editorEnabled) {
+                $jsonRes = @{ success = $false; error = "Editor is currently disabled by system administrator." } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 403
+                return $false
+            }
+
+            if ($request.ContentLength64 -gt 15MB) {
+                $jsonRes = @{ success = $false; error = "Payload too large" } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 413
+                return $false
+            }
+
+            $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
+            $bodyText = $reader.ReadToEnd()
+            $reqObj = try { $bodyText | ConvertFrom-Json } catch { $null }
+
+            if ($null -eq $reqObj -or [string]::IsNullOrWhiteSpace($reqObj.fileName) -or [string]::IsNullOrWhiteSpace($reqObj.data)) {
+                $jsonRes = @{ success = $false; error = "fileName and Base64 data are required" } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 400
+                return $false
+            }
+
+            $origFileName = $reqObj.fileName
+            $ext = [System.IO.Path]::GetExtension($origFileName).ToLowerInvariant()
+            $allowedExts = @(".png", ".jpg", ".jpeg", ".gif", ".webp")
+
+            if ($ext -notin $allowedExts) {
+                $jsonRes = @{ success = $false; error = "Unsupported file extension" } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 400
+                return $false
+            }
+
+            $dateStr = (Get-Date).ToString("yyyyMMdd_HHmmss")
+            $randomHex = [System.Guid]::NewGuid().ToString("N").Substring(0, 8)
+            $safeFileName = "img_${dateStr}_${randomHex}${ext}"
+
+            $uploadDir = Join-Path $targetWikiDir "images\uploads"
+            if (-not (Test-Path $uploadDir)) {
+                $null = New-Item -ItemType Directory -Path $uploadDir -Force
+            }
+
+            $saveFilePath = Join-Path $uploadDir $safeFileName
+            try {
+                $bytes = [System.Convert]::FromBase64String($reqObj.data)
+                [System.IO.File]::WriteAllBytes($saveFilePath, $bytes)
+
+                $wikiPath = "images/uploads/$safeFileName"
+                $url = "/images/uploads/$safeFileName"
+
+                $jsonRes = @{
+                    success      = $true
+                    wikiPath     = $wikiPath
+                    url          = $url
+                    originalName = $origFileName
+                } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+            } catch {
+                $jsonRes = @{ success = $false; error = "Failed to save file: $_" } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 500
+            }
+            return $false
+        }
+
+        if ($rawPath -eq "/api/delete" -and $request.HttpMethod -eq "POST") {
+            $currCfg = Get-ConfigJson -TargetScriptDir $targetScriptDir
+            $editorEnabled = if ($currCfg.editor -and $null -ne $currCfg.editor.enabled) { [bool]$currCfg.editor.enabled } else { $true }
+            if (-not $editorEnabled) {
+                $jsonRes = @{ success = $false; error = "Editor is currently disabled by system administrator." } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 403
+                return $false
+            }
+
+            $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
+            $bodyText = $reader.ReadToEnd()
+            $reqObj = try { $bodyText | ConvertFrom-Json } catch { $null }
+
+            if ($null -eq $reqObj -or [string]::IsNullOrWhiteSpace($reqObj.relPath)) {
+                $jsonRes = @{ success = $false; error = "relPath parameter is required" } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 400
+                return $false
+            }
+
+            $cleanRel = $reqObj.relPath.TrimStart('\', '/').Replace('/', '\')
+            $fullTarget = Join-Path $targetWikiDir $cleanRel
+
+            $resolvedTarget = [System.IO.Path]::GetFullPath($fullTarget)
+            if (-not $resolvedTarget.StartsWith($fullWikiDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $jsonRes = @{ success = $false; error = "Access denied: Target path outside Wiki root." } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 403
+                return $false
+            }
+
+            if (-not (Test-Path -LiteralPath $resolvedTarget -PathType Leaf)) {
+                $jsonRes = @{ success = $false; error = "Document file not found." } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 404
+                return $false
+            }
+
+            try {
+                $deletedBak = "${resolvedTarget}.bak_deleted"
+                Copy-Item -LiteralPath $resolvedTarget -Destination $deletedBak -Force
+                Remove-Item -LiteralPath $resolvedTarget -Force
+
+                Build-WikiIndex -TargetWikiDir $targetWikiDir -ForceRefresh | Out-Null
+                if ($currCfg.search -and $currCfg.search.useCache -eq $true) {
+                    Save-WikiIndexCache -TargetWikiDir $targetWikiDir -TargetScriptDir $targetScriptDir | Out-Null
+                }
+                $script:CachedSidebarTree = $null
+
+                $jsonRes = @{ success = $true; message = "Document deleted successfully." } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+            } catch {
+                $jsonRes = @{ success = $false; error = "Failed to delete document: $_" } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 500
+            }
             return $false
         }
 
