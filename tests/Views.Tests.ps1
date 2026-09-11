@@ -460,6 +460,24 @@ Describe 'Directory Listing and Fallback Tests (Get-DirectoryListingHtml)' {
         ($aboutPos -lt $zooPos) | Should Be $true
     }
 
+    It "Render-ServerFolderTreeHtml attaches data-folder and openNewDocModal click handlers to folder summary add buttons" {
+        $subNode = [PSCustomObject]@{
+            Files = [System.Collections.Generic.List[PSObject]]@()
+            SubFolders = [ordered]@{}
+        }
+        $node = [PSCustomObject]@{
+            Files = [System.Collections.Generic.List[PSObject]]@()
+            SubFolders = [ordered]@{
+                "user-guide" = $subNode
+            }
+        }
+        $treeHtml = Render-ServerFolderTreeHtml -node $node -currentRelPath "" -wikiDir "C:\wiki" -parentRelPath "docs"
+        $treeHtml | Should Match 'data-folder=.docs/user-guide/.'
+        $treeHtml | Should Match 'openNewDocModal\("docs/user-guide/"\)'
+        $treeHtml | Should Match 'event\.stopPropagation\(\)'
+        $treeHtml | Should Match 'sidebar-add-doc-btn'
+    }
+
     It "Render-ServerFolderTreeHtml safely sorts folders without index.md or empty files" {
         $node = [PSCustomObject]@{
             Files = [System.Collections.Generic.List[PSObject]]@(

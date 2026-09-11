@@ -706,7 +706,9 @@ function Get-ServerFolderTreeHtml {
         [Parameter(Mandatory = $true)]$node,
         [Parameter(Mandatory = $false)][string]$currentRelPath = "",
         [Parameter(Mandatory = $false)][string]$wikiDir = "",
-        [Parameter(Mandatory = $false)]$allMdFiles = $null
+        [Parameter(Mandatory = $false)]$allMdFiles = $null,
+        [Parameter(Mandatory = $false)][string]$parentRelPath = "",
+        [Parameter(Mandatory = $false)][string]$Lang = "ja"
     )
 
     if ($null -eq $node) { return "<ul>`n</ul>" }
@@ -775,14 +777,19 @@ function Get-ServerFolderTreeHtml {
     foreach ($folderName in $node.SubFolders.Keys) {
         $subNode     = $node.SubFolders[$folderName]
         $encodedName = [System.Net.WebUtility]::HtmlEncode($folderName)
-        $subHtml     = Get-ServerFolderTreeHtml -node $subNode -currentRelPath $currentRelPath -wikiDir $wikiDir -allMdFiles $allMdFiles
+        $currentFolderRel = if ($parentRelPath) { "$parentRelPath/$folderName" } else { $folderName }
+        $subHtml     = Get-ServerFolderTreeHtml -node $subNode -currentRelPath $currentRelPath -wikiDir $wikiDir -allMdFiles $allMdFiles -parentRelPath $currentFolderRel -Lang $Lang
 
         $isOpen   = Test-ServerNodeHasActiveFile -node $subNode -currentRelPath $currentRelPath -wikiDir $wikiDir -allMdFiles $allMdFiles
         $openAttr = if ($isOpen) { " open" } else { "" }
+        $addDocToFolderTitle = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "sidebar_add_doc_tooltip" -Lang $Lang))
 
         $html += "  <li class='nav-folder'>`n"
         $html += "    <details$openAttr>`n"
-        $html += "      <summary class='folder-title'>&#128193; $encodedName</summary>`n"
+        $html += "      <summary class='folder-title'>`n"
+        $html += "        <span class='folder-label'>&#128193; $encodedName</span>`n"
+        $html += "        <button type='button' class='sidebar-add-doc-btn' title='$addDocToFolderTitle' data-folder='$currentFolderRel/' onclick='event.stopPropagation(); event.preventDefault(); openNewDocModal(""$currentFolderRel/"");'>＋</button>`n"
+        $html += "      </summary>`n"
         $html += "      $subHtml`n"
         $html += "    </details>`n"
         $html += "  </li>`n"
@@ -1208,7 +1215,9 @@ function Render-ServerFolderTreeHtml {
         [Parameter(Mandatory = $false)]$node,
         [Parameter(Mandatory = $false)][string]$currentRelPath = "",
         [Parameter(Mandatory = $false)][string]$wikiDir = "",
-        [Parameter(Mandatory = $false)]$allMdFiles = $null
+        [Parameter(Mandatory = $false)]$allMdFiles = $null,
+        [Parameter(Mandatory = $false)][string]$parentRelPath = "",
+        [Parameter(Mandatory = $false)][string]$Lang = "ja"
     )
-    return Get-ServerFolderTreeHtml -node $node -currentRelPath $currentRelPath -wikiDir $wikiDir -allMdFiles $allMdFiles
+    return Get-ServerFolderTreeHtml -node $node -currentRelPath $currentRelPath -wikiDir $wikiDir -allMdFiles $allMdFiles -parentRelPath $parentRelPath -Lang $Lang
 }
