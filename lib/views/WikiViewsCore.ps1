@@ -734,6 +734,106 @@ function Get-MainViewHtml {
     $searchBtnTxt = Get-LocalizedStr -Key "search_btn" -Lang $Lang
     $docListTitle = Get-LocalizedStr -Key "doc_list_title" -Lang $Lang
 
+    $editorEnabled = if ($Config -and $Config.editor -and $null -ne $Config.editor.enabled) { [bool]$Config.editor.enabled } else { $true }
+    $newDocBtnHtml = ""
+    $newDocModalHtml = ""
+    if ($editorEnabled) {
+        $btnNewDocTxt      = Get-LocalizedStr -Key "btn_new_doc" -Lang $Lang
+        $modalNewDocTitle  = Get-LocalizedStr -Key "modal_new_doc_title" -Lang $Lang
+        $modalNewDocFolder = Get-LocalizedStr -Key "modal_new_doc_folder" -Lang $Lang
+        $modalNewDocFile   = Get-LocalizedStr -Key "modal_new_doc_filename" -Lang $Lang
+        $modalNewDocPage   = Get-LocalizedStr -Key "modal_new_doc_page_title" -Lang $Lang
+        $modalNewDocSubmit = Get-LocalizedStr -Key "modal_new_doc_submit" -Lang $Lang
+        $modalNewDocCancel = Get-LocalizedStr -Key "modal_new_doc_cancel" -Lang $Lang
+        $modalNewDocExists = ConvertTo-JsString (Get-LocalizedStr -Key "modal_new_doc_exists" -Lang $Lang)
+
+        $newDocBtnHtml = "<button type='button' onclick='openNewDocModal()' style='background: #28a745; color: #fff; border: 1px solid #218838; padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; font-weight: bold; white-space: nowrap;'>$btnNewDocTxt</button>"
+        
+        $newDocModalHtml = @"
+    <!-- Create New Document Modal -->
+    <div id="newDocModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; align-items: center; justify-content: center;">
+        <div style="background: #fff; width: 440px; max-width: 90vw; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+            <div style="background: #1b1f23; color: #fff; padding: 12px 16px; font-size: 14px; font-weight: bold; display: flex; justify-content: space-between; align-items: center;">
+                <span>$modalNewDocTitle</span>
+                <button type="button" onclick="closeNewDocModal()" style="background: none; border: none; color: #aaa; font-size: 18px; cursor: pointer; line-height: 1;">&times;</button>
+            </div>
+            <div style="padding: 16px;">
+                <div style="margin-bottom: 12px;">
+                    <label for="newDocFolder" style="display: block; font-size: 12px; font-weight: bold; color: #24292e; margin-bottom: 4px;">$modalNewDocFolder</label>
+                    <input type="text" id="newDocFolder" value="docs/" style="width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px;" placeholder="docs/">
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <label for="newDocFileName" style="display: block; font-size: 12px; font-weight: bold; color: #24292e; margin-bottom: 4px;">$modalNewDocFile</label>
+                    <input type="text" id="newDocFileName" placeholder="sample.md" style="width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px;">
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label for="newDocTitle" style="display: block; font-size: 12px; font-weight: bold; color: #24292e; margin-bottom: 4px;">$modalNewDocPage</label>
+                    <input type="text" id="newDocTitle" placeholder="Document Title" style="width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px;">
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                    <button type="button" onclick="closeNewDocModal()" style="background: #e1e4e8; border: 1px solid #ccc; color: #24292e; padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer;">$modalNewDocCancel</button>
+                    <button type="button" onclick="submitCreateNewDoc()" style="background: #0366d6; border: 1px solid #0366d6; color: #fff; padding: 6px 14px; border-radius: 4px; font-size: 12px; cursor: pointer; font-weight: bold;">$modalNewDocSubmit</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        function openNewDocModal() {
+            var m = document.getElementById("newDocModal");
+            if (m) {
+                m.style.display = "flex";
+                var fnInput = document.getElementById("newDocFileName");
+                if (fnInput) { fnInput.focus(); }
+            }
+        }
+        function closeNewDocModal() {
+            var m = document.getElementById("newDocModal");
+            if (m) { m.style.display = "none"; }
+        }
+        function submitCreateNewDoc() {
+            var folder = (document.getElementById("newDocFolder").value || "").trim().replace(/\\/g, '/');
+            var fname = (document.getElementById("newDocFileName").value || "").trim();
+            var title = (document.getElementById("newDocTitle").value || "").trim();
+
+            if (!fname) {
+                alert("Please enter file name.");
+                return;
+            }
+            if (fname.indexOf("..") !== -1 || fname.match(/[\:\*\?\"\\\<\>\|]/)) {
+                alert("File name contains invalid characters.");
+                return;
+            }
+            if (!fname.toLowerCase().endsWith(".md")) {
+                fname += ".md";
+            }
+            if (folder && !folder.endsWith("/")) {
+                folder += "/";
+            }
+            folder = folder.replace(/^\/+/, '');
+            var fullRelPath = folder + fname;
+
+            fetch("/api/raw?relPath=" + encodeURIComponent(fullRelPath))
+                .then(function(r) {
+                    if (r.ok) {
+                        alert("$modalNewDocExists");
+                    } else {
+                        closeNewDocModal();
+                        if (typeof openNewWikiEditor === "function") {
+                            openNewWikiEditor(fullRelPath, title || fname.replace(/\.md$/i, ''));
+                        }
+                    }
+                })
+                .catch(function() {
+                    closeNewDocModal();
+                    if (typeof openNewWikiEditor === "function") {
+                        openNewWikiEditor(fullRelPath, title || fname.replace(/\.md$/i, ''));
+                    }
+                });
+        }
+    </script>
+"@
+    }
+
     $langOptionsHtml = foreach ($k in ($script:I18n.Keys | Sort-Object)) {
         $sel = if ($k -eq $Lang) { "selected" } else { "" }
         $label = switch ($k) {
@@ -885,6 +985,7 @@ function Get-MainViewHtml {
             <button type="submit">🔍 {11}</button>
         </form>
         <nav class="top-nav">
+            {34}
             <a href="/stella">{25}</a>
         </nav>
         <div class="nav-dropdown">
@@ -985,11 +1086,12 @@ function Get-MainViewHtml {
     </script>
 
     {222}
+    {35}
 </body>
 </html>
 '@
 
-    $fullHtml = $template.Replace("{0}", $PageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $BodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{18}", $Lang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $navStella).Replace("{31}", $searchLoadingTxtJs).Replace("{33}", $navTools).Replace("{222}", $editorModalHtml)
+    $fullHtml = $template.Replace("{0}", $PageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $BodyContent).Replace("{3}", $navHome).Replace("{4}", $navRecent).Replace("{5}", $navTags).Replace("{6}", $navMaint).Replace("{7}", $navAuthors).Replace("{8}", $navApi).Replace("{9}", $langOptionsStr).Replace("{10}", $searchHolder).Replace("{11}", $searchBtnTxt).Replace("{12}", $docListTitle).Replace("{18}", $Lang).Replace("{19}", $navSettings).Replace("{20}", $navBrand).Replace("{21}", $navShutdown).Replace("{22}", $shutdownConfirmJs).Replace("{23}", $shutdownDoneTitleJs).Replace("{24}", $shutdownDoneDescJs).Replace("{25}", $navStella).Replace("{31}", $searchLoadingTxtJs).Replace("{33}", $navTools).Replace("{34}", $newDocBtnHtml).Replace("{35}", $newDocModalHtml).Replace("{222}", $editorModalHtml)
 
     if (-not [string]::IsNullOrWhiteSpace($chatWidgetHtml)) {
         $fullHtml = $fullHtml.Replace("</body>", "$chatWidgetHtml`n</body>")

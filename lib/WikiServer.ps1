@@ -49,6 +49,7 @@ function Invoke-WikiRouteRequest {
         ".jpeg" = "image/jpeg"
         ".gif"  = "image/gif"
         ".svg"  = "image/svg+xml"
+        ".webp" = "image/webp"
         ".ico"  = "image/x-icon"
         ".md"   = "text/markdown; charset=utf-8"
     }
@@ -419,6 +420,150 @@ function Invoke-WikiRouteRequest {
                 $resPayload["warning"] = "構文警告: $syntaxWarning"
             }
             $jsonRes = $resPayload | ConvertTo-Json
+            Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+            return $false
+        }
+
+        if ($rawPath -eq "/api/upload" -and $request.HttpMethod -eq "POST") {
+            $currCfg = Get-ConfigJson -TargetScriptDir $targetScriptDir
+            $editorEnabled = if ($currCfg.editor -and $null -ne $currCfg.editor.enabled) { [bool]$currCfg.editor.enabled } else { $true }
+            if (-not $editorEnabled) {
+                $jsonRes = @{ success = $false; error = "Editor is currently disabled by system administrator." } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 403
+                return $false
+            }
+
+            # 15MB 超の Content-Length はストリームを読まずに即時 413 (Payload Too Large) で拒否 (DoS対策)
+            if ($request.ContentLength64 -gt 15MB) {
+                $jsonRes = @{ success = $false; error = "Payload too large: Image exceeds 10MB limit." } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 413
+                return $false
+            }
+
+            $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
+            $bodyText = $reader.ReadToEnd()
+            $reqObj = try { $bodyText | ConvertFrom-Json } catch { $null }
+
+            if ($null -eq $reqObj -or [string]::IsNullOrWhiteSpace($reqObj.data) -or [string]::IsNullOrWhiteSpace($reqObj.fileName)) {
+                $jsonRes = @{ success = $false; error = "fileName and data (Base64) are required." } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 400
+                return $false
+            }
+
+            # 拡張子検証: ラスタ画像のみ許可 (.svg は Stored XSS リスクのため除外)
+            $rawExt = [System.IO.Path]::GetExtension($reqObj.fileName).ToLowerInvariant()
+            $allowedExts = @(".png", ".jpg", ".jpeg", ".gif", ".webp")
+            if ($allowedExts -notcontains $rawExt) {
+                $jsonRes = @{ success = $false; error = "Unsupported image format. Allowed formats: PNG, JPG, JPEG, GIF, WEBP." } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 400
+                return $false
+            }
+
+            # Base64 デコード
+            $imageBytes = try {
+                [System.Convert]::FromBase64String($reqObj.data)
+            } catch {
+                $null
+            }
+
+            if ($null -eq $imageBytes -or $imageBytes.Length -eq 0) {
+                $jsonRes = @{ success = $false; error = "Invalid Base64 image payload." } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 400
+                return $false
+            }
+
+            if ($imageBytes.Length -gt 10MB) {
+                $jsonRes = @{ success = $false; error = "Image exceeds 10MB limit." } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 413
+                return $false
+            }
+
+            # 保存先ディレクトリの準備
+            $uploadRelDir = "images\uploads"
+            $uploadFullDir = Join-Path $targetWikiDir $uploadRelDir
+            if (-not (Test-Path $uploadFullDir)) {
+                $null = New-Item -ItemType Directory -Path $uploadFullDir -Force
+            }
+
+            # ファイル名の完全無毒化 & ランダム化 (Windows 予約名・危険文字・衝突防止)
+            $datePrefix = (Get-Date).ToString("yyyyMMdd_HHmmss")
+            $randSuffix = [System.Guid]::NewGuid().ToString("N").Substring(0, 8)
+            $savedFileName = "img_${datePrefix}_${randSuffix}${rawExt}"
+            $saveFilePath = Join-Path $uploadFullDir $savedFileName
+
+            [System.IO.File]::WriteAllBytes($saveFilePath, $imageBytes)
+
+            $cleanOrig = [System.IO.Path]::GetFileNameWithoutExtension($reqObj.fileName)
+            $safeOrigName = [System.Text.RegularExpressions.Regex]::Replace($cleanOrig, '[^\w\.\-\s]', '_')
+            if ([string]::IsNullOrWhiteSpace($safeOrigName)) { $safeOrigName = "image" }
+
+            $wikiPath = "images/uploads/$savedFileName"
+            $url = "/images/uploads/$savedFileName"
+
+            $jsonRes = @{
+                success      = $true
+                wikiPath     = $wikiPath
+                url          = $url
+                originalName = $safeOrigName
+            } | ConvertTo-Json
+
+            Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
+            return $false
+        }
+
+        if ($rawPath -eq "/api/delete" -and $request.HttpMethod -eq "POST") {
+            $currCfg = Get-ConfigJson -TargetScriptDir $targetScriptDir
+            $editorEnabled = if ($currCfg.editor -and $null -ne $currCfg.editor.enabled) { [bool]$currCfg.editor.enabled } else { $true }
+            if (-not $editorEnabled) {
+                $jsonRes = @{ success = $false; error = "Editor is currently disabled by system administrator." } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 403
+                return $false
+            }
+
+            $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
+            $bodyText = $reader.ReadToEnd()
+            $reqObj = try { $bodyText | ConvertFrom-Json } catch { $null }
+
+            if ($null -eq $reqObj -or [string]::IsNullOrWhiteSpace($reqObj.relPath)) {
+                $jsonRes = @{ success = $false; error = "relPath parameter is required." } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 400
+                return $false
+            }
+
+            $cleanRel = $reqObj.relPath.TrimStart('\', '/').Replace('/', '\')
+            $fullTarget = Join-Path $targetWikiDir $cleanRel
+
+            $resolvedTarget = [System.IO.Path]::GetFullPath($fullTarget)
+            if (-not $resolvedTarget.StartsWith($fullWikiDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $jsonRes = @{ success = $false; error = "Access denied: Target path outside Wiki root." } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 403
+                return $false
+            }
+
+            if (-not (Test-Path -LiteralPath $resolvedTarget -PathType Leaf)) {
+                $jsonRes = @{ success = $false; error = "File not found." } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 404
+                return $false
+            }
+
+            # 削除前の最終退避バックアップ作成
+            try {
+                Copy-Item -LiteralPath $resolvedTarget -Destination "$resolvedTarget.bak_deleted" -Force
+                Remove-Item -LiteralPath $resolvedTarget -Force
+            } catch {
+                $jsonRes = @{ success = $false; error = "Failed to delete file: $_" } | ConvertTo-Json
+                Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8" -StatusCode 500
+                return $false
+            }
+
+            # インデックス再構築
+            Build-WikiIndex -TargetWikiDir $targetWikiDir -ForceRefresh | Out-Null
+            if ($currCfg.search -and $currCfg.search.useCache -eq $true) {
+                Save-WikiIndexCache -TargetWikiDir $targetWikiDir -TargetScriptDir $targetScriptDir | Out-Null
+            }
+            $script:CachedSidebarTree = $null
+
+            $jsonRes = @{ success = $true; message = "Document deleted successfully." } | ConvertTo-Json
             Write-SafeHttpResponse -Response $response -Bytes ([System.Text.Encoding]::UTF8.GetBytes($jsonRes)) -ContentType "application/json; charset=utf-8"
             return $false
         }
