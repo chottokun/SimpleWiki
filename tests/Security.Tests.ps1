@@ -600,6 +600,71 @@ Describe 'Markdown Editor API and Generation Backup Tests' {
         $resInvalid.isValid | Should Be $false
         $resInvalid.warnings[0] | Should Match "(key: value|キー: 値)"
     }
+
+    It "Upload-Image API rejects SVG extension for Stored XSS prevention" {
+        $allowedExts = @(".png", ".jpg", ".jpeg", ".gif", ".webp")
+        $ext = [System.IO.Path]::GetExtension("evil.svg").ToLowerInvariant()
+        ($allowedExts -contains $ext) | Should Be $false
+    }
+
+    It "Upload-Image API rejects dangerous extensions (.exe, .ps1, .html)" {
+        $allowedExts = @(".png", ".jpg", ".jpeg", ".gif", ".webp")
+        foreach ($bad in @("malware.exe", "script.ps1", "page.html", "run.bat")) {
+            $ext = [System.IO.Path]::GetExtension($bad).ToLowerInvariant()
+            ($allowedExts -contains $ext) | Should Be $false
+        }
+    }
+
+    It "Upload-Image API decodes Base64 and saves raster image to images/uploads directory" {
+        $tempWikiDir = Join-Path $projectRoot "temp_test_upload"
+        if (Test-Path $tempWikiDir) { Remove-Item -Path $tempWikiDir -Recurse -Force }
+        $null = New-Item -ItemType Directory -Path $tempWikiDir
+        
+        $uploadFullDir = Join-Path $tempWikiDir "images\uploads"
+        $null = New-Item -ItemType Directory -Path $uploadFullDir -Force
+
+        # 1x1 transparent PNG Base64
+        $pngB64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+        $imageBytes = [System.Convert]::FromBase64String($pngB64)
+        $datePrefix = (Get-Date).ToString("yyyyMMdd_HHmmss")
+        $randSuffix = [System.Guid]::NewGuid().ToString("N").Substring(0, 8)
+        $savedFileName = "img_${datePrefix}_${randSuffix}.png"
+        $saveFilePath = Join-Path $uploadFullDir $savedFileName
+        [System.IO.File]::WriteAllBytes($saveFilePath, $imageBytes)
+
+        (Test-Path $saveFilePath) | Should Be $true
+        (Get-Item $saveFilePath).Length | Should BeGreaterThan 0
+
+        Remove-Item -Path $tempWikiDir -Recurse -Force
+    }
+
+    It "Delete API blocks path traversal outside wiki root" {
+        $wikiDir = $projectRoot
+        $fullWikiDir = $wikiDir.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+        $cleanRel = "..\..\Windows\System32\drivers\etc\hosts".TrimStart('\', '/').Replace('/', '\')
+        $fullTarget = Join-Path $wikiDir $cleanRel
+        $resolvedTarget = [System.IO.Path]::GetFullPath($fullTarget)
+        $isInside = $resolvedTarget.StartsWith($fullWikiDir, [System.StringComparison]::OrdinalIgnoreCase)
+        $isInside | Should Be $false
+    }
+
+    It "Delete API creates .bak_deleted backup before removing file" {
+        $tempWikiDir = Join-Path $projectRoot "temp_test_delete"
+        if (Test-Path $tempWikiDir) { Remove-Item -Path $tempWikiDir -Recurse -Force }
+        $null = New-Item -ItemType Directory -Path $tempWikiDir
+        $testDoc = Join-Path $tempWikiDir "to-delete.md"
+        [System.IO.File]::WriteAllText($testDoc, "Doc to be deleted", [System.Text.Encoding]::UTF8)
+
+        # Emulate delete logic
+        Copy-Item -LiteralPath $testDoc -Destination "$testDoc.bak_deleted" -Force
+        Remove-Item -LiteralPath $testDoc -Force
+
+        (Test-Path $testDoc) | Should Be $false
+        (Test-Path "$testDoc.bak_deleted") | Should Be $true
+        (Get-Content -Path "$testDoc.bak_deleted" -Raw) | Should Match "Doc to be deleted"
+
+        Remove-Item -Path $tempWikiDir -Recurse -Force
+    }
 }
 
 

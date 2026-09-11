@@ -38,6 +38,7 @@ function Get-WikiEditorModalHtml {
     $edShortcutHint     = Get-LocalizedStr -Key "editor_shortcut_hint" -Lang $Lang
     $edFullscreen       = Get-LocalizedStr -Key "editor_fullscreen" -Lang $Lang
     $edRestore          = Get-LocalizedStr -Key "editor_restore" -Lang $Lang
+    $edDeleteDocBtn     = Get-LocalizedStr -Key "editor_delete_doc_btn" -Lang $Lang
 
     $edLoadingJs        = ConvertTo-JsString (Get-LocalizedStr -Key "editor_loading" -Lang $Lang)
     $edHistoryLoadingJs = ConvertTo-JsString (Get-LocalizedStr -Key "editor_history_loading" -Lang $Lang)
@@ -47,6 +48,12 @@ function Get-WikiEditorModalHtml {
     $edSavedJs          = ConvertTo-JsString (Get-LocalizedStr -Key "editor_saved" -Lang $Lang)
     $edFullscreenJs     = ConvertTo-JsString $edFullscreen
     $edRestoreJs        = ConvertTo-JsString $edRestore
+    $edDeleteConfirmJs  = ConvertTo-JsString (Get-LocalizedStr -Key "editor_delete_doc_confirm" -Lang $Lang)
+    $edDeleteDoneJs     = ConvertTo-JsString (Get-LocalizedStr -Key "editor_delete_doc_done" -Lang $Lang)
+    $edUnsavedConfirmJs = ConvertTo-JsString (Get-LocalizedStr -Key "editor_unsaved_confirm" -Lang $Lang)
+    $edUploadErrTypeJs  = ConvertTo-JsString (Get-LocalizedStr -Key "editor_upload_error_type" -Lang $Lang)
+    $edUploadErrSizeJs  = ConvertTo-JsString (Get-LocalizedStr -Key "editor_upload_error_size" -Lang $Lang)
+    $edUploadFailedJs   = ConvertTo-JsString (Get-LocalizedStr -Key "editor_upload_failed" -Lang $Lang)
 
     $html = @'
     <!-- Wiki Editor Modal -->
@@ -158,8 +165,9 @@ function Get-WikiEditorModalHtml {
             <textarea id="wikiEditorBodyTextarea" class="wiki-editor-textarea" placeholder="$edBodyPlaceholder"></textarea>
 
             <div class="wiki-editor-footer">
-                <div style="font-size: 12px; color: #586069;">
-                    <span>$edShortcutHint</span>
+                <div style="display: flex; align-items: center; gap: 14px;">
+                    <span style="font-size: 12px; color: #586069;">$edShortcutHint</span>
+                    <button id="wikiEditorDeleteBtn" type="button" onclick="deleteWikiMarkdown()" style="background: none; border: 1px solid #d73a49; color: #cb2431; font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer; display: none;" title="$edBtnDelete">$edBtnDelete</button>
                 </div>
                 <div style="display: flex; gap: 8px;">
                     <button class="wiki-editor-cancel-btn" onclick="closeWikiEditor()">$edBtnCancel</button>
@@ -172,6 +180,125 @@ function Get-WikiEditorModalHtml {
         var isYamlRawMode = false;
         var toastEditorInstance = null;
         var currentEditorType = "toastui";
+        var _savedSnapshot = "";
+
+        function normalizeContentForComparison(str) {
+            if (!str) return "";
+            return str.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+        }
+
+        function isEditorDirty() {
+            var current = normalizeContentForComparison(generateMarkdownWithYaml(isYamlRawMode));
+            return current !== _savedSnapshot;
+        }
+
+        function calculateRelativeAssetPath(fromDocRelPath, toAssetRelPath) {
+            if (!fromDocRelPath) return "/" + toAssetRelPath;
+            var normDoc = fromDocRelPath.replace(/\\/g, '/').replace(/^\/+/, '');
+            var normAsset = toAssetRelPath.replace(/\\/g, '/').replace(/^\/+/, '');
+            var docParts = normDoc.split('/');
+            docParts.pop(); // ファイル名を除いてディレクトリ階層のみ取得
+
+            var prefix = "";
+            for (var i = 0; i < docParts.length; i++) {
+                prefix += "../";
+            }
+            return prefix + normAsset;
+        }
+
+        function uploadImageFile(file, onSuccess) {
+            if (!file) return;
+            var rawExt = file.name ? file.name.substring(file.name.lastIndexOf('.')).toLowerCase() : "";
+            var allowed = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
+            if (allowed.indexOf(rawExt) === -1 && file.type && file.type.indexOf("image/") === -1) {
+                alert("$edJsUploadErrType");
+                return;
+            }
+            if (file.size && file.size > 10 * 1024 * 1024) {
+                alert("$edJsUploadErrSize");
+                return;
+            }
+
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                var base64Data = e.target.result.split(',')[1];
+                var curDocPath = document.getElementById("wikiEditorPath").textContent || "";
+
+                fetch("/api/upload", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json; charset=utf-8" },
+                    body: JSON.stringify({
+                        fileName: file.name || "image.png",
+                        contentType: file.type || "image/png",
+                        data: base64Data
+                    })
+                })
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data.success && data.wikiPath) {
+                        var relUrl = calculateRelativeAssetPath(curDocPath, data.wikiPath);
+                        var altText = data.originalName || file.name || "image";
+                        if (typeof onSuccess === "function") {
+                            onSuccess(relUrl, altText);
+                        }
+                    } else {
+                        var errMsg = "$edJsUploadFailed".replace("{0}", (data.error || "Unknown error"));
+                        alert(errMsg);
+                    }
+                })
+                .catch(function(err) {
+                    var errMsg = "$edJsUploadFailed".replace("{0}", err);
+                    alert(errMsg);
+                });
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function setupTextareaImageUpload(textarea) {
+            if (!textarea || textarea._hasImageUploadListener) return;
+            textarea._hasImageUploadListener = true;
+
+            textarea.addEventListener("paste", function(e) {
+                var items = (e.clipboardData || window.clipboardData) ? (e.clipboardData || window.clipboardData).items : null;
+                if (!items) return;
+                for (var i = 0; i < items.length; i++) {
+                    if (items[i].type && items[i].type.indexOf("image") !== -1) {
+                        var blob = items[i].getAsFile();
+                        if (blob) {
+                            e.preventDefault();
+                            uploadImageFile(blob, function(relUrl, altText) {
+                                insertMarkdownAtCursor(textarea, "![" + altText + "](" + relUrl + ")");
+                            });
+                        }
+                    }
+                }
+            });
+
+            textarea.addEventListener("dragover", function(e) {
+                e.preventDefault();
+            });
+
+            textarea.addEventListener("drop", function(e) {
+                if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    var file = e.dataTransfer.files[0];
+                    if (file.type && file.type.indexOf("image") !== -1) {
+                        e.preventDefault();
+                        uploadImageFile(file, function(relUrl, altText) {
+                            insertMarkdownAtCursor(textarea, "![" + altText + "](" + relUrl + ")");
+                        });
+                    }
+                }
+            });
+        }
+
+        function insertMarkdownAtCursor(textarea, textToInsert) {
+            var startPos = textarea.selectionStart || 0;
+            var endPos = textarea.selectionEnd || 0;
+            var curVal = textarea.value;
+            textarea.value = curVal.substring(0, startPos) + textToInsert + curVal.substring(endPos);
+            textarea.selectionStart = textarea.selectionEnd = startPos + textToInsert.length;
+            textarea.focus();
+        }
 
         function toggleMetaAccordion(forceOpen) {
             var body = document.getElementById("wikiMetaBody");
@@ -218,7 +345,14 @@ function Get-WikiEditorModalHtml {
                         height: '100%',
                         initialEditType: 'markdown',
                         previewStyle: 'vertical',
-                        initialValue: initialContent || ""
+                        initialValue: initialContent || "",
+                        hooks: {
+                            addImageBlobHook: function(blob, callback) {
+                                uploadImageFile(blob, function(relUrl, altText) {
+                                    callback(relUrl, altText);
+                                });
+                            }
+                        }
                     });
                 } else {
                     toastEditorInstance.setMarkdown(initialContent || "");
@@ -227,6 +361,7 @@ function Get-WikiEditorModalHtml {
                 toastContainer.style.display = "none";
                 textareaContainer.style.display = "block";
                 textareaContainer.value = initialContent || "";
+                setupTextareaImageUpload(textareaContainer);
             }
         }
 
@@ -502,6 +637,9 @@ function Get-WikiEditorModalHtml {
             document.getElementById("rawYamlTextarea").value = "";
             switchYamlMode(false);
 
+            var delBtn = document.getElementById("wikiEditorDeleteBtn");
+            if (delBtn) delBtn.style.display = "inline-block";
+
             const selectEl = document.getElementById("wikiEditorHistorySelect");
             selectEl.innerHTML = '<option value="">' + "$edLatest" + '</option>';
 
@@ -521,6 +659,10 @@ function Get-WikiEditorModalHtml {
                             populateYamlForm(parsed.meta);
                             setEditorContent(parsed.bodyText);
                             document.getElementById("rawYamlTextarea").value = parsed.rawYaml;
+
+                            setTimeout(function() {
+                                _savedSnapshot = normalizeContentForComparison(generateMarkdownWithYaml(false));
+                            }, 300);
                         })
                         .catch(err => {
                             setEditorContent("$edJsLoadError" + err);
@@ -539,6 +681,62 @@ function Get-WikiEditorModalHtml {
                         });
                     }
                 }).catch(() => {});
+
+            fetch("/api/config?action=glossary")
+                .then(r => r.json())
+                .then(data => {
+                    const datalistEl = document.getElementById("glossaryTagDatalist");
+                    if (datalistEl && data.terms) {
+                        datalistEl.innerHTML = "";
+                        data.terms.forEach(t => {
+                            const opt = document.createElement("option");
+                            opt.value = t;
+                            datalistEl.appendChild(opt);
+                        });
+                    }
+                }).catch(() => {});
+
+            document.getElementById("wikiEditorModal").style.display = "flex";
+        }
+
+        function openNewWikiEditor(targetRelPath, docTitle) {
+            if (!targetRelPath) return;
+
+            document.getElementById("wikiEditorPath").textContent = targetRelPath;
+            toggleMetaAccordion(true);
+
+            var delBtn = document.getElementById("wikiEditorDeleteBtn");
+            if (delBtn) delBtn.style.display = "none";
+
+            const selectEl = document.getElementById("wikiEditorHistorySelect");
+            selectEl.innerHTML = '<option value="">' + "$edLatest" + '</option>';
+
+            var todayStr = new Date().toISOString().split('T')[0];
+            var initialMeta = {
+                title: docTitle || "New Document",
+                type: "Guide",
+                status: "draft",
+                version: "1.0.0",
+                last_updated: todayStr
+            };
+
+            fetch("/api/config")
+                .then(r => r.json())
+                .then(cfg => {
+                    if (cfg && cfg.editor && cfg.editor.type) {
+                        currentEditorType = cfg.editor.type;
+                    }
+                }).catch(() => {})
+                .finally(() => {
+                    populateYamlForm(initialMeta);
+                    setEditorContent("");
+                    document.getElementById("rawYamlTextarea").value = "";
+                    switchYamlMode(false);
+
+                    setTimeout(function() {
+                        _savedSnapshot = normalizeContentForComparison(generateMarkdownWithYaml(false));
+                    }, 300);
+                });
 
             fetch("/api/config?action=glossary")
                 .then(r => r.json())
@@ -605,7 +803,14 @@ function Get-WikiEditorModalHtml {
             }, 50);
         }
 
-        function closeWikiEditor() {
+        function closeWikiEditor(force) {
+            if (!force && isEditorDirty()) {
+                if (!confirm("$edJsUnsavedConfirm")) {
+                    return;
+                }
+            }
+            _savedSnapshot = "";
+
             var modal = document.getElementById("wikiEditorModal");
             var container = modal.querySelector(".wiki-editor-container");
             var btn = document.getElementById("wikiEditorFullscreenBtn");
@@ -635,7 +840,8 @@ function Get-WikiEditorModalHtml {
             .then(data => {
                 if (data.success) {
                     alert(data.warning ? "$edJsSavedWarning" + data.warning : "$edJsSaved");
-                    closeWikiEditor();
+                    _savedSnapshot = normalizeContentForComparison(finalMarkdown);
+                    closeWikiEditor(true);
                     location.reload();
                 } else {
                     alert("Error: " + (data.error || "Save failed"));
@@ -643,6 +849,34 @@ function Get-WikiEditorModalHtml {
             })
             .catch(err => {
                 alert("Error saving document: " + err);
+            });
+        }
+
+        function deleteWikiMarkdown() {
+            const relPath = document.getElementById("wikiEditorPath").textContent;
+            if (!relPath) return;
+
+            var msg = "$edJsDeleteConfirm".replace("{0}", relPath);
+            if (!confirm(msg)) return;
+
+            fetch("/api/delete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json; charset=utf-8" },
+                body: JSON.stringify({ relPath: relPath })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    alert("$edJsDeleteDone");
+                    _savedSnapshot = "";
+                    closeWikiEditor(true);
+                    window.location.href = "/";
+                } else {
+                    alert("Error: " + (data.error || "Delete failed"));
+                }
+            })
+            .catch(err => {
+                alert("Error deleting document: " + err);
             });
         }
 
@@ -663,6 +897,14 @@ function Get-WikiEditorModalHtml {
                     }
                 });
             }
+
+            window.addEventListener("beforeunload", function(e) {
+                var modal = document.getElementById("wikiEditorModal");
+                if (modal && modal.style.display === "flex" && isEditorDirty()) {
+                    e.preventDefault();
+                    e.returnValue = "";
+                }
+            });
         });
     </script>
 '@
@@ -703,6 +945,13 @@ function Get-WikiEditorModalHtml {
         '$edJsHistoryLoading' = $edHistoryLoadingJs
         '$edJsLoadError'      = $edLoadErrorJs
         '$edJsBackupLoadErr'  = $edBackupLoadErrJs
+        '$edBtnDelete'        = $edDeleteDocBtn
+        '$edJsDeleteConfirm'  = $edDeleteConfirmJs
+        '$edJsDeleteDone'     = $edDeleteDoneJs
+        '$edJsUnsavedConfirm' = $edUnsavedConfirmJs
+        '$edJsUploadErrType'  = $edUploadErrTypeJs
+        '$edJsUploadErrSize'  = $edUploadErrSizeJs
+        '$edJsUploadFailed'   = $edUploadFailedJs
         '$edJsSavedWarning'   = $edSavedWarningJs
         '$edJsSaved'          = $edSavedJs
     }
