@@ -32,7 +32,7 @@ function Get-SidebarHtml {
         }
     }
 
-    $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath $currentRelPath -wikiDir $targetWiki
+    $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath $currentRelPath -wikiDir $targetWiki -Lang $Lang
 
     return $treeHtml
 }
@@ -738,14 +738,55 @@ function Get-MainViewHtml {
     $newDocBtnHtml = ""
     $newDocModalHtml = ""
     if ($editorEnabled) {
-        $btnNewDocTxt      = Get-LocalizedStr -Key "btn_new_doc" -Lang $Lang
-        $modalNewDocTitle  = Get-LocalizedStr -Key "modal_new_doc_title" -Lang $Lang
-        $modalNewDocFolder = Get-LocalizedStr -Key "modal_new_doc_folder" -Lang $Lang
-        $modalNewDocFile   = Get-LocalizedStr -Key "modal_new_doc_filename" -Lang $Lang
-        $modalNewDocPage   = Get-LocalizedStr -Key "modal_new_doc_page_title" -Lang $Lang
-        $modalNewDocSubmit = Get-LocalizedStr -Key "modal_new_doc_submit" -Lang $Lang
-        $modalNewDocCancel = Get-LocalizedStr -Key "modal_new_doc_cancel" -Lang $Lang
-        $modalNewDocExists = ConvertTo-JsString (Get-LocalizedStr -Key "modal_new_doc_exists" -Lang $Lang)
+        $btnNewDocTxt           = Get-LocalizedStr -Key "btn_new_doc" -Lang $Lang
+        $modalNewDocTitle       = Get-LocalizedStr -Key "modal_new_doc_title" -Lang $Lang
+        $modalNewDocFolder      = Get-LocalizedStr -Key "modal_new_doc_folder" -Lang $Lang
+        $modalNewDocSelectFolder = Get-LocalizedStr -Key "modal_new_doc_select_folder" -Lang $Lang
+        $modalNewDocCreateFolder = Get-LocalizedStr -Key "modal_new_doc_create_new_folder" -Lang $Lang
+        $modalNewDocCustomFolder = Get-LocalizedStr -Key "modal_new_doc_custom_folder" -Lang $Lang
+        $modalNewDocNewFolderHint = Get-LocalizedStr -Key "modal_new_doc_new_folder_hint" -Lang $Lang
+        $modalNewDocFile        = Get-LocalizedStr -Key "modal_new_doc_filename" -Lang $Lang
+        $modalNewDocPage        = Get-LocalizedStr -Key "modal_new_doc_page_title" -Lang $Lang
+        $modalNewDocSubmit      = Get-LocalizedStr -Key "modal_new_doc_submit" -Lang $Lang
+        $modalNewDocCancel      = Get-LocalizedStr -Key "modal_new_doc_cancel" -Lang $Lang
+        $modalNewDocExists      = ConvertTo-JsString (Get-LocalizedStr -Key "modal_new_doc_exists" -Lang $Lang)
+
+        # Context folder auto-detection
+        $defaultContextFolder = "docs/"
+        if (-not [string]::IsNullOrWhiteSpace($RelPath)) {
+            $cleanRel = $RelPath.Replace('\', '/').TrimStart('/')
+            if ($cleanRel -notmatch '^(search|tags|maintenance|authors|settings|stella|recent)') {
+                $parentDir = [System.IO.Path]::GetDirectoryName($cleanRel).Replace('\', '/').Trim('/')
+                if (-not [string]::IsNullOrWhiteSpace($parentDir)) {
+                    $defaultContextFolder = "$parentDir/"
+                }
+            }
+        }
+
+        # Dynamically extract existing folders from index
+        $folderList = [System.Collections.Generic.List[string]]::new()
+        if ($null -ne $script:WikiIndex -and $script:WikiIndex.Count -gt 0) {
+            foreach ($item in $script:WikiIndex) {
+                if (-not $item.RelPath) { continue }
+                $dir = [System.IO.Path]::GetDirectoryName($item.RelPath.Replace('\', '/')).Replace('\', '/').Trim('/')
+                if (-not [string]::IsNullOrWhiteSpace($dir)) {
+                    $dirWithSlash = "$dir/"
+                    if (-not $folderList.Contains($dirWithSlash)) {
+                        $folderList.Add($dirWithSlash)
+                    }
+                }
+            }
+        }
+        if (-not $folderList.Contains("docs/")) {
+            $folderList.Add("docs/")
+        }
+        $sortedFolders = $folderList | Sort-Object
+
+        $folderOptionsArray = foreach ($f in $sortedFolders) {
+            $encF = [System.Net.WebUtility]::HtmlEncode($f)
+            "<option value='$encF'>$encF</option>"
+        }
+        $folderOptionsHtml = $folderOptionsArray -join "`n                        "
 
         $newDocBtnHtml = "<button type='button' onclick='openNewDocModal()' style='background: #28a745; color: #fff; border: 1px solid #218838; padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; font-weight: bold; white-space: nowrap;'>$btnNewDocTxt</button>"
         
@@ -759,8 +800,16 @@ function Get-MainViewHtml {
             </div>
             <div style="padding: 16px;">
                 <div style="margin-bottom: 12px;">
-                    <label for="newDocFolder" style="display: block; font-size: 12px; font-weight: bold; color: #24292e; margin-bottom: 4px;">$modalNewDocFolder</label>
-                    <input type="text" id="newDocFolder" value="docs/" style="width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px;" placeholder="docs/">
+                    <label for="newDocFolderSelect" style="display: block; font-size: 12px; font-weight: bold; color: #24292e; margin-bottom: 4px;">$modalNewDocSelectFolder</label>
+                    <select id="newDocFolderSelect" onchange="onNewDocFolderChange()" style="width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px;">
+                        $folderOptionsHtml
+                        <option value="__new__">$modalNewDocCreateFolder</option>
+                    </select>
+                </div>
+                <div id="newDocCustomFolderGroup" style="display: none; margin-bottom: 12px; background: #f6f8fa; padding: 8px 10px; border-radius: 6px; border: 1px solid #e1e4e8;">
+                    <label for="newDocCustomFolder" style="display: block; font-size: 12px; font-weight: bold; color: #24292e; margin-bottom: 4px;">$modalNewDocCustomFolder</label>
+                    <input type="text" id="newDocCustomFolder" placeholder="docs/new-folder/" style="width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px;">
+                    <div style="font-size: 11px; color: #0366d6; margin-top: 4px; font-weight: 500;">$modalNewDocNewFolderHint</div>
                 </div>
                 <div style="margin-bottom: 12px;">
                     <label for="newDocFileName" style="display: block; font-size: 12px; font-weight: bold; color: #24292e; margin-bottom: 4px;">$modalNewDocFile</label>
@@ -778,20 +827,84 @@ function Get-MainViewHtml {
         </div>
     </div>
     <script>
-        function openNewDocModal() {
-            var m = document.getElementById("newDocModal");
-            if (m) {
-                m.style.display = "flex";
-                var fnInput = document.getElementById("newDocFileName");
-                if (fnInput) { fnInput.focus(); }
+        var defaultContextFolder = "$defaultContextFolder";
+
+        function onNewDocFolderChange() {
+            var sel = document.getElementById("newDocFolderSelect");
+            var customGroup = document.getElementById("newDocCustomFolderGroup");
+            var fnInput = document.getElementById("newDocFileName");
+            if (!sel || !customGroup) return;
+
+            if (sel.value === "__new__") {
+                customGroup.style.display = "block";
+                var customInput = document.getElementById("newDocCustomFolder");
+                if (customInput && !customInput.value) {
+                    customInput.value = "docs/new-folder/";
+                }
+                if (fnInput && (!fnInput.value || fnInput.value === "sample.md")) {
+                    fnInput.value = "index.md";
+                }
+                if (customInput) { customInput.focus(); }
+            } else {
+                customGroup.style.display = "none";
+                if (fnInput && fnInput.value === "index.md") {
+                    fnInput.value = "";
+                }
             }
         }
+
+        function openNewDocModal(targetFolder) {
+            var m = document.getElementById("newDocModal");
+            if (!m) return;
+            m.style.display = "flex";
+
+            var folderToSelect = targetFolder || defaultContextFolder;
+            if (folderToSelect && !folderToSelect.endsWith("/")) {
+                folderToSelect += "/";
+            }
+
+            var sel = document.getElementById("newDocFolderSelect");
+            var customGroup = document.getElementById("newDocCustomFolderGroup");
+            var customInput = document.getElementById("newDocCustomFolder");
+            var fnInput = document.getElementById("newDocFileName");
+
+            if (sel) {
+                var found = false;
+                for (var i = 0; i < sel.options.length; i++) {
+                    if (sel.options[i].value === folderToSelect) {
+                        sel.selectedIndex = i;
+                        found = true;
+                        break;
+                    }
+                }
+                if (found) {
+                    if (customGroup) customGroup.style.display = "none";
+                } else {
+                    sel.value = "__new__";
+                    if (customGroup) customGroup.style.display = "block";
+                    if (customInput) customInput.value = folderToSelect;
+                    if (fnInput && (!fnInput.value || fnInput.value === "sample.md")) {
+                        fnInput.value = "index.md";
+                    }
+                }
+            }
+            if (fnInput) { fnInput.focus(); }
+        }
+
         function closeNewDocModal() {
             var m = document.getElementById("newDocModal");
             if (m) { m.style.display = "none"; }
         }
+
         function submitCreateNewDoc() {
-            var folder = (document.getElementById("newDocFolder").value || "").trim().replace(/\\/g, '/');
+            var sel = document.getElementById("newDocFolderSelect");
+            var folder = "";
+            if (sel && sel.value === "__new__") {
+                folder = (document.getElementById("newDocCustomFolder").value || "").trim().replace(/\\/g, '/');
+            } else if (sel) {
+                folder = (sel.value || "").trim().replace(/\\/g, '/');
+            }
+
             var fname = (document.getElementById("newDocFileName").value || "").trim();
             var title = (document.getElementById("newDocTitle").value || "").trim();
 
@@ -801,6 +914,10 @@ function Get-MainViewHtml {
             }
             if (fname.indexOf("..") !== -1 || fname.match(/[\:\*\?\"\\\<\>\|]/)) {
                 alert("File name contains invalid characters.");
+                return;
+            }
+            if (folder.indexOf("..") !== -1 || folder.match(/[\:\*\?\"\\\<\>\|]/)) {
+                alert("Folder name contains invalid characters.");
                 return;
             }
             if (!fname.toLowerCase().endsWith(".md")) {
@@ -886,8 +1003,10 @@ function Get-MainViewHtml {
     nav.sidebar ul { list-style: none; padding: 0; margin: 0; }
     nav.sidebar ul ul { padding-left: 12px; margin-top: 2px; }
     nav.sidebar li.nav-folder { margin-top: 4px; margin-bottom: 4px; }
-    nav.sidebar summary.folder-title { font-weight: bold; font-size: 13px; color: #586069; padding: 4px 6px; cursor: pointer; user-select: none; }
+    nav.sidebar summary.folder-title { display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 13px; color: #586069; padding: 4px 6px; cursor: pointer; user-select: none; }
     nav.sidebar summary.folder-title:hover { color: #0366d6; }
+    .sidebar-add-doc-btn { background: none; border: none; color: #586069; opacity: 0.5; font-size: 12px; font-weight: bold; width: 20px; height: 20px; line-height: 18px; text-align: center; border-radius: 3px; cursor: pointer; padding: 0; transition: all 0.15s ease-in-out; }
+    summary.folder-title:hover .sidebar-add-doc-btn, .sidebar-add-doc-btn:hover, .sidebar-add-doc-btn:focus { opacity: 1; background: #0366d6; color: #fff; }
     nav.sidebar li.nav-file a { display: block; padding: 4px 8px; color: #0366d6; text-decoration: none; border-radius: 6px; font-size: 13px; word-break: break-all; }
     nav.sidebar li.nav-file a:hover { background-color: #f0f3f6; text-decoration: none; }
     nav.sidebar li.nav-file.active > a { background-color: #0366d6; color: #ffffff !important; font-weight: bold; }

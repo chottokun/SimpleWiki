@@ -648,6 +648,26 @@ Describe 'Markdown Editor API and Generation Backup Tests' {
         $isInside | Should Be $false
     }
 
+    It "New document folder and filename path traversal attempts are blocked" {
+        $wikiDir = $projectRoot
+        $fullWikiDir = $wikiDir.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+
+        $traversalPaths = @(
+            "../etc/passwd",
+            "docs/../../secret.txt",
+            "docs/sub/../../../etc/hosts",
+            "folder/../../"
+        )
+
+        foreach ($tp in $traversalPaths) {
+            $cleanRel = $tp.Replace('/', '\').TrimStart('\')
+            $fullTarget = Join-Path $wikiDir $cleanRel
+            $resolvedTarget = [System.IO.Path]::GetFullPath($fullTarget)
+            $isInside = $resolvedTarget.StartsWith($fullWikiDir, [System.StringComparison]::OrdinalIgnoreCase)
+            $isInside | Should Be $false
+        }
+    }
+
     It "Delete API creates .bak_deleted backup before removing file" {
         $tempWikiDir = Join-Path $projectRoot "temp_test_delete"
         if (Test-Path $tempWikiDir) { Remove-Item -Path $tempWikiDir -Recurse -Force }
