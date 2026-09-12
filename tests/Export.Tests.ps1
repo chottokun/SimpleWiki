@@ -338,3 +338,53 @@ Describe 'Export-GUI.ps1 GUI Component and Syntax Validation' {
         $content | Should Match 'NoAuthorsPage'
     }
 }
+
+Describe "Static Export Tree and Navigation Helper Unit Tests" {
+    BeforeAll {
+        . (Join-Path $projectRoot "lib\WikiMetadata.ps1")
+        . (Join-Path $projectRoot "lib\WikiExportHelpers.ps1")
+    }
+
+    It "Build-FileTreeNode creates hierarchical folder structure from markdown file list" {
+        $dummyFiles = @(
+            [PSCustomObject]@{ FullName = "/app/markdown_sample/index.md"; BaseName = "index" },
+            [PSCustomObject]@{ FullName = "/app/markdown_sample/docs/guide.md"; BaseName = "guide" }
+        )
+        $treeNode = Build-FileTreeNode -allMdFiles $dummyFiles -wikiDir "/app/markdown_sample"
+        $treeNode.Files.Count | Should Be 1
+        $treeNode.SubFolders.Contains("docs") | Should Be $true
+        $treeNode.SubFolders["docs"].Files.Count | Should Be 1
+    }
+
+    It "Test-ExportNodeHasActiveFile identifies if active file exists in node tree" {
+        $dummyFile1 = [PSCustomObject]@{ FullName = "/app/markdown_sample/index.md"; BaseName = "index" }
+        $dummyFile2 = [PSCustomObject]@{ FullName = "/app/markdown_sample/docs/guide.md"; BaseName = "guide" }
+        $treeNode = Build-FileTreeNode -allMdFiles @($dummyFile1, $dummyFile2) -wikiDir "/app/markdown_sample"
+
+        (Test-ExportNodeHasActiveFile -node $treeNode.SubFolders["docs"] -currentFile $dummyFile2) | Should Be $true
+        (Test-ExportNodeHasActiveFile -node $treeNode.SubFolders["docs"] -currentFile $dummyFile1) | Should Be $false
+    }
+
+    It "Render-ExportFolderTreeHtml renders HTML list with details and active file highlights" {
+        $dummyFile1 = [PSCustomObject]@{ FullName = "/app/markdown_sample/index.md"; BaseName = "index" }
+        $dummyFile2 = [PSCustomObject]@{ FullName = "/app/markdown_sample/docs/guide.md"; BaseName = "guide" }
+        $treeNode = Build-FileTreeNode -allMdFiles @($dummyFile1, $dummyFile2) -wikiDir "/app/markdown_sample"
+        $currentUri = New-Object System.Uri("/app/markdown_sample/docs/guide.html")
+
+        $html = Render-ExportFolderTreeHtml -node $treeNode -currentFile $dummyFile2 -currentUri $currentUri
+        $html | Should Match "<li class='nav-folder'>"
+        $html | Should Match "<details open>"
+        $html | Should Match "class='active'"
+    }
+
+    It "Get-ExportSidebarHtml builds sidebar tree HTML for single file mode and multi-file mode" {
+        $dummyFile1 = [PSCustomObject]@{ FullName = "/app/markdown_sample/index.md"; BaseName = "index" }
+        $dummyFiles = @($dummyFile1)
+
+        $htmlSingle = Get-ExportSidebarHtml -currentFile $null -allMdFiles $dummyFiles -wikiDir "/app/markdown_sample" -IsSingleFileMode
+        $htmlSingle | Should Match "href='#index'"
+
+        $htmlMulti = Get-ExportSidebarHtml -currentFile $dummyFile1 -allMdFiles $dummyFiles -wikiDir "/app/markdown_sample"
+        $htmlMulti | Should Match "class='active'"
+    }
+}
