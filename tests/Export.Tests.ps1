@@ -304,6 +304,66 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
     }
 }
 
+Describe "Convert-MermaidToSvgMarkup Unit Tests" {
+    BeforeAll {
+        $exportHelpers = Join-Path $projectRoot "lib\WikiExportHelpers.ps1"
+        . $exportHelpers
+    }
+
+    It "Converts <pre class='mermaid'> into SVG markup block" {
+        $inputHtml = '<pre class="mermaid">graph TD;&#10;A--&gt;B;</pre>'
+        $result = Convert-MermaidToSvgMarkup -html $inputHtml
+
+        $result | Should Match '<div class="mermaid-svg"'
+        $result | Should Match '<svg '
+        $result | Should Match 'Mermaid Diagram \(SVG Static Mode\)'
+        $result | Should Match 'graph TD;'
+    }
+
+    It "Converts <pre><code class='language-mermaid'> into SVG markup block" {
+        $inputHtml = '<pre><code class="language-mermaid">graph LR;&#10;X--&gt;Y;</code></pre>'
+        $result = Convert-MermaidToSvgMarkup -html $inputHtml
+
+        $result | Should Match '<div class="mermaid-svg"'
+        $result | Should Match '<svg '
+        $result | Should Match 'graph LR;'
+    }
+
+    It "Encodes special characters (HTML entities) in Mermaid code" {
+        $inputHtml = '<pre class="mermaid">A & B < C > D</pre>'
+        $result = Convert-MermaidToSvgMarkup -html $inputHtml
+
+        $result | Should Match 'A &amp; B &lt; C &gt; D'
+    }
+
+    It "Leaves non-Mermaid pre code blocks unchanged" {
+        $inputHtml = '<pre><code class="language-bash">echo "Hello World"</code></pre>'
+        $result = Convert-MermaidToSvgMarkup -html $inputHtml
+
+        $result | Should Be $inputHtml
+    }
+
+    It "Converts multiple Mermaid blocks while leaving non-Mermaid blocks untouched" {
+        $inputHtml = @"
+<p>Intro</p>
+<pre class="mermaid">graph TD; A-->B;</pre>
+<pre><code class="language-bash">echo 123</code></pre>
+<pre><code class="language-mermaid">sequenceDiagram; Alice->>Bob: Hi;</code></pre>
+"@
+        $result = Convert-MermaidToSvgMarkup -html $inputHtml
+
+        $matches = [regex]::Matches($result, '<div class="mermaid-svg"')
+        $matches.Count | Should Be 2
+        $result | Should Match '<pre><code class="language-bash">echo 123</code></pre>'
+    }
+
+    It "Returns original HTML string when no Mermaid blocks exist or when given empty string" {
+        $inputHtml = '<p>No mermaid diagram here</p>'
+        (Convert-MermaidToSvgMarkup -html $inputHtml) | Should Be $inputHtml
+        (Convert-MermaidToSvgMarkup -html "") | Should Be ""
+    }
+}
+
 
 Describe 'Export-GUI.ps1 GUI Component and Syntax Validation' {
     It 'Export-GUI.ps1 file exists and passes AST syntax parsing' {
