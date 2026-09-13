@@ -738,6 +738,7 @@ Describe "Multi-Language (i18n) & Localization Tests" {
 Describe "UI Shutdown and Brand Title Customization Tests" {
     BeforeAll {
         . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -DotSourceOnly
+        $script:allScriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
     }
 
     It "Localizes brand_title correctly for ja and en" {
@@ -772,7 +773,7 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
     }
 
     It "Start-MarkdigWiki.ps1 includes /api/shutdown endpoint and brand_title placeholder" {
-        $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
+        $scriptContent = $script:allScriptContent
         $scriptContent | Should Match '/api/shutdown'
         $scriptContent | Should Match 'shutdown-btn'
         $scriptContent | Should Match 'shutdownWikiServer'
@@ -791,7 +792,7 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
     }
 
     It "Start-MarkdigWiki.ps1 binds all editor i18n variables into template and JS" {
-        $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
+        $scriptContent = $script:allScriptContent
         $scriptContent | Should Match 'editor_gen_prefix'
         $scriptContent | Should Match 'editor_warning_yaml'
         $scriptContent | Should Match 'editor_loading'
@@ -826,7 +827,7 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
     }
 
     It "Start-MarkdigWiki.ps1 contains Form & RAW YAML separated editor modal HTML and JS functions" {
-        $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
+        $scriptContent = $script:allScriptContent
         $scriptContent | Should Match 'id="yamlFormContainer"'
         $scriptContent | Should Match 'id="yamlRawContainer"'
         $scriptContent | Should Match 'id="wikiEditorBodyTextarea"'
@@ -843,14 +844,14 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
     }
 
     It "Start-MarkdigWiki.ps1 includes keyboard shortcuts for editor modal (Ctrl+S save and Esc cancel)" {
-        $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
+        $scriptContent = $script:allScriptContent
         $scriptContent | Should Match 'addEventListener\("keydown"'
         $scriptContent | Should Match 'saveWikiMarkdown\(\)'
         $scriptContent | Should Match 'closeWikiEditor\(\)'
     }
 
     It "Start-MarkdigWiki.ps1 sanitizes RAW YAML delimiters and uses local date generation" {
-        $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
+        $scriptContent = $script:allScriptContent
         $scriptContent | Should Match 'replace\(\/\^---\\r\?\\n\?\/, \x27\x27\)\.replace\(\/\\r\?\\n\?---\\r\?\$\/, \x27\x27\)'
         $scriptContent | Should Match 'd\.getFullYear\(\)'
         $scriptContent | Should Match 'd\.getMonth\(\) \+ 1'
