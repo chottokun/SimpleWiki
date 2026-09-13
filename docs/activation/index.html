@@ -538,54 +538,64 @@
                 var enc = new TextEncoder();
 
                 if (currentMode === 'bound') {
-                    // マシン固有ロック形式
+                    // マシン固有ロック形式 (V2: ランダムソルト ＆ ランダム IV)
                     var cleanMachine = machineId.toUpperCase();
                     var cleanEmail = email.toLowerCase();
                     var seed = cleanMachine + ":" + cleanEmail;
 
                     var passBytes = enc.encode("SimpleWiki-ActKey-" + seed);
-                    var saltBytes = enc.encode("SimpleWiki-Activation-Salt-2026");
+                    var saltBytes = new Uint8Array(16);
+                    crypto.getRandomValues(saltBytes);
+                    var ivBytes = new Uint8Array(16);
+                    crypto.getRandomValues(ivBytes);
 
-                    // 1. PBKDF2 キー導出 (5,000 回, SHA-1 または SHA-256)
-                    // .NET Rfc2898DeriveBytes(byte[], byte[], int) 既定は HMAC-SHA1
                     var baseKey = await crypto.subtle.importKey("raw", passBytes, "PBKDF2", false, ["deriveBits"]);
-                    var derivedBits = await crypto.subtle.deriveBits({
+                    var keyBits = await crypto.subtle.deriveBits({
                         name: "PBKDF2",
                         salt: saltBytes,
                         iterations: 5000,
                         hash: "SHA-1"
-                    }, baseKey, 384); // 32 bytes (Key) + 16 bytes (IV) = 48 bytes = 384 bits
+                    }, baseKey, 256);
 
-                    var keyBytes = derivedBits.slice(0, 32);
-                    var ivBytes = derivedBits.slice(32, 48);
-
-                    var aesKey = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-CBC" }, false, ["encrypt"]);
+                    var aesKey = await crypto.subtle.importKey("raw", keyBits, { name: "AES-CBC" }, false, ["encrypt"]);
                     var plainBytes = enc.encode("SWACT:" + apiKey);
 
                     var cipherBuffer = await crypto.subtle.encrypt({ name: "AES-CBC", iv: ivBytes }, aesKey, plainBytes);
-                    encResult = "ENC:" + arrayBufferToBase64(cipherBuffer);
+
+                    var combined = new Uint8Array(16 + 16 + cipherBuffer.byteLength);
+                    combined.set(saltBytes, 0);
+                    combined.set(ivBytes, 16);
+                    combined.set(new Uint8Array(cipherBuffer), 32);
+
+                    encResult = "ENC:V2:" + arrayBufferToBase64(combined);
 
                 } else {
-                    // 従来ポータブル形式 (Legacy)
+                    // 従来ポータブル形式 (V2: ランダムソルト ＆ ランダム IV)
                     var passBytes = enc.encode("SimpleWiki-Portable-Secret-Key-2026");
-                    var saltBytes = enc.encode("SimpleWiki-OKF-RAG-2026-Salt");
+                    var saltBytes = new Uint8Array(16);
+                    crypto.getRandomValues(saltBytes);
+                    var ivBytes = new Uint8Array(16);
+                    crypto.getRandomValues(ivBytes);
 
                     var baseKey = await crypto.subtle.importKey("raw", passBytes, "PBKDF2", false, ["deriveBits"]);
-                    var derivedBits = await crypto.subtle.deriveBits({
+                    var keyBits = await crypto.subtle.deriveBits({
                         name: "PBKDF2",
                         salt: saltBytes,
                         iterations: 1000,
                         hash: "SHA-1"
-                    }, baseKey, 384);
+                    }, baseKey, 256);
 
-                    var keyBytes = derivedBits.slice(0, 32);
-                    var ivBytes = derivedBits.slice(32, 48);
-
-                    var aesKey = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-CBC" }, false, ["encrypt"]);
+                    var aesKey = await crypto.subtle.importKey("raw", keyBits, { name: "AES-CBC" }, false, ["encrypt"]);
                     var plainBytes = enc.encode(apiKey);
 
                     var cipherBuffer = await crypto.subtle.encrypt({ name: "AES-CBC", iv: ivBytes }, aesKey, plainBytes);
-                    encResult = "ENC:" + arrayBufferToBase64(cipherBuffer);
+
+                    var combined = new Uint8Array(16 + 16 + cipherBuffer.byteLength);
+                    combined.set(saltBytes, 0);
+                    combined.set(ivBytes, 16);
+                    combined.set(new Uint8Array(cipherBuffer), 32);
+
+                    encResult = "ENC:V2:" + arrayBufferToBase64(combined);
                 }
 
                 document.getElementById('resultCode').innerText = encResult;

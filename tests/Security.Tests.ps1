@@ -150,10 +150,15 @@ Describe 'OKF LLM RAG Security and Encryption Tests' {
 
     It 'Encrypts and decrypts API key with AES-256 (ENC: prefix)' {
         $rawKey = "sk-proj-test123456789"
-        $encKey = Protect-StringAes -PlainText $rawKey
-        $encKey | Should Match "^ENC:"
-        $decKey = Unprotect-StringAes -EncryptedText $encKey
-        $decKey | Should Be $rawKey
+        $encKey1 = Protect-StringAes -PlainText $rawKey
+        $encKey2 = Protect-StringAes -PlainText $rawKey
+        $encKey1 | Should Match "^ENC:V2:"
+        $encKey2 | Should Match "^ENC:V2:"
+        ($encKey1 -ne $encKey2) | Should Be $true
+        $decKey1 = Unprotect-StringAes -EncryptedText $encKey1
+        $decKey1 | Should Be $rawKey
+        $decKey2 = Unprotect-StringAes -EncryptedText $encKey2
+        $decKey2 | Should Be $rawKey
     }
 
     It 'Get-MachineFingerprint returns 16-char formatted machine identifier' {
@@ -166,13 +171,18 @@ Describe 'OKF LLM RAG Security and Encryption Tests' {
         $mid = Get-MachineFingerprint
         $email = "developer@example.com"
 
-        # 1. マシンID ＋ メールアドレスでの暗号化
+        # 1. マシンID ＋ メールアドレスでの暗号化 (V2 ランダムソルト・IV により暗号文が非決定論的であること)
         $actCode = Protect-ActivationCode -ApiKey $testApiKey -MachineId $mid -Email $email
-        $actCode | Should Match "^ENC:"
+        $actCode2 = Protect-ActivationCode -ApiKey $testApiKey -MachineId $mid -Email $email
+        $actCode | Should Match "^ENC:V2:"
+        $actCode2 | Should Match "^ENC:V2:"
+        ($actCode -ne $actCode2) | Should Be $true
 
         # 2. 同一マシン ＋ 同一メールでの復号成功
         $decrypted = Unprotect-ActivationCode -EncryptedText $actCode -MachineId $mid -Email $email
         $decrypted | Should Be $testApiKey
+        $decrypted2 = Unprotect-ActivationCode -EncryptedText $actCode2 -MachineId $mid -Email $email
+        $decrypted2 | Should Be $testApiKey
 
         # 3. 異なるマシンIDでの復号失敗
         $diffMid = "AAAA-BBBB-CCCC-DDDD"

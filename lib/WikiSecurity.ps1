@@ -7,11 +7,18 @@
 function Protect-StringAes {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]
     param ([string]$PlainText)
-    $salt = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-OKF-RAG-2026-Salt")
+    if ([string]::IsNullOrWhiteSpace($PlainText)) { return "" }
+
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    $salt = New-Object byte[] 16
+    $rng.GetBytes($salt)
+
+    $iv = New-Object byte[] 16
+    $rng.GetBytes($iv)
+
     $pass = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-Portable-Secret-Key-2026")
     $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($pass, $salt, 1000)
     $key = $derive.GetBytes(32)
-    $iv  = $derive.GetBytes(16)
 
     $aes = [System.Security.Cryptography.Aes]::Create()
     $aes.Key = $key
@@ -20,7 +27,13 @@ function Protect-StringAes {
 
     $plainBytes = [System.Text.Encoding]::UTF8.GetBytes($PlainText)
     $encBytes   = $encryptor.TransformFinalBlock($plainBytes, 0, $plainBytes.Length)
-    return "ENC:" + [System.Convert]::ToBase64String($encBytes)
+
+    $combined = New-Object byte[] (16 + 16 + $encBytes.Length)
+    [Array]::Copy($salt, 0, $combined, 0, 16)
+    [Array]::Copy($iv, 0, $combined, 16, 16)
+    [Array]::Copy($encBytes, 0, $combined, 32, $encBytes.Length)
+
+    return "ENC:V2:" + [System.Convert]::ToBase64String($combined)
 }
 
 function Protect-StringDpapi {
@@ -36,6 +49,31 @@ function Unprotect-StringAes {
     param ([string]$EncryptedText)
     if ([string]::IsNullOrWhiteSpace($EncryptedText) -or -not $EncryptedText.StartsWith("ENC:")) { return "" }
     try {
+        if ($EncryptedText.StartsWith("ENC:V2:")) {
+            $cipherText = $EncryptedText.Substring(7)
+            $bytes = [System.Convert]::FromBase64String($cipherText)
+            if ($bytes.Length -lt 48) { return "" }
+
+            $salt = New-Object byte[] 16
+            $iv   = New-Object byte[] 16
+            $cipherBytes = New-Object byte[] ($bytes.Length - 32)
+
+            [Array]::Copy($bytes, 0, $salt, 0, 16)
+            [Array]::Copy($bytes, 16, $iv, 0, 16)
+            [Array]::Copy($bytes, 32, $cipherBytes, 0, $cipherBytes.Length)
+
+            $pass = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-Portable-Secret-Key-2026")
+            $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($pass, $salt, 1000)
+            $key = $derive.GetBytes(32)
+
+            $aes = [System.Security.Cryptography.Aes]::Create()
+            $aes.Key = $key
+            $aes.IV  = $iv
+            $decryptor = $aes.CreateDecryptor()
+            $decBytes = $decryptor.TransformFinalBlock($cipherBytes, 0, $cipherBytes.Length)
+            return [System.Text.Encoding]::UTF8.GetString($decBytes)
+        }
+
         $cipherText = $EncryptedText.Substring(4)
         $cipherBytes = [System.Convert]::FromBase64String($cipherText)
         $salt = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-OKF-RAG-2026-Salt")
@@ -116,11 +154,16 @@ function Protect-ActivationCode {
     $cleanEmail = if ($Email) { $Email.Trim().ToLowerInvariant() } else { "" }
     $seed = "$($cleanMachine):$($cleanEmail)"
 
-    $salt = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-Activation-Salt-2026")
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    $salt = New-Object byte[] 16
+    $rng.GetBytes($salt)
+
+    $iv = New-Object byte[] 16
+    $rng.GetBytes($iv)
+
     $pass = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-ActKey-$($seed)")
     $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($pass, $salt, 5000)
     $key = $derive.GetBytes(32)
-    $iv  = $derive.GetBytes(16)
 
     # APIキーの先頭に検証プレフィックス "SWACT:" を付与
     $payload = "SWACT:" + $ApiKey
@@ -132,7 +175,13 @@ function Protect-ActivationCode {
     $encryptor = $aes.CreateEncryptor()
 
     $encBytes = $encryptor.TransformFinalBlock($plainBytes, 0, $plainBytes.Length)
-    return "ENC:" + [System.Convert]::ToBase64String($encBytes)
+
+    $combined = New-Object byte[] (16 + 16 + $encBytes.Length)
+    [Array]::Copy($salt, 0, $combined, 0, 16)
+    [Array]::Copy($iv, 0, $combined, 16, 16)
+    [Array]::Copy($encBytes, 0, $combined, 32, $encBytes.Length)
+
+    return "ENC:V2:" + [System.Convert]::ToBase64String($combined)
 }
 
 function Unprotect-ActivationCode {
@@ -143,12 +192,77 @@ function Unprotect-ActivationCode {
     )
 
     if ([string]::IsNullOrWhiteSpace($EncryptedText) -or -not $EncryptedText.StartsWith("ENC:")) { return "" }
+
+    $cleanMachine = if (-not [string]::IsNullOrWhiteSpace($MachineId)) { $MachineId.Trim().ToUpperInvariant() } else { Get-MachineFingerprint }
+    $cleanEmail = if ($Email) { $Email.Trim().ToLowerInvariant() } else { "" }
+
+    if ($EncryptedText.StartsWith("ENC:V2:")) {
+        $cipherText = $EncryptedText.Substring(7)
+        $bytes = try { [System.Convert]::FromBase64String($cipherText) } catch { return "" }
+        if ($bytes.Length -lt 48) { return "" }
+
+        $salt = New-Object byte[] 16
+        $iv   = New-Object byte[] 16
+        $cipherBytes = New-Object byte[] ($bytes.Length - 32)
+
+        [Array]::Copy($bytes, 0, $salt, 0, 16)
+        [Array]::Copy($bytes, 16, $iv, 0, 16)
+        [Array]::Copy($bytes, 32, $cipherBytes, 0, $cipherBytes.Length)
+
+        # 1. まずマシンID ＋ メールアドレスでの復号を試行
+        $seed = "$($cleanMachine):$($cleanEmail)"
+        $pass = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-ActKey-$($seed)")
+
+        try {
+            $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($pass, $salt, 5000)
+            $key = $derive.GetBytes(32)
+
+            $aes = [System.Security.Cryptography.Aes]::Create()
+            $aes.Key = $key
+            $aes.IV  = $iv
+            $decryptor = $aes.CreateDecryptor()
+            $decBytes = $decryptor.TransformFinalBlock($cipherBytes, 0, $cipherBytes.Length)
+            $decStr = [System.Text.Encoding]::UTF8.GetString($decBytes)
+            if ($decStr.StartsWith("SWACT:")) {
+                return $decStr.Substring(6)
+            }
+        } catch {
+            $null = $_ # マシンバインド復号が不一致
+        }
+
+        # 2. メールアドレスなしの同一マシンID試行（Email が指定されていた場合のフォールバック）
+        if (-not [string]::IsNullOrWhiteSpace($cleanEmail)) {
+            try {
+                $seedNoMail = "$($cleanMachine):"
+                $passNoMail = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-ActKey-$($seedNoMail)")
+                $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($passNoMail, $salt, 5000)
+                $key = $derive.GetBytes(32)
+
+                $aes = [System.Security.Cryptography.Aes]::Create()
+                $aes.Key = $key
+                $aes.IV  = $iv
+                $decryptor = $aes.CreateDecryptor()
+                $decBytes = $decryptor.TransformFinalBlock($cipherBytes, 0, $cipherBytes.Length)
+                $decStr = [System.Text.Encoding]::UTF8.GetString($decBytes)
+                if ($decStr.StartsWith("SWACT:")) {
+                    return $decStr.Substring(6)
+                }
+            } catch {
+                $null = $_ # Suppressed intentionally
+            }
+        }
+
+        # 3. ポータブル V2 復号試行
+        $decPortable = Unprotect-StringAes -EncryptedText $EncryptedText
+        if ($decPortable) { return $decPortable }
+        return ""
+    }
+
+    # 旧 V1 固定ソルト互換
     $cipherText = $EncryptedText.Substring(4)
     $cipherBytes = try { [System.Convert]::FromBase64String($cipherText) } catch { return "" }
 
-    # 1. まずマシンID ＋ メールアドレスでの復号を試行
-    $cleanMachine = if (-not [string]::IsNullOrWhiteSpace($MachineId)) { $MachineId.Trim().ToUpperInvariant() } else { Get-MachineFingerprint }
-    $cleanEmail = if ($Email) { $Email.Trim().ToLowerInvariant() } else { "" }
+    # 1. まずマシンID ＋ メールアドレスでの復号を試行 (V1)
     $seed = "$($cleanMachine):$($cleanEmail)"
 
     $salt = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-Activation-Salt-2026")
@@ -172,7 +286,7 @@ function Unprotect-ActivationCode {
         $null = $_ # マシンバインド復号が不一致
     }
 
-    # 2. メールアドレスなしの同一マシンID試行（Email が指定されていた場合のフォールバック）
+    # 2. メールアドレスなしの同一マシンID試行（Email が指定されていた場合のフォールバック V1）
     if (-not [string]::IsNullOrWhiteSpace($cleanEmail)) {
         try {
             $seedNoMail = "$($cleanMachine):"
@@ -195,7 +309,7 @@ function Unprotect-ActivationCode {
         }
     }
 
-    # 3. 後方互換性: 旧固定鍵での復号試行
+    # 3. 後方互換性: 旧固定鍵での復号試行 (V1)
     return Unprotect-StringAes -EncryptedText $EncryptedText
 }
 
