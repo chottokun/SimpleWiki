@@ -939,6 +939,101 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
 
 
 
+Describe "Write-SafeHttpResponse Unit Tests" {
+    BeforeAll {
+        . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -DotSourceOnly
+    }
+
+    It "Writes byte array to OutputStream and sets response properties correctly" {
+        $ms = New-Object System.IO.MemoryStream
+        $mockResponse = [PSCustomObject]@{
+            StatusCode      = 0
+            ContentType     = ""
+            ContentLength64 = 0L
+            OutputStream    = $ms
+        }
+
+        $testBytes = [System.Text.Encoding]::UTF8.GetBytes("Hello Safe Response")
+        Write-SafeHttpResponse -Response $mockResponse -Bytes $testBytes -ContentType "application/json; charset=utf-8" -StatusCode 201
+
+        $mockResponse.StatusCode | Should Be 201
+        $mockResponse.ContentType | Should Be "application/json; charset=utf-8"
+        $mockResponse.ContentLength64 | Should Be $testBytes.Length
+
+        $ms.Position = 0
+        $reader = New-Object System.IO.StreamReader($ms, [System.Text.Encoding]::UTF8)
+        $writtenContent = $reader.ReadToEnd()
+        $writtenContent | Should Be "Hello Safe Response"
+    }
+
+    It "Uses default ContentType and StatusCode when omitted" {
+        $ms = New-Object System.IO.MemoryStream
+        $mockResponse = [PSCustomObject]@{
+            StatusCode      = 0
+            ContentType     = ""
+            ContentLength64 = 0L
+            OutputStream    = $ms
+        }
+
+        $testBytes = [System.Text.Encoding]::UTF8.GetBytes("Default Params")
+        Write-SafeHttpResponse -Response $mockResponse -Bytes $testBytes
+
+        $mockResponse.StatusCode | Should Be 200
+        $mockResponse.ContentType | Should Be "text/html; charset=utf-8"
+        $mockResponse.ContentLength64 | Should Be $testBytes.Length
+    }
+
+    It "Suppresses IOException when client disconnects during output write" {
+        # Custom stream mock or subclassing Stream to throw IOException on Write
+        Add-Type -TypeDefinition @"
+using System;
+using System.IO;
+
+public class DisconnectedStream : MemoryStream {
+    public override void Write(byte[] buffer, int offset, int count) {
+        throw new IOException("The pipe has been ended.");
+    }
+}
+"@ -ErrorAction SilentlyContinue
+
+        $disStream = New-Object DisconnectedStream
+        $mockResponse = [PSCustomObject]@{
+            StatusCode      = 0
+            ContentType     = ""
+            ContentLength64 = 0L
+            OutputStream    = $disStream
+        }
+
+        $testBytes = [System.Text.Encoding]::UTF8.GetBytes("Disconnect Test")
+        { Write-SafeHttpResponse -Response $mockResponse -Bytes $testBytes } | Should Not Throw
+    }
+
+    It "Catches and logs warning for generic unexpected exceptions during response write" {
+        Add-Type -TypeDefinition @"
+using System;
+using System.IO;
+
+public class GenericErrorStream : MemoryStream {
+    public override void Write(byte[] buffer, int offset, int count) {
+        throw new InvalidOperationException("Unexpected internal error");
+    }
+}
+"@ -ErrorAction SilentlyContinue
+
+        $errStream = New-Object GenericErrorStream
+        $mockResponse = [PSCustomObject]@{
+            StatusCode      = 0
+            ContentType     = ""
+            ContentLength64 = 0L
+            OutputStream    = $errStream
+        }
+
+        $testBytes = [System.Text.Encoding]::UTF8.GetBytes("Generic Error Test")
+        { Write-SafeHttpResponse -Response $mockResponse -Bytes $testBytes } | Should Not Throw
+    }
+}
+
+
 Describe "WikiViews Helper Functions Suite" {
     BeforeAll {
         $serverScript = Join-Path $projectRoot "Start-MarkdigWiki.ps1"
