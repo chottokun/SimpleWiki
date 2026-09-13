@@ -18,7 +18,12 @@ param (
     [string]$MermaidMode = "Runtime",
     [switch]$NoApiJson,
     [switch]$NoTagsPage,
-    [switch]$NoAuthorsPage
+    [switch]$NoAuthorsPage,
+    [ValidateSet("Auto", "Light", "Dark")]
+    [string]$Theme = "Auto",
+    [string]$TemplatePath = "",
+    [switch]$DisableRawHtml,
+    [switch]$PreserveCodeBlockLinks
 )
 
 $scriptDir = [System.IO.Path]::GetFullPath($PSScriptRoot)
@@ -95,44 +100,106 @@ $allMdFiles = Get-ChildItem -Path $wikiDir -Recurse -Filter "*.md" |
 $builder  = New-Object Markdig.MarkdownPipelineBuilder
 $null     = [Markdig.MarkdownExtensions]::UseAdvancedExtensions($builder)
 $null     = [Markdig.MarkdownExtensions]::UseYamlFrontMatter($builder)
+if ($DisableRawHtml) {
+    $null = [Markdig.MarkdownExtensions]::DisableHtml($builder)
+}
 $pipeline = $builder.Build()
 
-$commonStyle = @'
+$cssVariablesLight = @'
+    :root {
+        --wiki-bg: #ffffff;
+        --wiki-text: #24292e;
+        --wiki-sidebar-bg: #f6f8fa;
+        --wiki-border: #e1e4e8;
+        --wiki-border-light: #eaecef;
+        --wiki-link: #0366d6;
+        --wiki-link-hover: #0366d6;
+        --wiki-link-hover-bg: #f0f3f6;
+        --wiki-code-bg: rgba(27,31,35,0.05);
+        --wiki-pre-bg: #f6f8fa;
+        --wiki-blockquote-border: #dfe2e5;
+        --wiki-blockquote-text: #6a737d;
+        --wiki-meta-text: #586069;
+        --wiki-meta-bg: #f8f9fa;
+        --wiki-tag-bg: #e1e4e8;
+        --wiki-tag-bg-hover: #0366d6;
+        --wiki-tag-text-hover: #ffffff;
+        --wiki-card-border: #c8e1ff;
+        --wiki-card-bg: #f1f8ff;
+        --wiki-glossary-bg: #e8f4fd;
+    }
+'@
+
+$cssVariablesDark = @'
+    :root {
+        --wiki-bg: #0d1117;
+        --wiki-text: #c9d1d9;
+        --wiki-sidebar-bg: #161b22;
+        --wiki-border: #30363d;
+        --wiki-border-light: #21262d;
+        --wiki-link: #58a6ff;
+        --wiki-link-hover: #58a6ff;
+        --wiki-link-hover-bg: #21262d;
+        --wiki-code-bg: rgba(240,246,252,0.15);
+        --wiki-pre-bg: #161b22;
+        --wiki-blockquote-border: #30363d;
+        --wiki-blockquote-text: #8b949e;
+        --wiki-meta-text: #8b949e;
+        --wiki-meta-bg: #161b22;
+        --wiki-tag-bg: #21262d;
+        --wiki-tag-bg-hover: #58a6ff;
+        --wiki-tag-text-hover: #ffffff;
+        --wiki-card-border: #30363d;
+        --wiki-card-bg: #21262d;
+        --wiki-glossary-bg: #161b22;
+    }
+'@
+
+$commonStyle = ""
+if ($Theme -eq "Light") {
+    $commonStyle += $cssVariablesLight + "`n"
+} elseif ($Theme -eq "Dark") {
+    $commonStyle += $cssVariablesDark + "`n"
+} else {
+    $commonStyle += $cssVariablesLight + "`n@media (prefers-color-scheme: dark) {`n" + ($cssVariablesDark -replace ':root {', '    :root {') + "`n}`n"
+}
+
+$commonStyle += @'
     * { box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; margin: 0; padding: 0; display: flex; height: 100vh; color: #24292e; background-color: #fff; }
-    nav { width: 260px; background-color: #f6f8fa; border-right: 1px solid #e1e4e8; padding: 20px 10px; overflow-y: auto; flex-shrink: 0; }
-    nav h2 { font-size: 14px; text-transform: uppercase; color: #586069; margin: 0 0 10px 10px; letter-spacing: 0.5px; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; margin: 0; padding: 0; display: flex; height: 100vh; color: var(--wiki-text); background-color: var(--wiki-bg); }
+    nav { width: 260px; background-color: var(--wiki-sidebar-bg); border-right: 1px solid var(--wiki-border); padding: 20px 10px; overflow-y: auto; flex-shrink: 0; }
+    nav h2 { font-size: 14px; text-transform: uppercase; color: var(--wiki-meta-text); margin: 0 0 10px 10px; letter-spacing: 0.5px; }
     nav ul { list-style: none; padding: 0; margin: 0; }
     nav ul ul { padding-left: 12px; margin-top: 2px; }
     nav li.nav-folder { margin-top: 4px; margin-bottom: 4px; }
-    nav summary.folder-title { font-weight: bold; font-size: 13px; color: #586069; padding: 4px 6px; cursor: pointer; user-select: none; }
-    nav summary.folder-title:hover { color: #0366d6; }
-    nav li.nav-file a { display: block; padding: 4px 8px; color: #0366d6; text-decoration: none; border-radius: 6px; font-size: 14px; word-break: break-all; }
-    nav li.nav-file a:hover { background-color: #f0f3f6; text-decoration: none; }
-    nav li.nav-file a.active { background-color: #0366d6; color: #ffffff; font-weight: bold; }
+    nav summary.folder-title { font-weight: bold; font-size: 13px; color: var(--wiki-meta-text); padding: 4px 6px; cursor: pointer; user-select: none; }
+    nav summary.folder-title:hover { color: var(--wiki-link-hover); }
+    nav li.nav-file a { display: block; padding: 4px 8px; color: var(--wiki-link); text-decoration: none; border-radius: 6px; font-size: 14px; word-break: break-all; }
+    nav li.nav-file a:hover { background-color: var(--wiki-link-hover-bg); text-decoration: none; }
+    nav li.nav-file a.active { background-color: var(--wiki-link); color: #ffffff; font-weight: bold; }
     main { flex: 1; padding: 40px 60px; overflow-y: auto; }
     .markdown-body { max-width: 880px; margin: 0 auto; line-height: 1.6; }
-    h1, h2, h3 { border-bottom: 1px solid #eaecef; padding-bottom: 0.3em; margin-top: 24px; margin-bottom: 16px; }
-    code { background: rgba(27,31,35,0.05); padding: 0.2em 0.4em; border-radius: 3px; font-family: monospace; }
-    pre { background: #f6f8fa; padding: 16px; border-radius: 6px; overflow: auto; }
+    h1, h2, h3 { border-bottom: 1px solid var(--wiki-border-light); padding-bottom: 0.3em; margin-top: 24px; margin-bottom: 16px; }
+    code { background: var(--wiki-code-bg); padding: 0.2em 0.4em; border-radius: 3px; font-family: monospace; }
+    pre { background: var(--wiki-pre-bg); padding: 16px; border-radius: 6px; overflow: auto; border: 1px solid var(--wiki-border); }
     pre code { background: transparent; padding: 0; }
-    blockquote { border-left: 4px solid #dfe2e5; color: #6a737d; margin: 0; padding-left: 1em; }
+    blockquote { border-left: 4px solid var(--wiki-blockquote-border); color: var(--wiki-blockquote-text); margin: 0; padding-left: 1em; }
     table { border-collapse: collapse; width: 100%; margin-bottom: 16px; }
-    table th, table td { border: 1px solid #dfe2e5; padding: 8px 13px; }
-    table th { background: #f6f8fa; }
+    table th, table td { border: 1px solid var(--wiki-blockquote-border); padding: 8px 13px; }
+    table th { background: var(--wiki-pre-bg); }
     img { max-width: 100%; }
 
     /* OKF Custom Components */
-    .okf-top-bar { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #586069; margin-bottom: 16px; border-bottom: 1px dashed #e1e4e8; padding-bottom: 8px; }
-    .okf-footer-card { background: #f8f9fa; border: 1px solid #e1e4e8; border-radius: 6px; padding: 16px; margin-top: 40px; }
-    .okf-footer-header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: bold; color: #444; border-bottom: 1px solid #e1e4e8; padding-bottom: 8px; margin-bottom: 10px; }
-    .okf-footer-meta { display: flex; gap: 20px; font-size: 12px; color: #586069; margin-top: 10px; }
-    .okf-api-link { font-size: 11px; color: #0366d6; text-decoration: none; padding: 2px 8px; background: #e1e4e8; border-radius: 12px; }
-    .okf-api-link:hover { background: #0366d6; color: #fff; }
-    .okf-desc { font-size: 13px; color: #586069; margin: 6px 0 10px 0; }
+    .okf-top-bar { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--wiki-meta-text); margin-bottom: 16px; border-bottom: 1px dashed var(--wiki-border); padding-bottom: 8px; }
+    .okf-footer-card { background: var(--wiki-meta-bg); border: 1px solid var(--wiki-border); border-radius: 6px; padding: 16px; margin-top: 40px; }
+    .okf-footer-header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: bold; color: var(--wiki-text); border-bottom: 1px solid var(--wiki-border); padding-bottom: 8px; margin-bottom: 10px; }
+    .okf-footer-meta { display: flex; gap: 20px; font-size: 12px; color: var(--wiki-meta-text); margin-top: 10px; }
+    .okf-api-link { font-size: 11px; color: var(--wiki-link); text-decoration: none; padding: 2px 8px; background: var(--wiki-tag-bg); border-radius: 12px; }
+    .okf-api-link:hover { background: var(--wiki-link-hover); color: #fff; }
+    .okf-desc { font-size: 13px; color: var(--wiki-meta-text); margin: 6px 0 10px 0; }
     .okf-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
-    .tag-badge { background: #e1e4e8; color: #0366d6; text-decoration: none; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
-    .tag-badge:hover { background: #0366d6; color: #fff; }
+    .tag-badge { background: var(--wiki-tag-bg); color: var(--wiki-link); text-decoration: none; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
+    .tag-badge:hover { background: var(--wiki-tag-bg-hover); color: var(--wiki-tag-text-hover); }
     .badge { padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
     .badge-active { background: #28a745; color: #fff; }
     .badge-draft { background: #ffc107; color: #212529; }
@@ -141,25 +208,25 @@ $commonStyle = @'
 
     /* Tags & Glossary Static Views */
     .tag-cloud { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
-    .tag-cloud-item { background: #f1f8ff; color: #0366d6; border: 1px solid #c8e1ff; padding: 6px 12px; border-radius: 16px; text-decoration: none; font-size: 13px; font-weight: bold; }
-    .tag-cloud-item:hover { background: #0366d6; color: #fff; text-decoration: none; }
+    .tag-cloud-item { background: var(--wiki-card-bg); color: var(--wiki-link); border: 1px solid var(--wiki-card-border); padding: 6px 12px; border-radius: 16px; text-decoration: none; font-size: 13px; font-weight: bold; }
+    .tag-cloud-item:hover { background: var(--wiki-link-hover); color: #fff; text-decoration: none; border-color: var(--wiki-link-hover); }
     .tag-count { font-size: 11px; opacity: 0.8; font-weight: normal; }
-    .glossary-box { background: #e8f4fd; border-left: 4px solid #0366d6; padding: 14px 18px; border-radius: 6px; margin-bottom: 24px; }
-    .glossary-title { font-weight: bold; color: #0366d6; font-size: 15px; margin-bottom: 8px; }
-    .glossary-content { font-size: 13px; color: #24292e; line-height: 1.6; }
-    .tag-card, .search-item { border-bottom: 1px solid #e1e4e8; padding: 12px 0; }
+    .glossary-box { background: var(--wiki-glossary-bg); border-left: 4px solid var(--wiki-link); padding: 14px 18px; border-radius: 6px; margin-bottom: 24px; }
+    .glossary-title { font-weight: bold; color: var(--wiki-link); font-size: 15px; margin-bottom: 8px; }
+    .glossary-content { font-size: 13px; color: var(--wiki-text); line-height: 1.6; }
+    .tag-card, .search-item { border-bottom: 1px solid var(--wiki-border); padding: 12px 0; }
     .tag-card h3, .search-item h3 { margin: 0 0 6px 0; font-size: 16px; }
-    .tag-card a, .search-item a { color: #0366d6; text-decoration: none; }
+    .tag-card a, .search-item a { color: var(--wiki-link); text-decoration: none; }
     .tag-card a:hover, .search-item a:hover { text-decoration: underline; }
-    .tag-card p, .search-item p { margin: 4px 0 0 0; font-size: 13px; color: #586069; }
+    .tag-card p, .search-item p { margin: 4px 0 0 0; font-size: 13px; color: var(--wiki-meta-text); }
 
     /* Single File Inline Tag & Author Filter Banner */
-    .single-file-filter-banner { display: none; background: #e8f4fd; border: 1px solid #c8e1ff; color: #0366d6; padding: 10px 16px; border-radius: 6px; margin-bottom: 20px; font-size: 14px; }
-    .single-file-filter-banner a { color: #0366d6; font-weight: bold; margin-left: 10px; text-decoration: underline; }
+    .single-file-filter-banner { display: none; background: var(--wiki-glossary-bg); border: 1px solid var(--wiki-card-border); color: var(--wiki-link); padding: 10px 16px; border-radius: 6px; margin-bottom: 20px; font-size: 14px; }
+    .single-file-filter-banner a { color: var(--wiki-link); font-weight: bold; margin-left: 10px; text-decoration: underline; }
 
     /* Single page section divider */
     html { scroll-behavior: smooth; }
-    .wiki-page { border-bottom: 2px solid #e1e4e8; padding-bottom: 40px; margin-bottom: 40px; }
+    .wiki-page { border-bottom: 2px solid var(--wiki-border); padding-bottom: 40px; margin-bottom: 40px; }
     .wiki-page:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
 '@
 
@@ -195,6 +262,16 @@ if ($SingleFile) {
         $okfFooter   = Get-OkfFooterCardHtml -Meta $meta -Lang $exportLang -IsExportMode -IsSingleFileMode
         $bodyHtml    = $okfTopBar + $bodyHtml + $okfFooter
 
+        $codeBlocks = [System.Collections.ArrayList]::new()
+        if ($PreserveCodeBlockLinks) {
+            $evaluatorBlock = [System.Text.RegularExpressions.MatchEvaluator] {
+                param($match)
+                $null = $codeBlocks.Add($match.Value)
+                return "<!-- CODEBLOCK_$($codeBlocks.Count - 1) -->"
+            }
+            $bodyHtml = [System.Text.RegularExpressions.Regex]::Replace($bodyHtml, '(?is)<pre><code.*?>.*?</code></pre>', $evaluatorBlock)
+        }
+
         # リンク書き換え (相対 .md / .html リンクを #pageId または #anchorId に変換)
         $fileDirNorm = ([System.IO.Path]::GetDirectoryName($relPath)).Replace('\', '/').TrimEnd('/')
 
@@ -225,6 +302,12 @@ if ($SingleFile) {
         }
 
         $bodyHtml = [System.Text.RegularExpressions.Regex]::Replace($bodyHtml, $linkPattern, $evaluator)
+
+        if ($PreserveCodeBlockLinks -and $codeBlocks.Count -gt 0) {
+            for ($i = 0; $i -lt $codeBlocks.Count; $i++) {
+                $bodyHtml = $bodyHtml.Replace("<!-- CODEBLOCK_${i} -->", $codeBlocks[$i])
+            }
+        }
 
         # 画像・アセットの相対パス解決 (ルート index.html 基準への正規化 ＆ Base64 埋め込み)
         $assetPattern = '((?:src|href)=["''])([^"'':#]+?\.(?:png|jpe?g|gif|svg|webp|ico|bmp|pdf|zip|mp4|webm))(["''])'
@@ -507,30 +590,34 @@ $mermaidScriptInline
 
 } else {
     # --- 標準複数ファイル静的 HTML エキスポート ---
-    $template = @"
+    if (-not [string]::IsNullOrWhiteSpace($TemplatePath) -and (Test-Path $TemplatePath)) {
+        $template = Get-Content -Path $TemplatePath -Raw -Encoding UTF8
+    } else {
+        $template = @"
 <!DOCTYPE html>
-<html lang="{4}">
+<html lang="<!-- {{SIMPLEWIKI_LANG}} -->">
 <head>
 <meta charset="UTF-8">
-<title>{0} - SimpleWiki OKF</title>
+<title><!-- {{SIMPLEWIKI_PAGE_TITLE}} --> - SimpleWiki OKF</title>
 <style>
 $commonStyle
 </style>
 </head>
 <body>
     <nav>
-        <h2>{5}</h2>
-        {1}
+        <h2><!-- {{SIMPLEWIKI_DOC_LIST_TITLE}} --></h2>
+        <!-- {{SIMPLEWIKI_SIDEBAR}} -->
     </nav>
     <main>
         <div class="markdown-body">
-            {2}
+            <!-- {{SIMPLEWIKI_BODY}} -->
         </div>
     </main>
-    {3}
+    <!-- {{SIMPLEWIKI_MERMAID}} -->
 </body>
 </html>
 "@
+    }
 
     $globalImageCache = @{}
     $allApiItems = [System.Collections.Generic.List[PSCustomObject]]::new()
@@ -556,9 +643,25 @@ $commonStyle
         $okfFooter   = Get-OkfFooterCardHtml -Meta $meta -Lang $exportLang -IsExportMode -RelToRoot $relToRoot
         $bodyHtml    = $okfTopBar + $bodyHtml + $okfFooter
 
+        $codeBlocks = [System.Collections.ArrayList]::new()
+        if ($PreserveCodeBlockLinks) {
+            $evaluator = [System.Text.RegularExpressions.MatchEvaluator] {
+                param($match)
+                $null = $codeBlocks.Add($match.Value)
+                return "<!-- CODEBLOCK_$($codeBlocks.Count - 1) -->"
+            }
+            $bodyHtml = [System.Text.RegularExpressions.Regex]::Replace($bodyHtml, '(?is)<pre><code.*?>.*?</code></pre>', $evaluator)
+        }
+
         # 本文中の .md ハイパーリンクを .html に自動変換
         $bodyHtml = $bodyHtml -replace 'href="([^"]+)\.md"', 'href="$1.html"'
         $bodyHtml = $bodyHtml -replace "href='([^']+)\.md'", "href='$1.html'"
+
+        if ($PreserveCodeBlockLinks -and $codeBlocks.Count -gt 0) {
+            for ($i = 0; $i -lt $codeBlocks.Count; $i++) {
+                $bodyHtml = $bodyHtml.Replace("<!-- CODEBLOCK_${i} -->", $codeBlocks[$i])
+            }
+        }
 
         # 画像の Base64 インライン埋め込み (EmbedImages 有効時)
         if ($isEmbedImagesMode) {
@@ -648,7 +751,7 @@ $commonStyle
         }
 
         $docListTitle = Get-LocalizedStr -Key "doc_list_title" -Lang $exportLang
-        $fullHtml = $template.Replace("{0}", $pageTitle).Replace("{1}", $sidebarHtml).Replace("{2}", $bodyHtml).Replace("{3}", $mermaidBlock).Replace("{4}", $exportLang).Replace("{5}", $docListTitle)
+        $fullHtml = $template.Replace("<!-- {{SIMPLEWIKI_PAGE_TITLE}} -->", $pageTitle).Replace("<!-- {{SIMPLEWIKI_SIDEBAR}} -->", $sidebarHtml).Replace("<!-- {{SIMPLEWIKI_MERMAID}} -->", $mermaidBlock).Replace("<!-- {{SIMPLEWIKI_LANG}} -->", $exportLang).Replace("<!-- {{SIMPLEWIKI_DOC_LIST_TITLE}} -->", $docListTitle).Replace("<!-- {{SIMPLEWIKI_BODY}} -->", $bodyHtml)
         $fullHtml = $fullHtml -replace "\r?\n", "`r`n"
 
         [System.IO.File]::WriteAllText($destFile, $fullHtml, [System.Text.Encoding]::UTF8)
@@ -807,7 +910,7 @@ document.addEventListener("DOMContentLoaded", function() {
 </script>
 "@
 
-        $fullTagsHtml = $template.Replace("{0}", $tagListTitle).Replace("{1}", $sidebarForSub).Replace("{2}", $tagsBodyContent).Replace("{3}", "").Replace("{4}", $exportLang).Replace("{5}", $docListTitle)
+        $fullTagsHtml = $template.Replace("<!-- {{SIMPLEWIKI_PAGE_TITLE}} -->", $tagListTitle).Replace("<!-- {{SIMPLEWIKI_SIDEBAR}} -->", $sidebarForSub).Replace("<!-- {{SIMPLEWIKI_MERMAID}} -->", "").Replace("<!-- {{SIMPLEWIKI_LANG}} -->", $exportLang).Replace("<!-- {{SIMPLEWIKI_DOC_LIST_TITLE}} -->", $docListTitle).Replace("<!-- {{SIMPLEWIKI_BODY}} -->", $tagsBodyContent)
         $fullTagsHtml = $fullTagsHtml -replace "\r?\n", "`r`n"
         [System.IO.File]::WriteAllText($tagsHtmlFile, $fullTagsHtml, [System.Text.Encoding]::UTF8)
         Write-Host "  [HTML 変換] tags.html" -ForegroundColor Green
@@ -906,7 +1009,7 @@ document.addEventListener("DOMContentLoaded", function() {
 </script>
 "@
 
-        $fullAuthorsHtml = $template.Replace("{0}", $authorListTitle).Replace("{1}", $sidebarForSub).Replace("{2}", $authorsBodyContent).Replace("{3}", "").Replace("{4}", $exportLang).Replace("{5}", $docListTitle)
+        $fullAuthorsHtml = $template.Replace("<!-- {{SIMPLEWIKI_PAGE_TITLE}} -->", $authorListTitle).Replace("<!-- {{SIMPLEWIKI_SIDEBAR}} -->", $sidebarForSub).Replace("<!-- {{SIMPLEWIKI_MERMAID}} -->", "").Replace("<!-- {{SIMPLEWIKI_LANG}} -->", $exportLang).Replace("<!-- {{SIMPLEWIKI_DOC_LIST_TITLE}} -->", $docListTitle).Replace("<!-- {{SIMPLEWIKI_BODY}} -->", $authorsBodyContent)
         $fullAuthorsHtml = $fullAuthorsHtml -replace "\r?\n", "`r`n"
         [System.IO.File]::WriteAllText($authorsHtmlFile, $fullAuthorsHtml, [System.Text.Encoding]::UTF8)
         Write-Host "  [HTML 変換] authors.html" -ForegroundColor Green

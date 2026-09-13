@@ -396,6 +396,9 @@ Describe 'Export-GUI.ps1 GUI Component and Syntax Validation' {
         $content | Should Match 'NoApiJson'
         $content | Should Match 'NoTagsPage'
         $content | Should Match 'NoAuthorsPage'
+        $content | Should Match 'cmbTheme'
+        $content | Should Match 'chkDisableRawHtml'
+        $content | Should Match 'chkPreserveCodeBlock'
     }
 }
 
@@ -451,5 +454,110 @@ Describe "Static Export Tree and Navigation Helper Unit Tests" {
 
         $htmlMulti = Get-ExportSidebarHtml -currentFile $dummyFile1 -allMdFiles $dummyFiles -wikiDir $script:dummyBaseDir
         $htmlMulti | Should Match "class='active'"
+    }
+}
+
+Describe "Static HTML Export Template and HTML Safety Options" {
+    BeforeAll {
+        $script:testExportDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestExportSafety"
+        if (Test-Path $script:testExportDir) { Remove-Item -Path $script:testExportDir -Recurse -Force }
+        New-Item -ItemType Directory -Path $script:testExportDir -Force | Out-Null
+        
+        $script:dummySampleDir = Join-Path $script:testExportDir "dummy_wiki"
+        New-Item -ItemType Directory -Path $script:dummySampleDir -Force | Out-Null
+        
+        $script:exportScript = Join-Path $projectRoot "Export-MarkdigWiki.ps1"
+    }
+    AfterAll {
+        if (Test-Path $script:testExportDir) { Remove-Item -Path $script:testExportDir -Recurse -Force }
+    }
+    
+    BeforeEach {
+        if (Test-Path (Join-Path $script:testExportDir "out")) { Remove-Item -Path (Join-Path $script:testExportDir "out") -Recurse -Force }
+        New-Item -ItemType Directory -Path (Join-Path $script:testExportDir "out") -Force | Out-Null
+        if (Test-Path $script:dummySampleDir) { Remove-Item -Path $script:dummySampleDir\* -Recurse -Force }
+    }
+
+    It "-DisableRawHtml prevents <script> tags from passing through" {
+        $mdPath = Join-Path $script:dummySampleDir "test.md"
+        [System.IO.File]::WriteAllText($mdPath, "<script>alert(1);</script>", [System.Text.Encoding]::UTF8)
+        
+        & $script:exportScript -RootFolder $script:dummySampleDir -OutputDir (Join-Path $script:testExportDir "out") -DisableRawHtml
+        
+        $htmlPath = Join-Path (Join-Path $script:testExportDir "out") "test.html"
+        $html = [System.IO.File]::ReadAllText($htmlPath)
+        $html | Should Not Match "<script>alert\(1\);</script>"
+    }
+
+    It "-Theme outputs correct CSS classes (Light, Dark, Auto)" {
+        $mdPath = Join-Path $script:dummySampleDir "test.md"
+        [System.IO.File]::WriteAllText($mdPath, "test content", [System.Text.Encoding]::UTF8)
+        
+        # Light
+        & $script:exportScript -RootFolder $script:dummySampleDir -OutputDir (Join-Path $script:testExportDir "out") -Theme Light
+        $htmlPath = Join-Path (Join-Path $script:testExportDir "out") "test.html"
+        $htmlLight = [System.IO.File]::ReadAllText($htmlPath)
+        $htmlLight | Should Match '--wiki-bg: #ffffff;'
+        $htmlLight | Should Not Match '@media \(prefers-color-scheme: dark\)'
+        
+        # Dark
+        & $script:exportScript -RootFolder $script:dummySampleDir -OutputDir (Join-Path $script:testExportDir "out") -Theme Dark
+        $htmlDark = [System.IO.File]::ReadAllText($htmlPath)
+        $htmlDark | Should Match '--wiki-bg: #0d1117;'
+        $htmlDark | Should Not Match '@media \(prefers-color-scheme: dark\)'
+        
+        # Auto
+        & $script:exportScript -RootFolder $script:dummySampleDir -OutputDir (Join-Path $script:testExportDir "out") -Theme Auto
+        $htmlAuto = [System.IO.File]::ReadAllText($htmlPath)
+        $htmlAuto | Should Match '--wiki-bg: #ffffff;'
+        $htmlAuto | Should Match '@media \(prefers-color-scheme: dark\)'
+    }
+
+    It "-TemplatePath utilizes custom template" {
+        $mdPath = Join-Path $script:dummySampleDir "test.md"
+        [System.IO.File]::WriteAllText($mdPath, "test content", [System.Text.Encoding]::UTF8)
+        
+        $tplPath = Join-Path $script:testExportDir "custom.html"
+        [System.IO.File]::WriteAllText($tplPath, "CUSTOM_TEMPLATE_START<!-- {{SIMPLEWIKI_BODY}} -->CUSTOM_TEMPLATE_END", [System.Text.Encoding]::UTF8)
+        
+        & $script:exportScript -RootFolder $script:dummySampleDir -OutputDir (Join-Path $script:testExportDir "out") -TemplatePath $tplPath
+        $htmlPath = Join-Path (Join-Path $script:testExportDir "out") "test.html"
+        $html = [System.IO.File]::ReadAllText($htmlPath)
+        $html | Should Match "CUSTOM_TEMPLATE_START"
+        $html | Should Match "CUSTOM_TEMPLATE_END"
+        $html | Should Match "<p>test content</p>"
+    }
+    
+    It "-PreserveCodeBlockLinks does not mutate links in code blocks" {
+        $mdPath = Join-Path $script:dummySampleDir "test.md"
+        $mdContent = @"
+<pre><code class="html">
+href="tutorial.md"
+</code></pre>
+
+[Normal Link](tutorial.md)
+"@
+        [System.IO.File]::WriteAllText($mdPath, $mdContent, [System.Text.Encoding]::UTF8)
+        
+        & $script:exportScript -RootFolder $script:dummySampleDir -OutputDir (Join-Path $script:testExportDir "out") -PreserveCodeBlockLinks
+        
+        $htmlPath = Join-Path (Join-Path $script:testExportDir "out") "test.html"
+        $html = [System.IO.File]::ReadAllText($htmlPath)
+        
+        $html | Should Match 'href="tutorial.md"'
+        $html | Should Match 'href="tutorial.html"'
+    }
+
+    It "Formats like {0} in markdown body do not cause substitution errors" {
+        $mdPath = Join-Path $script:dummySampleDir "test.md"
+        $mdContent = "String format test {0} and {1}"
+        [System.IO.File]::WriteAllText($mdPath, $mdContent, [System.Text.Encoding]::UTF8)
+        
+        & $script:exportScript -RootFolder $script:dummySampleDir -OutputDir (Join-Path $script:testExportDir "out")
+        
+        $htmlPath = Join-Path (Join-Path $script:testExportDir "out") "test.html"
+        $html = [System.IO.File]::ReadAllText($htmlPath)
+        
+        $html | Should Match 'String format test \{0\} and \{1\}'
     }
 }

@@ -20,7 +20,7 @@ $initialOutputDir = Join-Path $scriptDir "dist"
 # --- Form 作成 ---
 $form               = New-Object System.Windows.Forms.Form
 $form.Text          = "SimpleWiki - 静的 HTML エキスポート"
-$form.Size          = New-Object System.Drawing.Size(560, 460)
+$form.Size          = New-Object System.Drawing.Size(560, 510)
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedSingle
 $form.MaximizeBox   = $false
@@ -163,6 +163,41 @@ $chkAuthorsPage.Font     = $fontLabel
 $chkAuthorsPage.Checked  = $true
 $form.Controls.Add($chkAuthorsPage)
 
+# 5. テーマ設定 & セキュリティ/保護オプション
+$labelTheme          = New-Object System.Windows.Forms.Label
+$labelTheme.Location = New-Object System.Drawing.Point(20, 238)
+$labelTheme.Size     = New-Object System.Drawing.Size(80, 20)
+$labelTheme.Text     = "🎨 テーマ:"
+$labelTheme.Font     = $fontLabel
+$form.Controls.Add($labelTheme)
+
+$cmbTheme          = New-Object System.Windows.Forms.ComboBox
+$cmbTheme.Location = New-Object System.Drawing.Point(100, 235)
+$cmbTheme.Size     = New-Object System.Drawing.Size(100, 23)
+$cmbTheme.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+$cmbTheme.Font     = $fontLabel
+$null = $cmbTheme.Items.Add("Auto")
+$null = $cmbTheme.Items.Add("Light")
+$null = $cmbTheme.Items.Add("Dark")
+$cmbTheme.SelectedIndex = 0
+$form.Controls.Add($cmbTheme)
+
+$chkDisableRawHtml          = New-Object System.Windows.Forms.CheckBox
+$chkDisableRawHtml.Location = New-Object System.Drawing.Point(220, 236)
+$chkDisableRawHtml.Size     = New-Object System.Drawing.Size(150, 24)
+$chkDisableRawHtml.Text     = "🛡️ 生HTMLを無効化"
+$chkDisableRawHtml.Font     = $fontLabel
+$chkDisableRawHtml.Checked  = $false
+$form.Controls.Add($chkDisableRawHtml)
+
+$chkPreserveCodeBlock          = New-Object System.Windows.Forms.CheckBox
+$chkPreserveCodeBlock.Location = New-Object System.Drawing.Point(380, 236)
+$chkPreserveCodeBlock.Size     = New-Object System.Drawing.Size(150, 24)
+$chkPreserveCodeBlock.Text     = "🔒 コードブロック保護"
+$chkPreserveCodeBlock.Font     = $fontLabel
+$chkPreserveCodeBlock.Checked  = $true
+$form.Controls.Add($chkPreserveCodeBlock)
+
 $chkSingleFile.Add_CheckedChanged({
     if ($chkSingleFile.Checked) {
         $chkEmbedImages.Checked = $true
@@ -176,7 +211,7 @@ $chkSingleFile.Add_CheckedChanged({
 
 # ステータスメッセージ
 $lblStatus          = New-Object System.Windows.Forms.Label
-$lblStatus.Location = New-Object System.Drawing.Point(20, 245)
+$lblStatus.Location = New-Object System.Drawing.Point(20, 275)
 $lblStatus.Size     = New-Object System.Drawing.Size(500, 20)
 $lblStatus.Text     = "準備完了。フォルダとオプションを選択して [エキスポート実行] を押してください。"
 $lblStatus.Font     = $fontLabel
@@ -185,7 +220,7 @@ $form.Controls.Add($lblStatus)
 
 # エキスポート実行ボタン
 $btnExport          = New-Object System.Windows.Forms.Button
-$btnExport.Location = New-Object System.Drawing.Point(170, 285)
+$btnExport.Location = New-Object System.Drawing.Point(170, 315)
 $btnExport.Size     = New-Object System.Drawing.Size(180, 40)
 $btnExport.Text     = "🚀 エキスポート実行"
 $btnExport.Font     = $fontBold
@@ -195,15 +230,18 @@ $btnExport.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $btnExport.FlatAppearance.BorderSize = 0
 
 $btnExport.Add_Click({
-    $inputPath    = $txtInput.Text.Trim()
-    $outputPath   = $txtOutput.Text.Trim()
-    $isSingle     = $chkSingleFile.Checked
-    $mermaidMode  = $cmbMermaid.SelectedItem.ToString()
-    $isEmbedImage = $chkEmbedImages.Checked
-    $selectedLang = $cmbLang.SelectedItem.ToString()
-    $genApi       = $chkApiJson.Checked
-    $genTags      = $chkTagsPage.Checked
-    $genAuthors   = $chkAuthorsPage.Checked
+    $inputPath      = $txtInput.Text.Trim()
+    $outputPath     = $txtOutput.Text.Trim()
+    $isSingle       = $chkSingleFile.Checked
+    $mermaidMode    = $cmbMermaid.SelectedItem.ToString()
+    $isEmbedImage   = $chkEmbedImages.Checked
+    $selectedLang   = $cmbLang.SelectedItem.ToString()
+    $genApi         = $chkApiJson.Checked
+    $genTags        = $chkTagsPage.Checked
+    $genAuthors     = $chkAuthorsPage.Checked
+    $selectedTheme  = $cmbTheme.SelectedItem.ToString()
+    $disRawHtml     = $chkDisableRawHtml.Checked
+    $presCode       = $chkPreserveCodeBlock.Checked
 
     if (-not (Test-Path $inputPath)) {
         [System.Windows.Forms.MessageBox]::Show("入力フォルダが見つかりません:`n$inputPath", "エラー", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
@@ -222,6 +260,13 @@ $btnExport.Add_Click({
             OutputDir   = $outputPath
             Language    = $selectedLang
             MermaidMode = $mermaidMode
+            Theme       = $selectedTheme
+        }
+        if ($disRawHtml) {
+            $params["DisableRawHtml"] = $true
+        }
+        if ($presCode) {
+            $params["PreserveCodeBlockLinks"] = $true
         }
         if ($isSingle) {
             $params["SingleFile"] = $true
