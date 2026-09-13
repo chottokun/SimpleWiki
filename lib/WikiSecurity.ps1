@@ -7,8 +7,10 @@
 function Protect-StringAes {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]
     param ([string]$PlainText)
-    $salt = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-OKF-RAG-2026-Salt")
-    $pass = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-Portable-Secret-Key-2026")
+    if ([string]::IsNullOrWhiteSpace($PlainText)) { return "" }
+    $fingerprint = Get-MachineFingerprint
+    $salt = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-Dynamic-Salt-$fingerprint")
+    $pass = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-MachineKey-$fingerprint")
     $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($pass, $salt, 1000)
     $key = $derive.GetBytes(32)
     $iv  = $derive.GetBytes(16)
@@ -35,11 +37,14 @@ function Unprotect-StringAes {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]
     param ([string]$EncryptedText)
     if ([string]::IsNullOrWhiteSpace($EncryptedText) -or -not $EncryptedText.StartsWith("ENC:")) { return "" }
+    $cipherText = $EncryptedText.Substring(4)
+    $cipherBytes = try { [System.Convert]::FromBase64String($cipherText) } catch { return "" }
+
+    # 1. マシン固有キーでの復号試行
     try {
-        $cipherText = $EncryptedText.Substring(4)
-        $cipherBytes = [System.Convert]::FromBase64String($cipherText)
-        $salt = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-OKF-RAG-2026-Salt")
-        $pass = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-Portable-Secret-Key-2026")
+        $fingerprint = Get-MachineFingerprint
+        $salt = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-Dynamic-Salt-$fingerprint")
+        $pass = [System.Text.Encoding]::UTF8.GetBytes("SimpleWiki-MachineKey-$fingerprint")
         $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($pass, $salt, 1000)
         $key = $derive.GetBytes(32)
         $iv  = $derive.GetBytes(16)
@@ -51,9 +56,32 @@ function Unprotect-StringAes {
         $decBytes = $decryptor.TransformFinalBlock($cipherBytes, 0, $cipherBytes.Length)
         return [System.Text.Encoding]::UTF8.GetString($decBytes)
     } catch {
-        Write-Warning "AES 復号に失敗しました: $_"
-        return ""
+        $null = $_ # マシン固有キーでの復号失敗はフォールバックへ
     }
+
+    # 2. 後方互換性: 環境変数に設定された旧レガシーキーでの復号試行
+    $legacyPassStr = [Environment]::GetEnvironmentVariable("SIMPLEWIKI_LEGACY_SECRET_KEY")
+    $legacySaltStr = [Environment]::GetEnvironmentVariable("SIMPLEWIKI_LEGACY_SALT")
+    if (-not [string]::IsNullOrWhiteSpace($legacyPassStr)) {
+        try {
+            $saltVal = if (-not [string]::IsNullOrWhiteSpace($legacySaltStr)) { $legacySaltStr } else { "SimpleWiki-Legacy-Salt" }
+            $legacySalt = [System.Text.Encoding]::UTF8.GetBytes($saltVal)
+            $legacyPass = [System.Text.Encoding]::UTF8.GetBytes($legacyPassStr)
+            $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($legacyPass, $legacySalt, 1000)
+            $key = $derive.GetBytes(32)
+            $iv  = $derive.GetBytes(16)
+
+            $aes = [System.Security.Cryptography.Aes]::Create()
+            $aes.Key = $key
+            $aes.IV  = $iv
+            $decryptor = $aes.CreateDecryptor()
+            $decBytes = $decryptor.TransformFinalBlock($cipherBytes, 0, $cipherBytes.Length)
+            return [System.Text.Encoding]::UTF8.GetString($decBytes)
+        } catch {
+            Write-Warning "AES レガシー復号に失敗しました: $_"
+        }
+    }
+    return ""
 }
 
 function Unprotect-StringDpapi {

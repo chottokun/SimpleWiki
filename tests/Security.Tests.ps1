@@ -222,10 +222,17 @@ Describe 'OKF LLM RAG Security and Encryption Tests' {
         $webDecrypted = Unprotect-ActivationCode -EncryptedText $webBoundCode -MachineId "A3B1-9F22-C84D-71E0" -Email "user@example.com"
         $webDecrypted | Should Be "sk-sakura-test-key-123456"
 
-        # Web ポータブル (Legacy) コードの復号
+        # Web ポータブル (Legacy) コードの復号（レガシーキー環境変数を指定して検証）
         $webLegacyCode = "ENC:rcBTlBqj1CLuHa9ZHN9vwmb7Fslkcr2Fi0ihcDYDimo="
-        $webLegacyDecrypted = Unprotect-ActivationCode -EncryptedText $webLegacyCode
-        $webLegacyDecrypted | Should Be "sk-sakura-test-key-123456"
+        [Environment]::SetEnvironmentVariable("SIMPLEWIKI_LEGACY_SECRET_KEY", "SimpleWiki-Portable-Secret-Key-2026")
+        [Environment]::SetEnvironmentVariable("SIMPLEWIKI_LEGACY_SALT", "SimpleWiki-OKF-RAG-2026-Salt")
+        try {
+            $webLegacyDecrypted = Unprotect-ActivationCode -EncryptedText $webLegacyCode
+            $webLegacyDecrypted | Should Be "sk-sakura-test-key-123456"
+        } finally {
+            [Environment]::SetEnvironmentVariable("SIMPLEWIKI_LEGACY_SECRET_KEY", $null)
+            [Environment]::SetEnvironmentVariable("SIMPLEWIKI_LEGACY_SALT", $null)
+        }
     }
 
     It 'Encrypts and decrypts API key with Windows DPAPI (DPAPI: prefix)' {
