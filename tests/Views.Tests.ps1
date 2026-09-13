@@ -1001,7 +1001,7 @@ Describe "Refactoring & Facade Integration Unit Tests" {
         $p3.Count | Should Be 2
     }
 
-    It "Get-ServerFolderTreeHtml and Get-FileTreeHtml alias wrappers render folder trees without exceptions" {
+    It "Get-ServerFolderTreeHtml and Render-ServerFolderTreeHtml alias wrapper render folder trees without exceptions" {
         $node = [PSCustomObject]@{
             Files = [System.Collections.Generic.List[PSObject]]@(
                 [PSCustomObject]@{ FullName = "C:\wiki\index.md"; BaseName = "index" }

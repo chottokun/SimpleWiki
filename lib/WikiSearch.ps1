@@ -1199,16 +1199,6 @@ function Search-OkfDocs {
 }
 
 
-function Render-FileTreeHtml {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
-    param(
-        [Parameter(Mandatory = $true)]$node,
-        [Parameter(Mandatory = $true)][string]$pageRelPath,
-        [Parameter(Mandatory = $true)][string]$relPrefix
-    )
-    return Get-FileTreeHtml -node $node -pageRelPath $pageRelPath -relPrefix $relPrefix
-}
-
 function Render-ServerFolderTreeHtml {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
     param(
