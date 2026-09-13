@@ -445,16 +445,16 @@ function Get-ChatWidgetHtml {
                         rows.push(cols);
                     }
 
-                    var tHtml = "<div class='chat-table-wrapper'><table class='chat-table'><thead><tr>";
-                    headerCols.forEach(function(h) { tHtml += "<th>" + parseInline(h) + "</th>"; });
-                    tHtml += "</tr></thead><tbody>";
+                    var tHtmlParts = ["<div class='chat-table-wrapper'><table class='chat-table'><thead><tr>"];
+                    headerCols.forEach(function(h) { tHtmlParts.push("<th>", parseInline(h), "</th>"); });
+                    tHtmlParts.push("</tr></thead><tbody>");
                     rows.forEach(function(r) {
-                        tHtml += "<tr>";
-                        r.forEach(function(c) { tHtml += "<td>" + parseInline(c) + "</td>"; });
-                        tHtml += "</tr>";
+                        tHtmlParts.push("<tr>");
+                        r.forEach(function(c) { tHtmlParts.push("<td>", parseInline(c), "</td>"); });
+                        tHtmlParts.push("</tr>");
                     });
-                    tHtml += "</tbody></table></div>";
-                    return tHtml;
+                    tHtmlParts.push("</tbody></table></div>");
+                    return tHtmlParts.join("");
                 });
 
                 var parts = html.split(/(___CODEBLOCK_\d+___|<div class='chat-table-wrapper'>[\s\S]*?<\/div>)/g);
