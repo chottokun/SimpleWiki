@@ -699,6 +699,39 @@ Describe "Multi-Language (i18n) & Localization Tests" {
         $resEn = Invoke-AgenticRagChat -ApiUrl "http://invalid-url-for-test.local/v1" -ApiKey "dummy" -Model "test" -UserMessage "What is the architecture?" -MaxTurns 1 -Lang "en"
         $resEn.answer | Should Match "I autonomously investigated the Wiki|I searched the Wiki"
     }
+
+    Context "ConvertTo-JsString Unit Tests" {
+        It "Returns empty string when input is null, empty, or unprovided" {
+            (ConvertTo-JsString -InputString $null) | Should Be ""
+            (ConvertTo-JsString -InputString "") | Should Be ""
+            (ConvertTo-JsString -String "") | Should Be ""
+            (ConvertTo-JsString) | Should Be ""
+        }
+
+        It "Returns plain string unchanged when no special characters exist" {
+            (ConvertTo-JsString -InputString "Hello World 123") | Should Be "Hello World 123"
+            (ConvertTo-JsString -String "Hello World 123") | Should Be "Hello World 123"
+            (ConvertTo-JsString "Hello World 123") | Should Be "Hello World 123"
+        }
+
+        It "Escapes backslashes correctly" {
+            (ConvertTo-JsString -InputString 'C:\folder\subfolder\file.txt') | Should Be 'C:\\folder\\subfolder\\file.txt'
+        }
+
+        It "Escapes single and double quotes correctly" {
+            (ConvertTo-JsString -InputString 'He said "Hello" and ''it works''') | Should Be 'He said \"Hello\" and \''it works\'''
+        }
+
+        It "Escapes CRLF, LF, and CR line breaks to \n" {
+            (ConvertTo-JsString -InputString "Line1`r`nLine2`nLine3`rLine4") | Should Be 'Line1\nLine2\nLine3\nLine4'
+        }
+
+        It "Correctly escapes complex strings containing backslashes, quotes, and newlines" {
+            $inputStr = 'alert("Hello ''World''");' + "`r`n" + 'path: C:\test;'
+            $expected = "alert(\`"Hello \'World\'\`");\npath: C:\\test;"
+            (ConvertTo-JsString -InputString $inputStr) | Should Be $expected
+        }
+    }
 }
 
 
