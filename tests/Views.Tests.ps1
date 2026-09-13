@@ -699,12 +699,46 @@ Describe "Multi-Language (i18n) & Localization Tests" {
         $resEn = Invoke-AgenticRagChat -ApiUrl "http://invalid-url-for-test.local/v1" -ApiKey "dummy" -Model "test" -UserMessage "What is the architecture?" -MaxTurns 1 -Lang "en"
         $resEn.answer | Should Match "I autonomously investigated the Wiki|I searched the Wiki"
     }
+
+    Context "ConvertTo-JsString Unit Tests" {
+        It "Returns empty string when input is null, empty, or unprovided" {
+            (ConvertTo-JsString -InputString $null) | Should Be ""
+            (ConvertTo-JsString -InputString "") | Should Be ""
+            (ConvertTo-JsString -String "") | Should Be ""
+            (ConvertTo-JsString) | Should Be ""
+        }
+
+        It "Returns plain string unchanged when no special characters exist" {
+            (ConvertTo-JsString -InputString "Hello World 123") | Should Be "Hello World 123"
+            (ConvertTo-JsString -String "Hello World 123") | Should Be "Hello World 123"
+            (ConvertTo-JsString "Hello World 123") | Should Be "Hello World 123"
+        }
+
+        It "Escapes backslashes correctly" {
+            (ConvertTo-JsString -InputString 'C:\folder\subfolder\file.txt') | Should Be 'C:\\folder\\subfolder\\file.txt'
+        }
+
+        It "Escapes single and double quotes correctly" {
+            (ConvertTo-JsString -InputString 'He said "Hello" and ''it works''') | Should Be 'He said \"Hello\" and \''it works\'''
+        }
+
+        It "Escapes CRLF, LF, and CR line breaks to \n" {
+            (ConvertTo-JsString -InputString "Line1`r`nLine2`nLine3`rLine4") | Should Be 'Line1\nLine2\nLine3\nLine4'
+        }
+
+        It "Correctly escapes complex strings containing backslashes, quotes, and newlines" {
+            $inputStr = 'alert("Hello ''World''");' + "`r`n" + 'path: C:\test;'
+            $expected = "alert(\`"Hello \'World\'\`");\npath: C:\\test;"
+            (ConvertTo-JsString -InputString $inputStr) | Should Be $expected
+        }
+    }
 }
 
 
 Describe "UI Shutdown and Brand Title Customization Tests" {
     BeforeAll {
         . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -DotSourceOnly
+        $script:allScriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
     }
 
     It "Localizes brand_title correctly for ja and en" {
@@ -739,7 +773,7 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
     }
 
     It "Start-MarkdigWiki.ps1 includes /api/shutdown endpoint and brand_title placeholder" {
-        $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
+        $scriptContent = $script:allScriptContent
         $scriptContent | Should Match '/api/shutdown'
         $scriptContent | Should Match 'shutdown-btn'
         $scriptContent | Should Match 'shutdownWikiServer'
@@ -758,7 +792,7 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
     }
 
     It "Start-MarkdigWiki.ps1 binds all editor i18n variables into template and JS" {
-        $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
+        $scriptContent = $script:allScriptContent
         $scriptContent | Should Match 'editor_gen_prefix'
         $scriptContent | Should Match 'editor_warning_yaml'
         $scriptContent | Should Match 'editor_loading'
@@ -793,7 +827,7 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
     }
 
     It "Start-MarkdigWiki.ps1 contains Form & RAW YAML separated editor modal HTML and JS functions" {
-        $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
+        $scriptContent = $script:allScriptContent
         $scriptContent | Should Match 'id="yamlFormContainer"'
         $scriptContent | Should Match 'id="yamlRawContainer"'
         $scriptContent | Should Match 'id="wikiEditorBodyTextarea"'
@@ -810,14 +844,14 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
     }
 
     It "Start-MarkdigWiki.ps1 includes keyboard shortcuts for editor modal (Ctrl+S save and Esc cancel)" {
-        $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
+        $scriptContent = $script:allScriptContent
         $scriptContent | Should Match 'addEventListener\("keydown"'
         $scriptContent | Should Match 'saveWikiMarkdown\(\)'
         $scriptContent | Should Match 'closeWikiEditor\(\)'
     }
 
     It "Start-MarkdigWiki.ps1 sanitizes RAW YAML delimiters and uses local date generation" {
-        $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
+        $scriptContent = $script:allScriptContent
         $scriptContent | Should Match 'replace\(\/\^---\\r\?\\n\?\/, \x27\x27\)\.replace\(\/\\r\?\\n\?---\\r\?\$\/, \x27\x27\)'
         $scriptContent | Should Match 'd\.getFullYear\(\)'
         $scriptContent | Should Match 'd\.getMonth\(\) \+ 1'
@@ -906,6 +940,101 @@ Describe "UI Shutdown and Brand Title Customization Tests" {
 
 
 
+Describe "Write-SafeHttpResponse Unit Tests" {
+    BeforeAll {
+        . (Join-Path $projectRoot "Start-MarkdigWiki.ps1") -DotSourceOnly
+    }
+
+    It "Writes byte array to OutputStream and sets response properties correctly" {
+        $ms = New-Object System.IO.MemoryStream
+        $mockResponse = [PSCustomObject]@{
+            StatusCode      = 0
+            ContentType     = ""
+            ContentLength64 = 0L
+            OutputStream    = $ms
+        }
+
+        $testBytes = [System.Text.Encoding]::UTF8.GetBytes("Hello Safe Response")
+        Write-SafeHttpResponse -Response $mockResponse -Bytes $testBytes -ContentType "application/json; charset=utf-8" -StatusCode 201
+
+        $mockResponse.StatusCode | Should Be 201
+        $mockResponse.ContentType | Should Be "application/json; charset=utf-8"
+        $mockResponse.ContentLength64 | Should Be $testBytes.Length
+
+        $ms.Position = 0
+        $reader = New-Object System.IO.StreamReader($ms, [System.Text.Encoding]::UTF8)
+        $writtenContent = $reader.ReadToEnd()
+        $writtenContent | Should Be "Hello Safe Response"
+    }
+
+    It "Uses default ContentType and StatusCode when omitted" {
+        $ms = New-Object System.IO.MemoryStream
+        $mockResponse = [PSCustomObject]@{
+            StatusCode      = 0
+            ContentType     = ""
+            ContentLength64 = 0L
+            OutputStream    = $ms
+        }
+
+        $testBytes = [System.Text.Encoding]::UTF8.GetBytes("Default Params")
+        Write-SafeHttpResponse -Response $mockResponse -Bytes $testBytes
+
+        $mockResponse.StatusCode | Should Be 200
+        $mockResponse.ContentType | Should Be "text/html; charset=utf-8"
+        $mockResponse.ContentLength64 | Should Be $testBytes.Length
+    }
+
+    It "Suppresses IOException when client disconnects during output write" {
+        # Custom stream mock or subclassing Stream to throw IOException on Write
+        Add-Type -TypeDefinition @"
+using System;
+using System.IO;
+
+public class DisconnectedStream : MemoryStream {
+    public override void Write(byte[] buffer, int offset, int count) {
+        throw new IOException("The pipe has been ended.");
+    }
+}
+"@ -ErrorAction SilentlyContinue
+
+        $disStream = New-Object DisconnectedStream
+        $mockResponse = [PSCustomObject]@{
+            StatusCode      = 0
+            ContentType     = ""
+            ContentLength64 = 0L
+            OutputStream    = $disStream
+        }
+
+        $testBytes = [System.Text.Encoding]::UTF8.GetBytes("Disconnect Test")
+        { Write-SafeHttpResponse -Response $mockResponse -Bytes $testBytes } | Should Not Throw
+    }
+
+    It "Catches and logs warning for generic unexpected exceptions during response write" {
+        Add-Type -TypeDefinition @"
+using System;
+using System.IO;
+
+public class GenericErrorStream : MemoryStream {
+    public override void Write(byte[] buffer, int offset, int count) {
+        throw new InvalidOperationException("Unexpected internal error");
+    }
+}
+"@ -ErrorAction SilentlyContinue
+
+        $errStream = New-Object GenericErrorStream
+        $mockResponse = [PSCustomObject]@{
+            StatusCode      = 0
+            ContentType     = ""
+            ContentLength64 = 0L
+            OutputStream    = $errStream
+        }
+
+        $testBytes = [System.Text.Encoding]::UTF8.GetBytes("Generic Error Test")
+        { Write-SafeHttpResponse -Response $mockResponse -Bytes $testBytes } | Should Not Throw
+    }
+}
+
+
 Describe "WikiViews Helper Functions Suite" {
     BeforeAll {
         $serverScript = Join-Path $projectRoot "Start-MarkdigWiki.ps1"
@@ -913,7 +1042,38 @@ Describe "WikiViews Helper Functions Suite" {
     }
 
     Context "PR #25 & #32: WikiViews Helper Functions" {
-        It "Render-DocList generates valid HTML with escaped titles and dates" {
+        It "Get-DocListHtml generates valid HTML with escaped titles, normalized paths, and formatted dates" {
+            $docs = @(
+                [PSCustomObject]@{
+                    Title       = "Doc & <Tag> One"
+                    RelPath     = "guide\doc1.md"
+                    LastUpdated = [DateTime]::Parse("2026-08-01")
+                },
+                [PSCustomObject]@{
+                    Title       = "Doc Two"
+                    RelPath     = "guide/doc2.md"
+                    LastUpdated = "2026-08-02"
+                }
+            )
+
+            $html = Get-DocListHtml -docArray $docs -emptyMsg "No docs available"
+            $html | Should Match "^<ul>.*</ul>$"
+            $html | Should Match "<li><a href='/guide/doc1.md'>Doc &amp; &lt;Tag&gt; One</a> <span class='muted'>\(2026-08-01\)</span></li>"
+            $html | Should Match "<li><a href='/guide/doc2.md'>Doc Two</a> <span class='muted'>\(2026-08-02\)</span></li>"
+        }
+
+        It "Get-DocListHtml handles null, empty, and null-element arrays gracefully with emptyMsg" {
+            $nullHtml = Get-DocListHtml -docArray $null -emptyMsg "No items found"
+            $nullHtml | Should Be "<p class='empty-msg'>No items found</p>"
+
+            $emptyHtml = Get-DocListHtml -docArray @() -emptyMsg "No items found"
+            $emptyHtml | Should Be "<p class='empty-msg'>No items found</p>"
+
+            $nullElementsHtml = Get-DocListHtml -docArray @($null, $null) -emptyMsg "No items found"
+            $nullElementsHtml | Should Be "<p class='empty-msg'>No items found</p>"
+        }
+
+        It "Render-DocList generates valid HTML by delegating to Get-DocListHtml" {
             $docs = @(
                 [PSCustomObject]@{
                     Title       = "Doc & <Tag> One"
@@ -959,6 +1119,38 @@ Describe "WikiViews Helper Functions Suite" {
 
             $serverCard = Render-SettingsServerCard -Data $data
             $serverCard | Should Match "shutdownWikiServer\(\)"
+        }
+
+        It "Get-GlossaryBoxHtml and Render-GlossaryBoxHtml handle null, empty, missing, and valid term scenarios correctly" {
+            # 1. Null, empty, and whitespace terms return empty string
+            Get-GlossaryBoxHtml -Term $null | Should Be ""
+            Get-GlossaryBoxHtml -Term "" | Should Be ""
+            Get-GlossaryBoxHtml -Term "   `t`n " | Should Be ""
+
+            # 2. Term not found in glossary returns empty string
+            $sampleWikiDir = Join-Path $projectRoot "markdown_sample"
+            Get-GlossaryBoxHtml -Term "NonExistentTermXYZ999" -TargetWikiDir $sampleWikiDir | Should Be ""
+
+            # 3. Valid term in isolated directory returns expected HTML structure
+            $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("WikiGlossaryBoxTest_" + [Guid]::NewGuid().ToString("N"))
+            $null = New-Item -ItemType Directory -Path $tempDir -Force
+            try {
+                $gPath = Join-Path $tempDir "glossary.md"
+                Set-Content -Path $gPath -Value "## <Special & Term>`n`n* **概要**: 特殊文字と定義のテスト" -Encoding UTF8
+
+                $html = Get-GlossaryBoxHtml -Term "<Special & Term>" -TargetWikiDir $tempDir
+                $html | Should Not BeNullOrEmpty
+                $html | Should Match '<div class="glossary-box"'
+                $html | Should Match '<div class="glossary-content"'
+                $html | Should Match '📖 用語解説: &lt;Special &amp; Term&gt;'
+                $html | Should Match '特殊文字と定義のテスト'
+
+                # 4. Render-GlossaryBoxHtml alias wrapper delegates and yields identical HTML
+                $wrapperHtml = Render-GlossaryBoxHtml -Term "<Special & Term>" -TargetWikiDir $tempDir
+                $wrapperHtml | Should Be $html
+            } finally {
+                Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 }
@@ -1011,5 +1203,86 @@ Describe "Refactoring & Facade Integration Unit Tests" {
         $tree1 = Get-ServerFolderTreeHtml -node $node -currentRelPath "" -wikiDir "C:\wiki"
         $tree2 = Render-ServerFolderTreeHtml -node $node -currentRelPath "" -wikiDir "C:\wiki"
         $tree1 | Should Be $tree2
+    }
+}
+
+
+Describe "Initialize-WikiIndex Unit Tests" {
+    BeforeAll {
+        $serverScript = Join-Path $projectRoot "Start-MarkdigWiki.ps1"
+        . $serverScript -DotSourceOnly
+    }
+
+    BeforeEach {
+        $script:WikiIndex = @()
+    }
+
+    It "Skips initialization if `$script:WikiIndex is already populated" {
+        $script:WikiIndex = [System.Collections.Generic.List[PSObject]]@(
+            [PSCustomObject]@{ Title = "Existing Doc"; RelPath = "existing.md" }
+        )
+        Mock Load-WikiIndexCache { return $true }
+        Mock Build-WikiIndex { return $null }
+
+        Initialize-WikiIndex -TargetWikiDir "/dummy/dir"
+
+        Assert-MockCalled Load-WikiIndexCache -Times 0
+        Assert-MockCalled Build-WikiIndex -Times 0
+    }
+
+    It "Loads index from cache when cache exists and returns `$true" {
+        Mock Load-WikiIndexCache {
+            $script:WikiIndex = [System.Collections.Generic.List[PSObject]]@(
+                [PSCustomObject]@{ Title = "Cached Doc"; RelPath = "cached.md" }
+            )
+            return $true
+        }
+        Mock Build-WikiIndex { return $null }
+
+        Initialize-WikiIndex -TargetWikiDir "/test/wiki/path"
+
+        Assert-MockCalled Load-WikiIndexCache -Exactly 1 -Scope It
+        Assert-MockCalled Build-WikiIndex -Times 0 -Scope It
+        $script:WikiIndex.Count | Should Be 1
+        $script:WikiIndex[0].Title | Should Be "Cached Doc"
+    }
+
+    It "Calls Build-WikiIndex when Load-WikiIndexCache returns `$false" {
+        Mock Load-WikiIndexCache { return $false }
+        Mock Build-WikiIndex {
+            $script:WikiIndex = [System.Collections.Generic.List[PSObject]]@(
+                [PSCustomObject]@{ Title = "Built Doc"; RelPath = "built.md" }
+            )
+            return $script:WikiIndex
+        }
+
+        Initialize-WikiIndex -TargetWikiDir "/test/wiki/path"
+
+        Assert-MockCalled Load-WikiIndexCache -Exactly 1 -Scope It
+        Assert-MockCalled Build-WikiIndex -Exactly 1 -Scope It
+        $script:WikiIndex.Count | Should Be 1
+        $script:WikiIndex[0].Title | Should Be "Built Doc"
+    }
+
+    It "Resolves fallback directory order correctly when TargetWikiDir parameter is empty" {
+        $origWikiDir = $script:wikiDir
+        try {
+            $script:wikiDir = "/fallback/script/wikidir"
+            Mock Load-WikiIndexCache { return $true } -ParameterFilter { $TargetWikiDir -eq "/fallback/script/wikidir" }
+
+            Initialize-WikiIndex -TargetWikiDir ""
+
+            Assert-MockCalled Load-WikiIndexCache -Exactly 1 -ParameterFilter { $TargetWikiDir -eq "/fallback/script/wikidir" } -Scope It
+        } finally {
+            $script:wikiDir = $origWikiDir
+        }
+    }
+
+    It "Ensure-WikiIndexLoaded delegates directly to Initialize-WikiIndex" {
+        Mock Load-WikiIndexCache { return $true } -ParameterFilter { $TargetWikiDir -eq "/wrapper/dir" }
+
+        Ensure-WikiIndexLoaded -TargetWikiDir "/wrapper/dir"
+
+        Assert-MockCalled Load-WikiIndexCache -Exactly 1 -ParameterFilter { $TargetWikiDir -eq "/wrapper/dir" } -Scope It
     }
 }

@@ -202,6 +202,56 @@ status: invalid_unknown_status
         $html | Should Match "Array\.isArray\(n\.tags\)"
     }
 
+    It "Get-StellaControlPanelHtml renders control panel structure and respects language parameter" {
+        $sampleWikiDir = Join-Path $projectRoot "markdown_sample"
+        Ensure-WikiIndexLoaded -TargetWikiDir $sampleWikiDir
+
+        $htmlJa = Get-StellaControlPanelHtml -ActiveView "stella" -Lang "ja"
+        $htmlJa | Should Match 'class="stella-control-panel"'
+        $htmlJa | Should Match 'id="stellaSearchInput"'
+        $htmlJa | Should Match 'id="stellaStatusSelect"'
+        $htmlJa | Should Match 'id="stellaTagSelect"'
+        $htmlJa | Should Match 'class="stella-preset-btn'
+        $htmlJa | Should Match 'class="stella-reset-btn"'
+        $htmlJa | Should Match 'resetStellaView'
+        $htmlJa | Should Match 'setStellaPreset'
+
+        # Japanese localized text assertions
+        $htmlJa | Should Match '3D ステラ'
+        $htmlJa | Should Match 'すべて'
+
+        # English localized text assertions
+        $htmlEn = Get-StellaControlPanelHtml -ActiveView "stella" -Lang "en"
+        $htmlEn | Should Match '3D Stella'
+        $htmlEn | Should Match 'All'
+    }
+
+    It "Get-StellaControlPanelHtml deduplicates, trims, sorts, and HTML-encodes tags from script:WikiIndex" {
+        $script:WikiIndex = @(
+            [PSCustomObject]@{ Tags = @("  frontend  ", "Architecture", "<script>alert(1)</script>") },
+            [PSCustomObject]@{ Tags = @("frontend", "C# & .NET", "   ") }
+        )
+
+        $html = Get-StellaControlPanelHtml -Lang "ja"
+
+        # Verify HTML encoding of special characters
+        $html | Should Match "<option value='&lt;script&gt;alert\(1\)&lt;/script&gt;'>🏷️ &lt;script&gt;alert\(1\)&lt;/script&gt;</option>"
+        $html | Should Match "<option value='C# &amp; .NET'>🏷️ C# &amp; .NET</option>"
+
+        # Verify deduplication and trimming
+        $html | Should Match "<option value='frontend'>🏷️ frontend</option>"
+
+        # Verify alphabetical sorting (<script> before Architecture before C# & .NET before frontend)
+        $scriptIndex = $html.IndexOf("&lt;script&gt;")
+        $archIndex = $html.IndexOf("Architecture")
+        $dotnetIndex = $html.IndexOf("C# &amp; .NET")
+        $frontendIndex = $html.IndexOf("frontend")
+
+        ($scriptIndex -lt $archIndex) | Should Be $true
+        ($archIndex -lt $dotnetIndex) | Should Be $true
+        ($dotnetIndex -lt $frontendIndex) | Should Be $true
+    }
+
     It "HTTP route requests handle /stella endpoint" {
         $scriptContent = (Get-ChildItem -Path $projectRoot -Filter "*.ps1" -Recurse | ForEach-Object { Get-Content -Path $_.FullName -Raw -Encoding UTF8 }) -join "`n"
         $scriptContent | Should Match 'rawPath -eq "/stella"'

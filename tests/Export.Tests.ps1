@@ -304,6 +304,66 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
     }
 }
 
+Describe "Convert-MermaidToSvgMarkup Unit Tests" {
+    BeforeAll {
+        $exportHelpers = Join-Path $projectRoot "lib\WikiExportHelpers.ps1"
+        . $exportHelpers
+    }
+
+    It "Converts <pre class='mermaid'> into SVG markup block" {
+        $inputHtml = '<pre class="mermaid">graph TD;&#10;A--&gt;B;</pre>'
+        $result = Convert-MermaidToSvgMarkup -html $inputHtml
+
+        $result | Should Match '<div class="mermaid-svg"'
+        $result | Should Match '<svg '
+        $result | Should Match 'Mermaid Diagram \(SVG Static Mode\)'
+        $result | Should Match 'graph TD;'
+    }
+
+    It "Converts <pre><code class='language-mermaid'> into SVG markup block" {
+        $inputHtml = '<pre><code class="language-mermaid">graph LR;&#10;X--&gt;Y;</code></pre>'
+        $result = Convert-MermaidToSvgMarkup -html $inputHtml
+
+        $result | Should Match '<div class="mermaid-svg"'
+        $result | Should Match '<svg '
+        $result | Should Match 'graph LR;'
+    }
+
+    It "Encodes special characters (HTML entities) in Mermaid code" {
+        $inputHtml = '<pre class="mermaid">A & B < C > D</pre>'
+        $result = Convert-MermaidToSvgMarkup -html $inputHtml
+
+        $result | Should Match 'A &amp; B &lt; C &gt; D'
+    }
+
+    It "Leaves non-Mermaid pre code blocks unchanged" {
+        $inputHtml = '<pre><code class="language-bash">echo "Hello World"</code></pre>'
+        $result = Convert-MermaidToSvgMarkup -html $inputHtml
+
+        $result | Should Be $inputHtml
+    }
+
+    It "Converts multiple Mermaid blocks while leaving non-Mermaid blocks untouched" {
+        $inputHtml = @"
+<p>Intro</p>
+<pre class="mermaid">graph TD; A-->B;</pre>
+<pre><code class="language-bash">echo 123</code></pre>
+<pre><code class="language-mermaid">sequenceDiagram; Alice->>Bob: Hi;</code></pre>
+"@
+        $result = Convert-MermaidToSvgMarkup -html $inputHtml
+
+        $matches = [regex]::Matches($result, '<div class="mermaid-svg"')
+        $matches.Count | Should Be 2
+        $result | Should Match '<pre><code class="language-bash">echo 123</code></pre>'
+    }
+
+    It "Returns original HTML string when no Mermaid blocks exist or when given empty string" {
+        $inputHtml = '<p>No mermaid diagram here</p>'
+        (Convert-MermaidToSvgMarkup -html $inputHtml) | Should Be $inputHtml
+        (Convert-MermaidToSvgMarkup -html "") | Should Be ""
+    }
+}
+
 
 Describe 'Export-GUI.ps1 GUI Component and Syntax Validation' {
     It 'Export-GUI.ps1 file exists and passes AST syntax parsing' {
@@ -336,5 +396,60 @@ Describe 'Export-GUI.ps1 GUI Component and Syntax Validation' {
         $content | Should Match 'NoApiJson'
         $content | Should Match 'NoTagsPage'
         $content | Should Match 'NoAuthorsPage'
+    }
+}
+
+Describe "Static Export Tree and Navigation Helper Unit Tests" {
+    BeforeAll {
+        . (Join-Path $projectRoot "lib\WikiMetadata.ps1")
+        . (Join-Path $projectRoot "lib\WikiExportHelpers.ps1")
+
+        $script:dummyBaseDir = Join-Path $projectRoot "markdown_sample"
+        $script:dummyFile1Path = Join-Path $script:dummyBaseDir "index.md"
+        $script:dummyFile2Path = Join-Path (Join-Path $script:dummyBaseDir "docs") "guide.md"
+        $script:dummyHtml2Path = Join-Path (Join-Path $script:dummyBaseDir "docs") "guide.html"
+    }
+
+    It "Build-FileTreeNode creates hierarchical folder structure from markdown file list" {
+        $dummyFiles = @(
+            [PSCustomObject]@{ FullName = $script:dummyFile1Path; BaseName = "index" },
+            [PSCustomObject]@{ FullName = $script:dummyFile2Path; BaseName = "guide" }
+        )
+        $treeNode = Build-FileTreeNode -allMdFiles $dummyFiles -wikiDir $script:dummyBaseDir
+        $treeNode.Files.Count | Should Be 1
+        $treeNode.SubFolders.Contains("docs") | Should Be $true
+        $treeNode.SubFolders["docs"].Files.Count | Should Be 1
+    }
+
+    It "Test-ExportNodeHasActiveFile identifies if active file exists in node tree" {
+        $dummyFile1 = [PSCustomObject]@{ FullName = $script:dummyFile1Path; BaseName = "index" }
+        $dummyFile2 = [PSCustomObject]@{ FullName = $script:dummyFile2Path; BaseName = "guide" }
+        $treeNode = Build-FileTreeNode -allMdFiles @($dummyFile1, $dummyFile2) -wikiDir $script:dummyBaseDir
+
+        (Test-ExportNodeHasActiveFile -node $treeNode.SubFolders["docs"] -currentFile $dummyFile2) | Should Be $true
+        (Test-ExportNodeHasActiveFile -node $treeNode.SubFolders["docs"] -currentFile $dummyFile1) | Should Be $false
+    }
+
+    It "Render-ExportFolderTreeHtml renders HTML list with details and active file highlights" {
+        $dummyFile1 = [PSCustomObject]@{ FullName = $script:dummyFile1Path; BaseName = "index" }
+        $dummyFile2 = [PSCustomObject]@{ FullName = $script:dummyFile2Path; BaseName = "guide" }
+        $treeNode = Build-FileTreeNode -allMdFiles @($dummyFile1, $dummyFile2) -wikiDir $script:dummyBaseDir
+        $currentUri = New-Object System.Uri($script:dummyHtml2Path)
+
+        $html = Render-ExportFolderTreeHtml -node $treeNode -currentFile $dummyFile2 -currentUri $currentUri
+        $html | Should Match "<li class='nav-folder'>"
+        $html | Should Match "<details open>"
+        $html | Should Match "class='active'"
+    }
+
+    It "Get-ExportSidebarHtml builds sidebar tree HTML for single file mode and multi-file mode" {
+        $dummyFile1 = [PSCustomObject]@{ FullName = $script:dummyFile1Path; BaseName = "index" }
+        $dummyFiles = @($dummyFile1)
+
+        $htmlSingle = Get-ExportSidebarHtml -currentFile $null -allMdFiles $dummyFiles -wikiDir $script:dummyBaseDir -IsSingleFileMode
+        $htmlSingle | Should Match "href='#index'"
+
+        $htmlMulti = Get-ExportSidebarHtml -currentFile $dummyFile1 -allMdFiles $dummyFiles -wikiDir $script:dummyBaseDir
+        $htmlMulti | Should Match "class='active'"
     }
 }

@@ -167,3 +167,136 @@ function Get-OptimizedImageBase64 {
         if ($origBmp) { $origBmp.Dispose() }
     }
 }
+
+function Build-FileTreeNode {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
+    param ($allMdFiles, $wikiDir)
+
+    $rootNode = [PSCustomObject]@{
+        Files      = [System.Collections.Generic.List[PSObject]]::new()
+        SubFolders = [ordered]@{}
+    }
+
+    $normWikiDir = if ($wikiDir) { $wikiDir.Replace('\', '/').TrimEnd('/') } else { "" }
+    foreach ($file in $allMdFiles) {
+        $normFullName = if ($file.FullName) { $file.FullName.Replace('\', '/') } else { "" }
+        $relPath = if ($normWikiDir -and $normFullName.StartsWith($normWikiDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $normFullName.Substring($normWikiDir.Length).TrimStart('/')
+        } else {
+            $file.FullName.TrimStart('\', '/')
+        }
+        $parts   = $relPath -split '[\\/]'
+
+        $currentNode = $rootNode
+        for ($i = 0; $i -lt $parts.Length - 1; $i++) {
+            $folderName = $parts[$i]
+            if (-not $currentNode.SubFolders.Contains($folderName)) {
+                $currentNode.SubFolders[$folderName] = [PSCustomObject]@{
+                    Files      = [System.Collections.Generic.List[PSObject]]::new()
+                    SubFolders = [ordered]@{}
+                }
+            }
+            $currentNode = $currentNode.SubFolders[$folderName]
+        }
+        $currentNode.Files.Add($file)
+    }
+    return $rootNode
+}
+
+function Test-ExportNodeHasActiveFile {
+    param ($node, $currentFile)
+
+    if (-not $currentFile) { return $false }
+
+    foreach ($file in $node.Files) {
+        if ($file.FullName -eq $currentFile.FullName) {
+            return $true
+        }
+    }
+    foreach ($subFolder in $node.SubFolders.Values) {
+        if (Test-ExportNodeHasActiveFile -node $subFolder -currentFile $currentFile) {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Render-ExportFolderTreeHtml {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
+    param (
+        $node,
+        $currentFile,
+        $currentUri,
+        [switch]$IsSingleFileMode
+    )
+
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.Add("<ul>")
+
+    # 1. フォルダの描画 (再帰)
+    $sortedFolderNames = if ($node.SubFolders) {
+        @($node.SubFolders.Keys | Sort-Object)
+    } else { @() }
+
+    foreach ($folderName in $sortedFolderNames) {
+        $subNode = $node.SubFolders[$folderName]
+        $hasActive = Test-ExportNodeHasActiveFile -node $subNode -currentFile $currentFile
+        $openAttr = if ($hasActive -or $IsSingleFileMode) { " open" } else { "" }
+        $encodedFolder = [System.Net.WebUtility]::HtmlEncode($folderName)
+
+        $lines.Add("  <li class='nav-folder'>")
+        $lines.Add("    <details$openAttr>")
+        $lines.Add("      <summary class='folder-title'>&#128193; $encodedFolder</summary>")
+        $lines.Add("      " + (Render-ExportFolderTreeHtml -node $subNode -currentFile $currentFile -currentUri $currentUri -IsSingleFileMode:$IsSingleFileMode))
+        $lines.Add("    </details>")
+        $lines.Add("  </li>")
+    }
+
+    # 2. ファイルの描画 (index.md / README.md を先頭に優先ソート)
+    $sortedFiles = if ($node.Files) {
+        @($node.Files | Sort-Object {
+            if ($_.BaseName -eq "index") { 0 }
+            elseif ($_.BaseName -eq "README") { 1 }
+            else { 2 }
+        }, BaseName)
+    } else { @() }
+
+    foreach ($file in $sortedFiles) {
+        $encodedTitle = [System.Net.WebUtility]::HtmlEncode($file.BaseName)
+
+        if ($IsSingleFileMode) {
+            $relPath  = $file.FullName.Substring($wikiDir.Length).TrimStart("\", "/")
+            $pageId   = Get-SinglePageId -relPath $relPath
+            $isActive = ($pageId -eq "index")
+            $activeClass = if ($isActive) { " class='active'" } else { "" }
+            $lines.Add("  <li class='nav-file'><a href='#$pageId'$activeClass>📄 $encodedTitle</a></li>")
+        } else {
+            $fileHtmlPath = $file.FullName -replace '\.md$', '.html'
+            $fileUri      = New-Object System.Uri($fileHtmlPath)
+            $relHref      = $currentUri.MakeRelativeUri($fileUri).ToString()
+
+            $isActive = ($currentFile -and $file.FullName -eq $currentFile.FullName)
+            $activeClass = if ($isActive) { " class='active'" } else { "" }
+
+            $lines.Add("  <li class='nav-file'><a href='$relHref'$activeClass>📄 $encodedTitle</a></li>")
+        }
+    }
+
+    $lines.Add("</ul>")
+    return ($lines -join "`n")
+}
+
+function Get-ExportSidebarHtml {
+    param ($currentFile, $allMdFiles, $wikiDir, [switch]$IsSingleFileMode)
+
+    if ($IsSingleFileMode) {
+        $treeNode = Build-FileTreeNode -allMdFiles $allMdFiles -wikiDir $wikiDir
+        return Render-ExportFolderTreeHtml -node $treeNode -currentFile $null -currentUri $null -IsSingleFileMode
+    } else {
+        $currentHtmlPath = $currentFile.FullName -replace '\.md$', '.html'
+        $currentUri      = New-Object System.Uri($currentHtmlPath)
+
+        $treeNode = Build-FileTreeNode -allMdFiles $allMdFiles -wikiDir $wikiDir
+        return Render-ExportFolderTreeHtml -node $treeNode -currentFile $currentFile -currentUri $currentUri
+    }
+}

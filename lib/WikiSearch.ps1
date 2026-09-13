@@ -1083,9 +1083,9 @@ function Get-OkfDocSnippet {
     if ($matchIdx -ge 0) {
         $start = [Math]::Max(0, $matchIdx - 1)
         $end   = [Math]::Min($lines.Count - 1, $matchIdx + 2)
-        $snipLines = @()
+        $snipLines = [System.Collections.Generic.List[string]]::new()
         for ($i = $start; $i -le $end; $i++) {
-            $snipLines += $lines[$i].Trim()
+            [void]$snipLines.Add($lines[$i].Trim())
         }
         $snip = $snipLines -join " "
         if ($snip.Length -gt 200) { $snip = $snip.Substring(0, 200) + "..." }
