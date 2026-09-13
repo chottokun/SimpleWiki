@@ -334,6 +334,18 @@ This is body text.
             $d3 = Get-DocumentDomain -YamlDict @{} -RelPath "index.md"
             $d3 | Should Be "root"
         }
+
+        It "Get-RelToRootPath calculates relative path back to root for various depths and formats" {
+            Get-RelToRootPath -RelPath "" | Should Be "."
+            Get-RelToRootPath -RelPath $null | Should Be "."
+            Get-RelToRootPath -RelPath "index.md" | Should Be "."
+            Get-RelToRootPath -RelPath "root.html" | Should Be "."
+            Get-RelToRootPath -RelPath "docs/page.md" | Should Be ".."
+            Get-RelToRootPath -RelPath "a/b/c.md" | Should Be "../.."
+            Get-RelToRootPath -RelPath "docs/sub/deep/page.md" | Should Be "../../.."
+            Get-RelToRootPath -RelPath "docs\sub\page.md" | Should Be "../.."
+            Get-RelToRootPath -RelPath "/docs/sub/page.md" | Should Be "../.."
+        }
     }
 }
 
