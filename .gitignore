@@ -148,3 +148,5 @@ crtf/*
 logs/*
 !logs/.gitkeep
 *.log
+
+.agents/skills/jules-runner/
