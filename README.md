@@ -225,6 +225,18 @@ SimpleWiki/
   # 完全自己完結 単一 HTML (SPA モード ＆ 画像 Base64 埋め込み自動有効) 出力
   .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "dist" -SingleFile
 
+  # テーマ選択 (Auto: OS設定自動追従, Light: ライト固定, Dark: ダーク固定)
+  .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "dist" -Theme Dark
+
+  # コードブロック保護 (コードスニペット内の .md 相対リンク書き換えを抑止)
+  .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "dist" -PreserveCodeBlockLinks
+
+  # セキュリティ強化 (信頼できない Markdown の生 HTML / <script> を無効化)
+  .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "dist" -DisableRawHtml
+
+  # 外部カスタム HTML テンプレートの適用
+  .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "dist" -TemplatePath "templates\custom-export.html"
+
   # 単一 HTML 出力（画像の Base64 化を行わず外部フォルダ参照にする場合）
   .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "dist" -SingleFile -NoEmbedImages
 
@@ -234,6 +246,9 @@ SimpleWiki/
   # 静的 SVG Mermaid モードで出力
   .\Export-MarkdigWiki.ps1 -RootFolder "D:\MyDocs\ProjectWiki" -OutputDir "dist" -MermaidMode Svg
   ```
+
+> [!TIP]
+> **GUI ツール (`Export-GUI.bat` / `Export-GUI.ps1`)** でも、テーマ選択（Auto/Light/Dark）、生HTMLの無効化、コードブロック保護をチェックボックスやドロップダウンから直感的に設定できます。
 
 ---
 
@@ -341,8 +356,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\te
     - RAG 用セマンティックチャンク自動分割 API 出力 (`/api/chunks.json`)
     - Agentic RAG / Fast RAG AI チャット API (`/api/chat`)
     - 静的 HTML エキスポート (`Export-MarkdigWiki.ps1`) の `-Language` オプションとメタデータカード統合
+    - 静的 HTML エキスポートの衝突耐性プレースホルダー（`<!-- {{SIMPLEWIKI_BODY}} -->`）による書式トークン `{0}`〜`{5}` 破壊防止テスト
+    - テーマ選択（Auto / Light / Dark）と CSS カスタムプロパティ（`:root` / `@media (prefers-color-scheme: dark)`）出力テスト
+    - 外部カスタム HTML テンプレート（`-TemplatePath`）の注入検証
+    - 生 HTML 遮断（`-DisableRawHtml`）によるスクリプト無力化 XSS 防御テスト
+    - コードブロック保護（`-PreserveCodeBlockLinks`）によるコードスニペット内リンク保護検証
+    - `Export-GUI.ps1` のテーマ選択・生HTML無効化・コードブロック保護 GUI コントロール構文テスト
     - 全 PowerShell ファイルの UTF-8 with BOM およびバッチファイルの UTF-8 No-BOM エンコーディング検証
-  - **3. E2E エキスポート検証**: 実フォルダでの全 HTML 相互リンク・CSS/JS 出力検証に成功
+  - **3. E2E エキスポート検証**: 実フォルダでの全 HTML 相互リンク・CSS/JS 出力検証に成功 (251 / 251 件パス)
 
 
 ---
