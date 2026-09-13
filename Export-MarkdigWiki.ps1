@@ -149,7 +149,8 @@ function Render-ExportFolderTreeHtml {
         [switch]$IsSingleFileMode
     )
 
-    $html = "<ul>`n"
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.Add("<ul>")
 
     # 1. フォルダの描画 (再帰)
     $sortedFolderNames = if ($node.SubFolders) {
@@ -162,12 +163,12 @@ function Render-ExportFolderTreeHtml {
         $openAttr = if ($hasActive -or $IsSingleFileMode) { " open" } else { "" }
         $encodedFolder = [System.Net.WebUtility]::HtmlEncode($folderName)
 
-        $html += "  <li class='nav-folder'>`n"
-        $html += "    <details$openAttr>`n"
-        $html += "      <summary class='folder-title'>&#128193; $encodedFolder</summary>`n"
-        $html += "      " + (Render-ExportFolderTreeHtml -node $subNode -currentFile $currentFile -currentUri $currentUri -IsSingleFileMode:$IsSingleFileMode) + "`n"
-        $html += "    </details>`n"
-        $html += "  </li>`n"
+        $lines.Add("  <li class='nav-folder'>")
+        $lines.Add("    <details$openAttr>")
+        $lines.Add("      <summary class='folder-title'>&#128193; $encodedFolder</summary>")
+        $lines.Add("      " + (Render-ExportFolderTreeHtml -node $subNode -currentFile $currentFile -currentUri $currentUri -IsSingleFileMode:$IsSingleFileMode))
+        $lines.Add("    </details>")
+        $lines.Add("  </li>")
     }
 
     # 2. ファイルの描画 (index.md / README.md を先頭に優先ソート)
@@ -187,7 +188,7 @@ function Render-ExportFolderTreeHtml {
             $pageId   = Get-SinglePageId -relPath $relPath
             $isActive = ($pageId -eq "index")
             $activeClass = if ($isActive) { " class='active'" } else { "" }
-            $html += "  <li class='nav-file'><a href='#$pageId'$activeClass>📄 $encodedTitle</a></li>`n"
+            $lines.Add("  <li class='nav-file'><a href='#$pageId'$activeClass>📄 $encodedTitle</a></li>")
         } else {
             $fileHtmlPath = $file.FullName -replace '\.md$', '.html'
             $fileUri      = New-Object System.Uri($fileHtmlPath)
@@ -196,12 +197,12 @@ function Render-ExportFolderTreeHtml {
             $isActive = ($currentFile -and $file.FullName -eq $currentFile.FullName)
             $activeClass = if ($isActive) { " class='active'" } else { "" }
 
-            $html += "  <li class='nav-file'><a href='$relHref'$activeClass>📄 $encodedTitle</a></li>`n"
+            $lines.Add("  <li class='nav-file'><a href='$relHref'$activeClass>📄 $encodedTitle</a></li>")
         }
     }
 
-    $html += "</ul>"
-    return $html
+    $lines.Add("</ul>")
+    return ($lines -join "`n")
 }
 
 function Get-ExportSidebarHtml {
