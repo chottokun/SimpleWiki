@@ -334,6 +334,27 @@ This is body text.
             $d3 = Get-DocumentDomain -YamlDict @{} -RelPath "index.md"
             $d3 | Should Be "root"
         }
+
+        It "Get-RelToRootPath calculates relative root path for different directory depths" {
+            Get-RelToRootPath -RelPath "" | Should Be "."
+            Get-RelToRootPath -RelPath "index.md" | Should Be "."
+            Get-RelToRootPath -RelPath "readme.txt" | Should Be "."
+            Get-RelToRootPath -RelPath "docs/setup.md" | Should Be ".."
+            Get-RelToRootPath -RelPath "a/b/c.md" | Should Be "../.."
+            Get-RelToRootPath -RelPath "a/b/c/d/file.md" | Should Be "../../../.."
+            Get-RelToRootPath -RelPath "a\b\c.md" | Should Be "../.."
+            Get-RelToRootPath -RelPath "/a/b/c.md" | Should Be "../.."
+        }
+
+        It "Get-SinglePageId generates unique HTML anchor page IDs from relative document paths" {
+            Get-SinglePageId -RelPath "" | Should Be "index"
+            Get-SinglePageId -RelPath "index.md" | Should Be "index"
+            Get-SinglePageId -RelPath "index.html" | Should Be "index"
+            Get-SinglePageId -RelPath "guide.md" | Should Be "page_guide"
+            Get-SinglePageId -RelPath "docs/setup.md" | Should Be "page_docs_setup"
+            Get-SinglePageId -RelPath "a\b\c.md" | Should Be "page_a_b_c"
+            Get-SinglePageId -RelPath "/special@file#1.md" | Should Be "page_special_file_1"
+        }
     }
 }
 
