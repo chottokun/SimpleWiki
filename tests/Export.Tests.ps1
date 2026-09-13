@@ -276,6 +276,54 @@ Describe "Static HTML Export Tests (Export-MarkdigWiki.ps1)" {
         }
     }
 
+    It "Convert-MermaidToSvgMarkup converts mermaid code blocks to static SVG markup and handles HTML encoding and non-mermaid blocks" {
+        $exportHelpers = Join-Path $projectRoot "lib\WikiExportHelpers.ps1"
+        . $exportHelpers
+
+        # 1. Standard <pre class="mermaid"> block
+        $htmlMermaidPre = '<pre class="mermaid">graph TD;&#10;A--&gt;B;</pre>'
+        $convertedPre = Convert-MermaidToSvgMarkup -html $htmlMermaidPre
+        $convertedPre | Should Match 'class="mermaid-svg"'
+        $convertedPre | Should Match '<svg '
+        $convertedPre | Should Match 'Mermaid Diagram \(SVG Static Mode\)'
+        $convertedPre | Should Match 'graph TD;'
+
+        # 2. Markdown renderer output <pre><code class="language-mermaid">
+        $htmlMermaidCode = '<pre><code class="language-mermaid">graph LR&#10;X -&gt; Y</code></pre>'
+        $convertedCode = Convert-MermaidToSvgMarkup -html $htmlMermaidCode
+        $convertedCode | Should Match 'class="mermaid-svg"'
+        $convertedCode | Should Match 'graph LR'
+
+        # 3. HTML encoding of special characters (<, >, &) in diagram content
+        $htmlSpecialChars = '<pre class="mermaid">graph TD&#10;A[Node <1>] --> B[Node & Special]</pre>'
+        $convertedSpecial = Convert-MermaidToSvgMarkup -html $htmlSpecialChars
+        $convertedSpecial | Should Match 'Node &lt;1&gt;'
+        $convertedSpecial | Should Match 'Node &amp; Special'
+
+        # 4. Non-mermaid pre block should remain untouched
+        $nonMermaidHtml = '<pre><code class="language-powershell">Write-Host "Hello"</code></pre>'
+        $convertedNonMermaid = Convert-MermaidToSvgMarkup -html $nonMermaidHtml
+        $convertedNonMermaid | Should Be $nonMermaidHtml
+
+        # 5. Multiple mermaid blocks and non-mermaid blocks in single string
+        $multiBlockHtml = @"
+<p>Intro</p>
+<pre class="mermaid">graph TD&#10;A --> B</pre>
+<pre><code class="language-csharp">Console.WriteLine("Test");</code></pre>
+<pre><code class="language-mermaid">sequenceDiagram&#10;Alice->>Bob: Hello</code></pre>
+"@
+        $convertedMulti = Convert-MermaidToSvgMarkup -html $multiBlockHtml
+        $convertedMulti | Should Match 'class="mermaid-svg"'
+        $convertedMulti | Should Match 'graph TD'
+        $convertedMulti | Should Match 'sequenceDiagram'
+        $convertedMulti | Should Match '<pre><code class="language-csharp">Console\.WriteLine\("Test"\);</code></pre>'
+
+        # 6. Plain HTML / Empty input handling
+        Convert-MermaidToSvgMarkup -html "" | Should Be ""
+        $plainHtml = '<p>No diagrams here</p>'
+        Convert-MermaidToSvgMarkup -html $plainHtml | Should Be $plainHtml
+    }
+
     It "-MermaidMode Svg mode transforms mermaid code blocks and omits mermaid.min.js" {
         $svgExportDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestSvgExport"
         if (Test-Path $svgExportDir) { Remove-Item -Path $svgExportDir -Recurse -Force }
