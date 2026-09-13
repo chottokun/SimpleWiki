@@ -1013,3 +1013,84 @@ Describe "Refactoring & Facade Integration Unit Tests" {
         $tree1 | Should Be $tree2
     }
 }
+
+
+Describe "Initialize-WikiIndex Unit Tests" {
+    BeforeAll {
+        $serverScript = Join-Path $projectRoot "Start-MarkdigWiki.ps1"
+        . $serverScript -DotSourceOnly
+    }
+
+    BeforeEach {
+        $script:WikiIndex = @()
+    }
+
+    It "Skips initialization if `$script:WikiIndex is already populated" {
+        $script:WikiIndex = [System.Collections.Generic.List[PSObject]]@(
+            [PSCustomObject]@{ Title = "Existing Doc"; RelPath = "existing.md" }
+        )
+        Mock Load-WikiIndexCache { return $true }
+        Mock Build-WikiIndex { return $null }
+
+        Initialize-WikiIndex -TargetWikiDir "/dummy/dir"
+
+        Assert-MockCalled Load-WikiIndexCache -Times 0
+        Assert-MockCalled Build-WikiIndex -Times 0
+    }
+
+    It "Loads index from cache when cache exists and returns `$true" {
+        Mock Load-WikiIndexCache {
+            $script:WikiIndex = [System.Collections.Generic.List[PSObject]]@(
+                [PSCustomObject]@{ Title = "Cached Doc"; RelPath = "cached.md" }
+            )
+            return $true
+        }
+        Mock Build-WikiIndex { return $null }
+
+        Initialize-WikiIndex -TargetWikiDir "/test/wiki/path"
+
+        Assert-MockCalled Load-WikiIndexCache -Exactly 1 -Scope It
+        Assert-MockCalled Build-WikiIndex -Times 0 -Scope It
+        $script:WikiIndex.Count | Should Be 1
+        $script:WikiIndex[0].Title | Should Be "Cached Doc"
+    }
+
+    It "Calls Build-WikiIndex when Load-WikiIndexCache returns `$false" {
+        Mock Load-WikiIndexCache { return $false }
+        Mock Build-WikiIndex {
+            $script:WikiIndex = [System.Collections.Generic.List[PSObject]]@(
+                [PSCustomObject]@{ Title = "Built Doc"; RelPath = "built.md" }
+            )
+            return $script:WikiIndex
+        }
+
+        Initialize-WikiIndex -TargetWikiDir "/test/wiki/path"
+
+        Assert-MockCalled Load-WikiIndexCache -Exactly 1 -Scope It
+        Assert-MockCalled Build-WikiIndex -Exactly 1 -Scope It
+        $script:WikiIndex.Count | Should Be 1
+        $script:WikiIndex[0].Title | Should Be "Built Doc"
+    }
+
+    It "Resolves fallback directory order correctly when TargetWikiDir parameter is empty" {
+        $origWikiDir = $script:wikiDir
+        try {
+            $script:wikiDir = "/fallback/script/wikidir"
+            Mock Load-WikiIndexCache { return $true } -ParameterFilter { $TargetWikiDir -eq "/fallback/script/wikidir" }
+
+            Initialize-WikiIndex -TargetWikiDir ""
+
+            Assert-MockCalled Load-WikiIndexCache -Exactly 1 -ParameterFilter { $TargetWikiDir -eq "/fallback/script/wikidir" } -Scope It
+        } finally {
+            $script:wikiDir = $origWikiDir
+        }
+    }
+
+    It "Ensure-WikiIndexLoaded delegates directly to Initialize-WikiIndex" {
+        Mock Load-WikiIndexCache { return $true } -ParameterFilter { $TargetWikiDir -eq "/wrapper/dir" }
+
+        Ensure-WikiIndexLoaded -TargetWikiDir "/wrapper/dir"
+
+        Assert-MockCalled Load-WikiIndexCache -Exactly 1 -ParameterFilter { $TargetWikiDir -eq "/wrapper/dir" } -Scope It
+    }
+}
