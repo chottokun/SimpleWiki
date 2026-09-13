@@ -335,6 +335,34 @@ This is body text.
             $d3 | Should Be "root"
         }
     }
+
+    Context "Get-SinglePageId & Get-RelToRootPath Helper Functions" {
+        It "Get-SinglePageId converts relative paths into valid single-page HTML element IDs" {
+            Get-SinglePageId -RelPath "" | Should Be "index"
+            Get-SinglePageId -RelPath $null | Should Be "index"
+            Get-SinglePageId -RelPath "   " | Should Be "index"
+            Get-SinglePageId -RelPath "index.md" | Should Be "index"
+            Get-SinglePageId -RelPath "index.html" | Should Be "index"
+            Get-SinglePageId -RelPath "/index.md" | Should Be "index"
+            Get-SinglePageId -RelPath "\index.html" | Should Be "index"
+
+            Get-SinglePageId -RelPath "docs/guide.md" | Should Be "page_docs_guide"
+            Get-SinglePageId -RelPath "docs\user-guide\install.md" | Should Be "page_docs_user-guide_install"
+            Get-SinglePageId -RelPath "docs/詳細仕様.md" | Should Be "page_docs_詳細仕様"
+            Get-SinglePageId -RelPath "docs/api@v1#spec.md" | Should Be "page_docs_api_v1_spec"
+            Get-SinglePageId -RelPath ".md" | Should Be "index"
+            Get-SinglePageId -RelPath "!@#$.md" | Should Be "page_____"
+        }
+
+        It "Get-RelToRootPath calculates relative root path relative to document depth" {
+            Get-RelToRootPath -RelPath "" | Should Be "."
+            Get-RelToRootPath -RelPath $null | Should Be "."
+            Get-RelToRootPath -RelPath "index.md" | Should Be "."
+            Get-RelToRootPath -RelPath "docs/guide.md" | Should Be ".."
+            Get-RelToRootPath -RelPath "docs\user-guide\install.md" | Should Be "../.."
+            Get-RelToRootPath -RelPath "a/b/c/d.md" | Should Be "../../.."
+        }
+    }
 }
 
 Describe "Glossary & Term-Linked Backlinks Extension Suite" {
