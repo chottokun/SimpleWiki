@@ -579,7 +579,8 @@ function ConvertTo-JsString {
     [CmdletBinding()]
     [OutputType([string])]
     param(
-        [Parameter(Mandatory = $false)]
+        [Parameter(Mandatory = $false, Position = 0)]
+        [Alias("String")]
         [string]$InputString = ""
     )
     if ([string]::IsNullOrEmpty($InputString)) { return "" }
