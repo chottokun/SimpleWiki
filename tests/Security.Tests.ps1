@@ -843,4 +843,75 @@ Describe "Adversarial Security & Resilience Suite" {
             $rendered | Should Match "&lt;script&gt;"
         }
     }
+
+    Context "5. HTTP Route Request Invalid JSON Payload Error Path Tests" {
+        BeforeAll {
+            function Invoke-TestHttpRequestWithBody {
+                param (
+                    [string]$UrlPath,
+                    [string]$HttpMethod = "POST",
+                    [string]$BodyText = "{invalid json payload"
+                )
+
+                $port = Get-Random -Minimum 10000 -Maximum 60000
+                $listener = [System.Net.HttpListener]::new()
+                $listener.Prefixes.Add("http://localhost:$port/")
+                $listener.Start()
+
+                try {
+                    $asyncResult = $listener.BeginGetContext($null, $null)
+
+                    $client = [System.Net.Http.HttpClient]::new()
+                    $content = [System.Net.Http.StringContent]::new($BodyText, [System.Text.Encoding]::UTF8, "application/json")
+
+                    $reqMessage = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::$HttpMethod, "http://localhost:$port$UrlPath")
+                    $reqMessage.Content = $content
+
+                    $task = $client.SendAsync($reqMessage)
+
+                    $context = $listener.EndGetContext($asyncResult)
+                    $null = Invoke-WikiRouteRequest -Context $context -WikiDir $script:projectRoot -ScriptDir $script:projectRoot -Listener $listener
+
+                    $httpRes = $task.Result
+                    $resBody = $httpRes.Content.ReadAsStringAsync().Result
+                    return [PSCustomObject]@{
+                        StatusCode = [int]$httpRes.StatusCode
+                        Body       = $resBody
+                    }
+                } finally {
+                    $listener.Stop()
+                }
+            }
+        }
+
+        It "Returns HTTP 400 when malformed JSON is posted to /api/config" {
+            $res = Invoke-TestHttpRequestWithBody -UrlPath "/api/config" -BodyText "{invalid json"
+            $res.StatusCode | Should Be 400
+            $res.Body | Should Match "リクエスト JSON のパースに失敗しました。"
+        }
+
+        It "Returns HTTP 400 when malformed JSON is posted to /api/save" {
+            $res = Invoke-TestHttpRequestWithBody -UrlPath "/api/save" -BodyText "{invalid json"
+            $res.StatusCode | Should Be 400
+            $res.Body | Should Match "relPath and markdown body are required"
+        }
+
+        It "Returns HTTP 400 when malformed JSON is posted to /api/upload" {
+            $res = Invoke-TestHttpRequestWithBody -UrlPath "/api/upload" -BodyText "{invalid json"
+            $res.StatusCode | Should Be 400
+            $res.Body | Should Match "fileName and data \(Base64\) are required."
+        }
+
+        It "Returns HTTP 400 when malformed JSON is posted to /api/delete" {
+            $res = Invoke-TestHttpRequestWithBody -UrlPath "/api/delete" -BodyText "{invalid json"
+            $res.StatusCode | Should Be 400
+            $res.Body | Should Match "relPath parameter is required."
+        }
+
+        It "Returns HTTP 400 when malformed JSON is posted to /api/chat" {
+            $res = Invoke-TestHttpRequestWithBody -UrlPath "/api/chat" -BodyText "{invalid json"
+            $res.StatusCode | Should Be 400
+            $res.Body | Should Match "Message field is required"
+        }
+    }
 }
