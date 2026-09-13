@@ -846,6 +846,12 @@ Describe "Adversarial Security & Resilience Suite" {
 
     Context "5. HTTP Route Request Invalid JSON Payload Error Path Tests" {
         BeforeAll {
+            try {
+                Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
+            } catch {
+                $null = $_
+            }
+
             function Invoke-TestHttpRequestWithBody {
                 param (
                     [string]$UrlPath,
@@ -857,6 +863,10 @@ Describe "Adversarial Security & Resilience Suite" {
                 $listener = [System.Net.HttpListener]::new()
                 $listener.Prefixes.Add("http://localhost:$port/")
                 $listener.Start()
+
+                $client = $null
+                $reqMessage = $null
+                $httpRes = $null
 
                 try {
                     $asyncResult = $listener.BeginGetContext($null, $null)
@@ -879,7 +889,10 @@ Describe "Adversarial Security & Resilience Suite" {
                         Body       = $resBody
                     }
                 } finally {
-                    $listener.Stop()
+                    if ($httpRes) { try { $httpRes.Dispose() } catch { $null = $_ } }
+                    if ($reqMessage) { try { $reqMessage.Dispose() } catch { $null = $_ } }
+                    if ($client) { try { $client.Dispose() } catch { $null = $_ } }
+                    if ($listener -and $listener.IsListening) { try { $listener.Stop(); $listener.Close() } catch { $null = $_ } }
                 }
             }
         }
