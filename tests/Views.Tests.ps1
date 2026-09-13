@@ -946,7 +946,38 @@ Describe "WikiViews Helper Functions Suite" {
     }
 
     Context "PR #25 & #32: WikiViews Helper Functions" {
-        It "Render-DocList generates valid HTML with escaped titles and dates" {
+        It "Get-DocListHtml generates valid HTML with escaped titles, normalized paths, and formatted dates" {
+            $docs = @(
+                [PSCustomObject]@{
+                    Title       = "Doc & <Tag> One"
+                    RelPath     = "guide\doc1.md"
+                    LastUpdated = [DateTime]::Parse("2026-08-01")
+                },
+                [PSCustomObject]@{
+                    Title       = "Doc Two"
+                    RelPath     = "guide/doc2.md"
+                    LastUpdated = "2026-08-02"
+                }
+            )
+
+            $html = Get-DocListHtml -docArray $docs -emptyMsg "No docs available"
+            $html | Should Match "^<ul>.*</ul>$"
+            $html | Should Match "<li><a href='/guide/doc1.md'>Doc &amp; &lt;Tag&gt; One</a> <span class='muted'>\(2026-08-01\)</span></li>"
+            $html | Should Match "<li><a href='/guide/doc2.md'>Doc Two</a> <span class='muted'>\(2026-08-02\)</span></li>"
+        }
+
+        It "Get-DocListHtml handles null, empty, and null-element arrays gracefully with emptyMsg" {
+            $nullHtml = Get-DocListHtml -docArray $null -emptyMsg "No items found"
+            $nullHtml | Should Be "<p class='empty-msg'>No items found</p>"
+
+            $emptyHtml = Get-DocListHtml -docArray @() -emptyMsg "No items found"
+            $emptyHtml | Should Be "<p class='empty-msg'>No items found</p>"
+
+            $nullElementsHtml = Get-DocListHtml -docArray @($null, $null) -emptyMsg "No items found"
+            $nullElementsHtml | Should Be "<p class='empty-msg'>No items found</p>"
+        }
+
+        It "Render-DocList generates valid HTML by delegating to Get-DocListHtml" {
             $docs = @(
                 [PSCustomObject]@{
                     Title       = "Doc & <Tag> One"
