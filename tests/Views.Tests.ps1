@@ -960,6 +960,38 @@ Describe "WikiViews Helper Functions Suite" {
             $serverCard = Render-SettingsServerCard -Data $data
             $serverCard | Should Match "shutdownWikiServer\(\)"
         }
+
+        It "Get-GlossaryBoxHtml and Render-GlossaryBoxHtml handle null, empty, missing, and valid term scenarios correctly" {
+            # 1. Null, empty, and whitespace terms return empty string
+            Get-GlossaryBoxHtml -Term $null | Should Be ""
+            Get-GlossaryBoxHtml -Term "" | Should Be ""
+            Get-GlossaryBoxHtml -Term "   `t`n " | Should Be ""
+
+            # 2. Term not found in glossary returns empty string
+            $sampleWikiDir = Join-Path $projectRoot "markdown_sample"
+            Get-GlossaryBoxHtml -Term "NonExistentTermXYZ999" -TargetWikiDir $sampleWikiDir | Should Be ""
+
+            # 3. Valid term in isolated directory returns expected HTML structure
+            $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("WikiGlossaryBoxTest_" + [Guid]::NewGuid().ToString("N"))
+            $null = New-Item -ItemType Directory -Path $tempDir -Force
+            try {
+                $gPath = Join-Path $tempDir "glossary.md"
+                Set-Content -Path $gPath -Value "## <Special & Term>`n`n* **概要**: 特殊文字と定義のテスト" -Encoding UTF8
+
+                $html = Get-GlossaryBoxHtml -Term "<Special & Term>" -TargetWikiDir $tempDir
+                $html | Should Not BeNullOrEmpty
+                $html | Should Match '<div class="glossary-box"'
+                $html | Should Match '<div class="glossary-content"'
+                $html | Should Match '📖 用語解説: &lt;Special &amp; Term&gt;'
+                $html | Should Match '特殊文字と定義のテスト'
+
+                # 4. Render-GlossaryBoxHtml alias wrapper delegates and yields identical HTML
+                $wrapperHtml = Render-GlossaryBoxHtml -Term "<Special & Term>" -TargetWikiDir $tempDir
+                $wrapperHtml | Should Be $html
+            } finally {
+                Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
 }
 
