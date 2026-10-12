@@ -602,6 +602,60 @@ function Get-OkfOrderedFiles {
     return $orderedList.ToArray()
 }
 
+function Sync-FileTreeNodeOkfOrder {
+    <#
+    .SYNOPSIS
+        allMdFiles から生成されたツリーノードに対して物理フォルダの index.md 順序を再帰的に同期する。
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
+    param(
+        [Parameter(Mandatory = $true)]$targetNode,
+        [Parameter(Mandatory = $true)][string]$nodePhysicalPath
+    )
+
+    if (Test-Path -LiteralPath $nodePhysicalPath -PathType Container) {
+        $orderedDiskFiles = Get-OkfOrderedFiles -BundleRoot $nodePhysicalPath -IncludeIndex
+        if ($orderedDiskFiles.Count -gt 0) {
+            $orderMap = [System.Collections.Generic.Dictionary[string, int]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            for ($i = 0; $i -lt $orderedDiskFiles.Count; $i++) {
+                $orderMap[$orderedDiskFiles[$i].Name] = $i
+            }
+
+            if ($targetNode.Files -and $targetNode.Files.Count -gt 0) {
+                $sorted = @($targetNode.Files | Sort-Object -Property @{
+                    Expression = {
+                        $name = if ($_.Name) { $_.Name } elseif ($_.BaseName) { "$($_.BaseName).md" } else { "" }
+                        if ($orderMap.ContainsKey($name)) {
+                            return $orderMap[$name]
+                        }
+                        return 999999
+                    }
+                }, @{
+                    Expression = {
+                        if ($_.Name) { $_.Name } elseif ($_.BaseName) { $_.BaseName } else { "" }
+                    }
+                })
+
+                $targetNode.Files.Clear()
+                $idx = 0
+                foreach ($sf in $sorted) {
+                    $sf | Add-Member -NotePropertyName "SortOrder" -NotePropertyValue ($idx++) -Force
+                    $targetNode.Files.Add($sf)
+                }
+                $targetNode | Add-Member -NotePropertyName "HasCustomOrder" -NotePropertyValue $true -Force
+            }
+        }
+    }
+
+    if ($targetNode.SubFolders) {
+        foreach ($subName in $targetNode.SubFolders.Keys) {
+            $subNode = $targetNode.SubFolders[$subName]
+            $subPhysical = Join-Path $nodePhysicalPath $subName
+            Sync-FileTreeNodeOkfOrder -targetNode $subNode -nodePhysicalPath $subPhysical
+        }
+    }
+}
+
 # --- Sidebar Tree Generation Functions ---
 
 function Build-FileTreeNode {
@@ -669,6 +723,9 @@ function Build-FileTreeNode {
                     IsActive = ($rel.Replace('\', '/') -eq $pageRelPath)
                 })
             }
+        }
+        if (-not [string]::IsNullOrWhiteSpace($wikiDir) -and (Test-Path -LiteralPath $wikiDir -PathType Container)) {
+            Sync-FileTreeNodeOkfOrder -targetNode $node -nodePhysicalPath $wikiDir
         }
         return $node
     }
@@ -828,6 +885,9 @@ function Build-ServerFileTreeNode {
                     Title    = $title
                 })
             }
+        }
+        if (-not [string]::IsNullOrWhiteSpace($wikiDir) -and (Test-Path -LiteralPath $wikiDir -PathType Container)) {
+            Sync-FileTreeNodeOkfOrder -targetNode $node -nodePhysicalPath $wikiDir
         }
         return $node
     }
