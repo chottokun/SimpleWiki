@@ -200,6 +200,13 @@ function Build-FileTreeNode {
         }
         $currentNode.Files.Add($file)
     }
+
+    if (-not [string]::IsNullOrWhiteSpace($wikiDir) -and (Test-Path -LiteralPath $wikiDir -PathType Container)) {
+        if (Get-Command "Sync-FileTreeNodeOkfOrder" -ErrorAction SilentlyContinue) {
+            Sync-FileTreeNodeOkfOrder -targetNode $rootNode -nodePhysicalPath $wikiDir
+        }
+    }
+
     return $rootNode
 }
 
