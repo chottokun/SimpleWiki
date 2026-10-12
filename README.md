@@ -139,6 +139,7 @@ SimpleWiki/
 │   ├── WikiSearch.ps1       <-- 検索エンジン・WinRT 形態素解析・NOT構文・インデックスキャッシュ
 │   ├── WikiRag.ps1          <-- LLM RAG (Fast/Agentic) ＆ チャット API
 │   ├── WikiViews.ps1        <-- 各種 HTML ビュー ＆ UI レンダラー
+│   ├── WikiExportHelpers.ps1 <-- 静的 HTML エキスポート共通関数 ＆ フォルダツリー生成
 │   ├── WikiEditorTemplate.ps1 <-- OKF 分離エディターモーダル HTML/JS テンプレート
 │   ├── WikiServer.ps1       <-- HTTP ルーティング・エンドポイントディスパッチ・SSE モジュール
 │   ├── WikiSecurity.ps1     <-- マシンID指紋・AES-256 / DPAPI 暗号化 ＆ パス検証
@@ -158,7 +159,7 @@ SimpleWiki/
 │   └── activation/
 │       └── index.html       <-- 完全サーバーレス型 Web Crypto API アクティベーションコード生成 Web アプリ
 ├── tests/
-│   └── Start-MarkdigWiki.Tests.ps1 <-- Pester 自動テストスイート (全192件)
+│   └── *.Tests.ps1          <-- Pester 自動テストスイート (全255件)
 └── README.md                <-- プロジェクト記録
 ```
 
@@ -362,8 +363,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Pester -Path .\te
     - 生 HTML 遮断（`-DisableRawHtml`）によるスクリプト無力化 XSS 防御テスト
     - コードブロック保護（`-PreserveCodeBlockLinks`）によるコードスニペット内リンク保護検証
     - `Export-GUI.ps1` のテーマ選択・生HTML無効化・コードブロック保護 GUI コントロール構文テスト
+    - 静的 HTML エキスポート処理の共通関数抽出（`lib/WikiExportHelpers.ps1`: `Get-ExportCssStyle`, `Export-WikiApiIndexJson`, `Get-ExportTagsPageHtml`, `Get-ExportAuthorsPageHtml`）単体テスト検証
     - 全 PowerShell ファイルの UTF-8 with BOM およびバッチファイルの UTF-8 No-BOM エンコーディング検証
-  - **3. E2E エキスポート検証**: 実フォルダでの全 HTML 相互リンク・CSS/JS 出力検証に成功 (251 / 251 件パス)
+  - **3. E2E エキスポート検証**: 実フォルダでの全 HTML 相互リンク・CSS/JS 出力検証に成功 (255 / 255 件パス)
 
 
 ---
