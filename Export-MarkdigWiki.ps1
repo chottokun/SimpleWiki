@@ -105,130 +105,7 @@ if ($DisableRawHtml) {
 }
 $pipeline = $builder.Build()
 
-$cssVariablesLight = @'
-    :root {
-        --wiki-bg: #ffffff;
-        --wiki-text: #24292e;
-        --wiki-sidebar-bg: #f6f8fa;
-        --wiki-border: #e1e4e8;
-        --wiki-border-light: #eaecef;
-        --wiki-link: #0366d6;
-        --wiki-link-hover: #0366d6;
-        --wiki-link-hover-bg: #f0f3f6;
-        --wiki-code-bg: rgba(27,31,35,0.05);
-        --wiki-pre-bg: #f6f8fa;
-        --wiki-blockquote-border: #dfe2e5;
-        --wiki-blockquote-text: #6a737d;
-        --wiki-meta-text: #586069;
-        --wiki-meta-bg: #f8f9fa;
-        --wiki-tag-bg: #e1e4e8;
-        --wiki-tag-bg-hover: #0366d6;
-        --wiki-tag-text-hover: #ffffff;
-        --wiki-card-border: #c8e1ff;
-        --wiki-card-bg: #f1f8ff;
-        --wiki-glossary-bg: #e8f4fd;
-    }
-'@
-
-$cssVariablesDark = @'
-    :root {
-        --wiki-bg: #0d1117;
-        --wiki-text: #c9d1d9;
-        --wiki-sidebar-bg: #161b22;
-        --wiki-border: #30363d;
-        --wiki-border-light: #21262d;
-        --wiki-link: #58a6ff;
-        --wiki-link-hover: #58a6ff;
-        --wiki-link-hover-bg: #21262d;
-        --wiki-code-bg: rgba(240,246,252,0.15);
-        --wiki-pre-bg: #161b22;
-        --wiki-blockquote-border: #30363d;
-        --wiki-blockquote-text: #8b949e;
-        --wiki-meta-text: #8b949e;
-        --wiki-meta-bg: #161b22;
-        --wiki-tag-bg: #21262d;
-        --wiki-tag-bg-hover: #58a6ff;
-        --wiki-tag-text-hover: #ffffff;
-        --wiki-card-border: #30363d;
-        --wiki-card-bg: #21262d;
-        --wiki-glossary-bg: #161b22;
-    }
-'@
-
-$commonStyle = ""
-if ($Theme -eq "Light") {
-    $commonStyle += $cssVariablesLight + "`n"
-} elseif ($Theme -eq "Dark") {
-    $commonStyle += $cssVariablesDark + "`n"
-} else {
-    $commonStyle += $cssVariablesLight + "`n@media (prefers-color-scheme: dark) {`n" + ($cssVariablesDark -replace ':root {', '    :root {') + "`n}`n"
-}
-
-$commonStyle += @'
-    * { box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; margin: 0; padding: 0; display: flex; height: 100vh; color: var(--wiki-text); background-color: var(--wiki-bg); }
-    nav { width: 260px; background-color: var(--wiki-sidebar-bg); border-right: 1px solid var(--wiki-border); padding: 20px 10px; overflow-y: auto; flex-shrink: 0; }
-    nav h2 { font-size: 14px; text-transform: uppercase; color: var(--wiki-meta-text); margin: 0 0 10px 10px; letter-spacing: 0.5px; }
-    nav ul { list-style: none; padding: 0; margin: 0; }
-    nav ul ul { padding-left: 12px; margin-top: 2px; }
-    nav li.nav-folder { margin-top: 4px; margin-bottom: 4px; }
-    nav summary.folder-title { font-weight: bold; font-size: 13px; color: var(--wiki-meta-text); padding: 4px 6px; cursor: pointer; user-select: none; }
-    nav summary.folder-title:hover { color: var(--wiki-link-hover); }
-    nav li.nav-file a { display: block; padding: 4px 8px; color: var(--wiki-link); text-decoration: none; border-radius: 6px; font-size: 14px; word-break: break-all; }
-    nav li.nav-file a:hover { background-color: var(--wiki-link-hover-bg); text-decoration: none; }
-    nav li.nav-file a.active { background-color: var(--wiki-link); color: #ffffff; font-weight: bold; }
-    main { flex: 1; padding: 40px 60px; overflow-y: auto; }
-    .markdown-body { max-width: 880px; margin: 0 auto; line-height: 1.6; }
-    h1, h2, h3 { border-bottom: 1px solid var(--wiki-border-light); padding-bottom: 0.3em; margin-top: 24px; margin-bottom: 16px; }
-    code { background: var(--wiki-code-bg); padding: 0.2em 0.4em; border-radius: 3px; font-family: monospace; }
-    pre { background: var(--wiki-pre-bg); padding: 16px; border-radius: 6px; overflow: auto; border: 1px solid var(--wiki-border); }
-    pre code { background: transparent; padding: 0; }
-    blockquote { border-left: 4px solid var(--wiki-blockquote-border); color: var(--wiki-blockquote-text); margin: 0; padding-left: 1em; }
-    table { border-collapse: collapse; width: 100%; margin-bottom: 16px; }
-    table th, table td { border: 1px solid var(--wiki-blockquote-border); padding: 8px 13px; }
-    table th { background: var(--wiki-pre-bg); }
-    img { max-width: 100%; }
-
-    /* OKF Custom Components */
-    .okf-top-bar { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--wiki-meta-text); margin-bottom: 16px; border-bottom: 1px dashed var(--wiki-border); padding-bottom: 8px; }
-    .okf-footer-card { background: var(--wiki-meta-bg); border: 1px solid var(--wiki-border); border-radius: 6px; padding: 16px; margin-top: 40px; }
-    .okf-footer-header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: bold; color: var(--wiki-text); border-bottom: 1px solid var(--wiki-border); padding-bottom: 8px; margin-bottom: 10px; }
-    .okf-footer-meta { display: flex; gap: 20px; font-size: 12px; color: var(--wiki-meta-text); margin-top: 10px; }
-    .okf-api-link { font-size: 11px; color: var(--wiki-link); text-decoration: none; padding: 2px 8px; background: var(--wiki-tag-bg); border-radius: 12px; }
-    .okf-api-link:hover { background: var(--wiki-link-hover); color: #fff; }
-    .okf-desc { font-size: 13px; color: var(--wiki-meta-text); margin: 6px 0 10px 0; }
-    .okf-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
-    .tag-badge { background: var(--wiki-tag-bg); color: var(--wiki-link); text-decoration: none; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
-    .tag-badge:hover { background: var(--wiki-tag-bg-hover); color: var(--wiki-tag-text-hover); }
-    .badge { padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
-    .badge-active { background: #28a745; color: #fff; }
-    .badge-draft { background: #ffc107; color: #212529; }
-    .badge-deprecated { background: #dc3545; color: #fff; }
-    .warning-banner { background: #fff3cd; border: 1px solid #ffeeba; color: #856404; padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; }
-
-    /* Tags & Glossary Static Views */
-    .tag-cloud { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
-    .tag-cloud-item { background: var(--wiki-card-bg); color: var(--wiki-link); border: 1px solid var(--wiki-card-border); padding: 6px 12px; border-radius: 16px; text-decoration: none; font-size: 13px; font-weight: bold; }
-    .tag-cloud-item:hover { background: var(--wiki-link-hover); color: #fff; text-decoration: none; border-color: var(--wiki-link-hover); }
-    .tag-count { font-size: 11px; opacity: 0.8; font-weight: normal; }
-    .glossary-box { background: var(--wiki-glossary-bg); border-left: 4px solid var(--wiki-link); padding: 14px 18px; border-radius: 6px; margin-bottom: 24px; }
-    .glossary-title { font-weight: bold; color: var(--wiki-link); font-size: 15px; margin-bottom: 8px; }
-    .glossary-content { font-size: 13px; color: var(--wiki-text); line-height: 1.6; }
-    .tag-card, .search-item { border-bottom: 1px solid var(--wiki-border); padding: 12px 0; }
-    .tag-card h3, .search-item h3 { margin: 0 0 6px 0; font-size: 16px; }
-    .tag-card a, .search-item a { color: var(--wiki-link); text-decoration: none; }
-    .tag-card a:hover, .search-item a:hover { text-decoration: underline; }
-    .tag-card p, .search-item p { margin: 4px 0 0 0; font-size: 13px; color: var(--wiki-meta-text); }
-
-    /* Single File Inline Tag & Author Filter Banner */
-    .single-file-filter-banner { display: none; background: var(--wiki-glossary-bg); border: 1px solid var(--wiki-card-border); color: var(--wiki-link); padding: 10px 16px; border-radius: 6px; margin-bottom: 20px; font-size: 14px; }
-    .single-file-filter-banner a { color: var(--wiki-link); font-weight: bold; margin-left: 10px; text-decoration: underline; }
-
-    /* Single page section divider */
-    html { scroll-behavior: smooth; }
-    .wiki-page { border-bottom: 2px solid var(--wiki-border); padding-bottom: 40px; margin-bottom: 40px; }
-    .wiki-page:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-'@
+$commonStyle = Get-ExportCssStyle -Theme $Theme
 
 if ($SingleFile) {
     # --- モノリス HTML (アンカーナビゲーション方式) エキスポート ---
@@ -524,36 +401,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
     # api/index.json の出力
     if (-not $NoApiJson) {
-        $apiEnvelope = [PSCustomObject]@{
-            Total       = $allApiItems.Count
-            Count       = $allApiItems.Count
-            Offset      = 0
-            Limit       = $allApiItems.Count
-            IsTruncated = $false
-            Items       = @($allApiItems | ForEach-Object {
-                $lastUpdStr = if ($_.LastUpdated -is [DateTime]) { $_.LastUpdated.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $_.LastUpdated }
-                $createdStr = if ($_.CreatedAt -is [DateTime]) { $_.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $_.CreatedAt }
-                $updatedStr = if ($_.UpdatedAt -is [DateTime]) { $_.UpdatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $_.UpdatedAt }
-                [PSCustomObject]@{
-                    Title       = $_.Title
-                    Description = $_.Description
-                    Author      = $_.Author
-                    Domain      = $_.Domain
-                    Tags        = @($_.Tags)
-                    LastUpdated = $lastUpdStr
-                    CreatedAt   = $createdStr
-                    UpdatedAt   = $updatedStr
-                    Status      = $_.Status
-                    HasYaml     = $_.HasYaml
-                    RelPath     = $_.RelPath
-                    Links       = @($_.Links)
-                }
-            })
-        }
-        $apiJsonText = $apiEnvelope | ConvertTo-Json -Depth 5
-        $apiDestDir  = Join-Path $targetDistDir "api"
-        if (-not (Test-Path $apiDestDir)) { New-Item -ItemType Directory -Path $apiDestDir -Force | Out-Null }
-        [System.IO.File]::WriteAllText((Join-Path $apiDestDir "index.json"), $apiJsonText, [System.Text.Encoding]::UTF8)
+        $null = Export-WikiApiIndexJson -AllApiItems $allApiItems -TargetDistDir $targetDistDir
         Write-Host "  [API JSON 出力] -> api/index.json" -ForegroundColor Green
     }
 
@@ -762,255 +610,34 @@ $commonStyle
     $glossaryTerms = Get-GlossaryTerms -GlossaryPath $glossaryPath
     $glossaryJsonText = $glossaryTerms | ConvertTo-Json -Depth 3
 
-    # api/index.json の静的ファイル出力
-    $apiEnvelope = [PSCustomObject]@{
-        Total       = $allApiItems.Count
-        Count       = $allApiItems.Count
-        Offset      = 0
-        Limit       = $allApiItems.Count
-        IsTruncated = $false
-        Items       = @($allApiItems | ForEach-Object {
-            $lastUpdStr = if ($_.LastUpdated -is [DateTime]) { $_.LastUpdated.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $_.LastUpdated }
-            $createdStr = if ($_.CreatedAt -is [DateTime]) { $_.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $_.CreatedAt }
-            $updatedStr = if ($_.UpdatedAt -is [DateTime]) { $_.UpdatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ") } else { $_.UpdatedAt }
-            [PSCustomObject]@{
-                Title       = $_.Title
-                Description = $_.Description
-                Author      = $_.Author
-                Domain      = $_.Domain
-                Tags        = @($_.Tags)
-                LastUpdated = $lastUpdStr
-                CreatedAt   = $createdStr
-                UpdatedAt   = $updatedStr
-                Status      = $_.Status
-                HasYaml     = $_.HasYaml
-                RelPath     = $_.RelPath
-                Links       = @($_.Links)
-            }
-        })
-    }
-    $apiJsonText = $apiEnvelope | ConvertTo-Json -Depth 5
-
+    $apiJsonText = Export-WikiApiIndexJson -AllApiItems $allApiItems -TargetDistDir $targetDistDir
     if (-not $NoApiJson) {
-        $apiDestDir  = Join-Path $targetDistDir "api"
-        if (-not (Test-Path $apiDestDir)) { New-Item -ItemType Directory -Path $apiDestDir -Force | Out-Null }
-        [System.IO.File]::WriteAllText((Join-Path $apiDestDir "index.json"), $apiJsonText, [System.Text.Encoding]::UTF8)
         Write-Host "  [API JSON 出力] -> api/index.json" -ForegroundColor Green
+    } else {
+        $apiDestDir = Join-Path $targetDistDir "api"
+        if (Test-Path $apiDestDir) { Remove-Item -Path $apiDestDir -Recurse -Force }
     }
 
     # 1. tags.html 出力
     if (-not $NoTagsPage) {
-        $tagsHtmlFile       = Join-Path $targetDistDir "tags.html"
-        $dummyCurrentFile   = [PSCustomObject]@{ FullName = Join-Path $wikiDir "tags.md" }
-        $sidebarForSub      = Get-ExportSidebarHtml -currentFile $dummyCurrentFile -allMdFiles $allMdFiles -wikiDir $wikiDir
-        $tagListTitle       = Get-LocalizedStr -Key "tag_list_title" -Lang $exportLang
-        $docListTitle       = Get-LocalizedStr -Key "doc_list_title" -Lang $exportLang
-        $tagDocsHeadingTpl  = Get-LocalizedStr -Key "tag_docs_heading" -Lang $exportLang
-        $backToTagsText     = Get-LocalizedStr -Key "back_to_tags" -Lang $exportLang
-        $glossaryTitleTpl   = Get-LocalizedStr -Key "tag_glossary_title" -Lang $exportLang
-        $tagEmptyMsg        = Get-LocalizedStr -Key "tag_empty_msg" -Lang $exportLang
-        $tagNoneRegistered  = Get-LocalizedStr -Key "tag_none_registered" -Lang $exportLang
+        $tagsHtmlFile     = Join-Path $targetDistDir "tags.html"
+        $dummyCurrentFile = [PSCustomObject]@{ FullName = Join-Path $wikiDir "tags.md" }
+        $sidebarForSub    = Get-ExportSidebarHtml -currentFile $dummyCurrentFile -allMdFiles $allMdFiles -wikiDir $wikiDir
+        $docListTitle     = Get-LocalizedStr -Key "doc_list_title" -Lang $exportLang
 
-        $tagsBodyContent = @"
-<div id="tagViewContainer"></div>
-<script id="wiki-index-data" type="application/json">
-$apiJsonText
-</script>
-<script id="wiki-glossary-data" type="application/json">
-$glossaryJsonText
-</script>
-<script>
-document.addEventListener("DOMContentLoaded", function() {
-    var rawIndex = JSON.parse(document.getElementById("wiki-index-data").textContent || "{}");
-    var rawGlossary = JSON.parse(document.getElementById("wiki-glossary-data").textContent || "{}");
-    var items = rawIndex.Items || [];
-
-    function getParam() {
-        var params = new URLSearchParams(location.search);
-        var t = params.get("tag");
-        if (!t && location.hash && location.hash.indexOf("#tag=") === 0) {
-            t = decodeURIComponent(location.hash.substring(5));
-        }
-        return t ? t.trim() : "";
-    }
-
-    function render() {
-        var tag = getParam();
-        var container = document.getElementById("tagViewContainer");
-        if (!container) return;
-
-        if (tag) {
-            var matching = items.filter(function(item) {
-                return item.Tags && Array.isArray(item.Tags) && item.Tags.indexOf(tag) !== -1;
-            });
-
-            var heading = "$tagDocsHeadingTpl".replace("{0}", escapeHtml(tag)).replace("{1}", matching.length);
-            var html = "<h1>" + heading + "</h1>";
-            html += "<p><a href='tags.html' onclick='clearTagFilter(event)'>$backToTagsText</a></p>";
-
-            if (rawGlossary[tag]) {
-                var glossTitle = "$glossaryTitleTpl".replace("{0}", escapeHtml(tag));
-                html += "<div class='glossary-box'><div class='glossary-title'>" + glossTitle + "</div><div class='glossary-content'>" + renderGlossaryText(rawGlossary[tag]) + "</div></div>";
-            }
-
-            if (matching.length === 0) {
-                html += "<p style='color:#6a737d;'>$tagEmptyMsg</p>";
-            } else {
-                html += "<div class='tag-results'>";
-                matching.forEach(function(item) {
-                    var rel = (item.RelPath || "").replace(/\\/g, "/").replace(/\.md$/, ".html");
-                    var title = escapeHtml(item.Title || "Untitled");
-                    var desc = escapeHtml(item.Description || "");
-                    html += "<div class='tag-card'><h3><a href='" + encodeURI(rel) + "'>📄 " + title + "</a></h3><p>" + desc + "</p></div>";
-                });
-                html += "</div>";
-            }
-            container.innerHTML = html;
-        } else {
-            var tagCounts = {};
-            items.forEach(function(item) {
-                if (item.Tags && Array.isArray(item.Tags)) {
-                    item.Tags.forEach(function(t) {
-                        if (t) tagCounts[t] = (tagCounts[t] || 0) + 1;
-                    });
-                }
-            });
-
-            var html = "<h1>$tagListTitle</h1><div class='tag-cloud'>";
-            var sortedTags = Object.keys(tagCounts).sort();
-            if (sortedTags.length === 0) {
-                html += "<p style='color:#6a737d;'>$tagNoneRegistered</p>";
-            } else {
-                sortedTags.forEach(function(t) {
-                    html += "<a href='#tag=" + encodeURIComponent(t) + "' class='tag-cloud-item'>🏷️ " + escapeHtml(t) + " <span class='tag-count'>(" + tagCounts[t] + ")</span></a>";
-                });
-            }
-            html += "</div>";
-            container.innerHTML = html;
-        }
-    }
-
-    function escapeHtml(str) {
-        return (str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    }
-
-    function renderGlossaryText(str) {
-        return escapeHtml(str).replace(/\r?\n/g, "<br>");
-    }
-
-    window.clearTagFilter = function(e) {
-        if (e) e.preventDefault();
-        history.pushState("", document.title, window.location.pathname);
-        render();
-    };
-
-    window.addEventListener("hashchange", render);
-    render();
-});
-</script>
-"@
-
-        $fullTagsHtml = $template.Replace("<!-- {{SIMPLEWIKI_PAGE_TITLE}} -->", $tagListTitle).Replace("<!-- {{SIMPLEWIKI_SIDEBAR}} -->", $sidebarForSub).Replace("<!-- {{SIMPLEWIKI_MERMAID}} -->", "").Replace("<!-- {{SIMPLEWIKI_LANG}} -->", $exportLang).Replace("<!-- {{SIMPLEWIKI_DOC_LIST_TITLE}} -->", $docListTitle).Replace("<!-- {{SIMPLEWIKI_BODY}} -->", $tagsBodyContent)
-        $fullTagsHtml = $fullTagsHtml -replace "\r?\n", "`r`n"
+        $fullTagsHtml = Get-ExportTagsPageHtml -ApiJsonText $apiJsonText -GlossaryJsonText $glossaryJsonText -Template $template -SidebarHtml $sidebarForSub -ExportLang $exportLang -DocListTitle $docListTitle
         [System.IO.File]::WriteAllText($tagsHtmlFile, $fullTagsHtml, [System.Text.Encoding]::UTF8)
         Write-Host "  [HTML 変換] tags.html" -ForegroundColor Green
     }
 
     # 2. authors.html 出力
     if (-not $NoAuthorsPage) {
-        $authorsHtmlFile      = Join-Path $targetDistDir "authors.html"
-        $authorListTitle      = Get-LocalizedStr -Key "author_list_title" -Lang $exportLang
-        $authorDocsHeadingTpl = Get-LocalizedStr -Key "author_docs_heading" -Lang $exportLang
-        $backToAuthorsText    = Get-LocalizedStr -Key "back_to_authors" -Lang $exportLang
-        $authorEmptyMsg       = Get-LocalizedStr -Key "author_empty_msg" -Lang $exportLang
-        $authorNoneRegistered = Get-LocalizedStr -Key "author_none_registered" -Lang $exportLang
+        $authorsHtmlFile  = Join-Path $targetDistDir "authors.html"
+        $dummyCurrentFile = [PSCustomObject]@{ FullName = Join-Path $wikiDir "authors.md" }
+        $sidebarForSub    = Get-ExportSidebarHtml -currentFile $dummyCurrentFile -allMdFiles $allMdFiles -wikiDir $wikiDir
+        $docListTitle     = Get-LocalizedStr -Key "doc_list_title" -Lang $exportLang
 
-        $authorsBodyContent = @"
-<div id="authorViewContainer"></div>
-<script id="wiki-index-data" type="application/json">
-$apiJsonText
-</script>
-<script>
-document.addEventListener("DOMContentLoaded", function() {
-    var rawIndex = JSON.parse(document.getElementById("wiki-index-data").textContent || "{}");
-    var items = rawIndex.Items || [];
-
-    function getParam() {
-        var params = new URLSearchParams(location.search);
-        var name = params.get("name");
-        if (!name && location.hash && location.hash.indexOf("#name=") === 0) {
-            name = decodeURIComponent(location.hash.substring(6));
-        }
-        return name ? name.trim() : "";
-    }
-
-    function render() {
-        var author = getParam();
-        var container = document.getElementById("authorViewContainer");
-        if (!container) return;
-
-        if (author) {
-            var matching = items.filter(function(item) {
-                return item.Author && item.Author === author;
-            });
-
-            var heading = "$authorDocsHeadingTpl".replace("{0}", escapeHtml(author)).replace("{1}", matching.length);
-            var html = "<h1>" + heading + "</h1>";
-            html += "<p><a href='authors.html' onclick='clearAuthorFilter(event)'>$backToAuthorsText</a></p>";
-
-            if (matching.length === 0) {
-                html += "<p style='color:#6a737d;'>$authorEmptyMsg</p>";
-            } else {
-                html += "<div class='tag-results'>";
-                matching.forEach(function(item) {
-                    var rel = (item.RelPath || "").replace(/\\/g, "/").replace(/\.md$/, ".html");
-                    var title = escapeHtml(item.Title || "Untitled");
-                    var desc = escapeHtml(item.Description || "");
-                    html += "<div class='tag-card'><h3><a href='" + encodeURI(rel) + "'>📄 " + title + "</a></h3><p>" + desc + "</p></div>";
-                });
-                html += "</div>";
-            }
-            container.innerHTML = html;
-        } else {
-            var authorCounts = {};
-            items.forEach(function(item) {
-                if (item.Author) {
-                    authorCounts[item.Author] = (authorCounts[item.Author] || 0) + 1;
-                }
-            });
-
-            var html = "<h1>$authorListTitle</h1><ul>";
-            var sortedAuthors = Object.keys(authorCounts).sort();
-            if (sortedAuthors.length === 0) {
-                html += "<p style='color:#6a737d;'>$authorNoneRegistered</p>";
-            } else {
-                sortedAuthors.forEach(function(a) {
-                    html += "<li><a href='#name=" + encodeURIComponent(a) + "'>👤 " + escapeHtml(a) + "</a> <span style='color:#586069;'>(" + authorCounts[a] + ")</span></li>";
-                });
-            }
-            html += "</ul>";
-            container.innerHTML = html;
-        }
-    }
-
-    function escapeHtml(str) {
-        return (str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    }
-
-    window.clearAuthorFilter = function(e) {
-        if (e) e.preventDefault();
-        history.pushState("", document.title, window.location.pathname);
-        render();
-    };
-
-    window.addEventListener("hashchange", render);
-    render();
-});
-</script>
-"@
-
-        $fullAuthorsHtml = $template.Replace("<!-- {{SIMPLEWIKI_PAGE_TITLE}} -->", $authorListTitle).Replace("<!-- {{SIMPLEWIKI_SIDEBAR}} -->", $sidebarForSub).Replace("<!-- {{SIMPLEWIKI_MERMAID}} -->", "").Replace("<!-- {{SIMPLEWIKI_LANG}} -->", $exportLang).Replace("<!-- {{SIMPLEWIKI_DOC_LIST_TITLE}} -->", $docListTitle).Replace("<!-- {{SIMPLEWIKI_BODY}} -->", $authorsBodyContent)
-        $fullAuthorsHtml = $fullAuthorsHtml -replace "\r?\n", "`r`n"
+        $fullAuthorsHtml = Get-ExportAuthorsPageHtml -ApiJsonText $apiJsonText -Template $template -SidebarHtml $sidebarForSub -ExportLang $exportLang -DocListTitle $docListTitle
         [System.IO.File]::WriteAllText($authorsHtmlFile, $fullAuthorsHtml, [System.Text.Encoding]::UTF8)
         Write-Host "  [HTML 変換] authors.html" -ForegroundColor Green
     }
