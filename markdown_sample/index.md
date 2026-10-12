@@ -61,6 +61,9 @@ Google が提唱する **OKF (Open Knowledge Format) v0.2** の思想に基づ�
 - 🤖 **[REST API 仕様書](docs/api/REST-API.md)**: `/api/index.json` および RAG 用 `/api/chunks.json` の仕様と Python 連携コード
 - 🧮 **[検索スコアリング計算 (Attested Computation)](docs/computations/search-score.md)**: 検索確定アルゴリズムのパラメータと計算仕様
 - 🚀 **[クイックスタートガイド](docs/user-guide/クイックスタート.md)**: Web サーバー起動、GUI ツール、ドラッグ＆ドロップ運用
+- ✏️ **[Webエディタ活用ガイド](docs/user-guide/editor-guide.md)**: メタデータ編集と世代バックアップ・復元
+- 🤖 **[AIチャット＆RAG活用ガイド](docs/user-guide/rag-chat-guide.md)**: ローカルLLM・形態素解析・自律調査モード
+- 📦 **[静的HTMLエクスポートガイド](docs/user-guide/export-guide.md)**: オフライン配布用HTML一括出力とGUI運用
 
 ### ガイド (guides/)
 - 🛠️ **[開発環境構築ガイド](guides/環境構築.md)**: 開発前提条件、文字コード規約 (BOM付き UTF-8)、Pester 自動テスト
