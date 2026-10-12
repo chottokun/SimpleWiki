@@ -740,7 +740,6 @@ function Get-MainViewHtml {
     if ($editorEnabled) {
         $btnNewDocTxt           = Get-LocalizedStr -Key "btn_new_doc" -Lang $Lang
         $modalNewDocTitle       = Get-LocalizedStr -Key "modal_new_doc_title" -Lang $Lang
-        $modalNewDocFolder      = Get-LocalizedStr -Key "modal_new_doc_folder" -Lang $Lang
         $modalNewDocSelectFolder = Get-LocalizedStr -Key "modal_new_doc_select_folder" -Lang $Lang
         $modalNewDocCreateFolder = Get-LocalizedStr -Key "modal_new_doc_create_new_folder" -Lang $Lang
         $modalNewDocCustomFolder = Get-LocalizedStr -Key "modal_new_doc_custom_folder" -Lang $Lang

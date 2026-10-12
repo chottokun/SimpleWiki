@@ -352,8 +352,8 @@ Describe "Convert-MermaidToSvgMarkup Unit Tests" {
 "@
         $result = Convert-MermaidToSvgMarkup -html $inputHtml
 
-        $matches = [regex]::Matches($result, '<div class="mermaid-svg"')
-        $matches.Count | Should Be 2
+        $mermaidMatches = [regex]::Matches($result, '<div class="mermaid-svg"')
+        $mermaidMatches.Count | Should Be 2
         $result | Should Match '<pre><code class="language-bash">echo 123</code></pre>'
     }
 
@@ -559,5 +559,87 @@ href="tutorial.md"
         $html = [System.IO.File]::ReadAllText($htmlPath)
         
         $html | Should Match 'String format test \{0\} and \{1\}'
+    }
+}
+
+Describe "Export Helper Functions Unit Tests" {
+    BeforeAll {
+        . (Join-Path $projectRoot "lib\WikiI18n.ps1")
+        . (Join-Path $projectRoot "lib\WikiExportHelpers.ps1")
+        Import-ExternalI18n -TargetScriptDir $projectRoot
+    }
+
+    It "Get-ExportCssStyle generates theme-specific CSS for Light, Dark, and Auto" {
+        $lightCss = Get-ExportCssStyle -Theme "Light"
+        $lightCss | Should Match '--wiki-bg: #ffffff;'
+        $lightCss | Should Not Match '@media \(prefers-color-scheme: dark\)'
+
+        $darkCss = Get-ExportCssStyle -Theme "Dark"
+        $darkCss | Should Match '--wiki-bg: #0d1117;'
+        $darkCss | Should Not Match '@media \(prefers-color-scheme: dark\)'
+
+        $autoCss = Get-ExportCssStyle -Theme "Auto"
+        $autoCss | Should Match '--wiki-bg: #ffffff;'
+        $autoCss | Should Match '@media \(prefers-color-scheme: dark\)'
+    }
+
+    It "Export-WikiApiIndexJson writes valid JSON envelope structure to api/index.json" {
+        $tempApiDir = Join-Path ([System.IO.Path]::GetTempPath()) "SimpleWiki_TestApiJsonExport"
+        if (Test-Path $tempApiDir) { Remove-Item -Path $tempApiDir -Recurse -Force }
+
+        try {
+            $sampleItems = @(
+                [PSCustomObject]@{
+                    Title       = "Test Doc"
+                    Description = "Test Desc"
+                    Author      = "Alice"
+                    Domain      = "default"
+                    Tags        = @("tag1", "tag2")
+                    LastUpdated = Get-Date
+                    CreatedAt   = Get-Date
+                    UpdatedAt   = Get-Date
+                    Status      = "Active"
+                    HasYaml     = $true
+                    RelPath     = "docs/test.md"
+                    Links       = @()
+                }
+            )
+
+            Export-WikiApiIndexJson -AllApiItems $sampleItems -TargetDistDir $tempApiDir
+
+            $jsonFile = Join-Path (Join-Path $tempApiDir "api") "index.json"
+            (Test-Path $jsonFile) | Should Be $true
+
+            $jsonContent = [System.IO.File]::ReadAllText($jsonFile)
+            $jsonObj = $jsonContent | ConvertFrom-Json
+            $jsonObj.Total | Should Be 1
+            $jsonObj.Items.Count | Should Be 1
+            $jsonObj.Items[0].Title | Should Be "Test Doc"
+        } finally {
+            if (Test-Path $tempApiDir) { Remove-Item -Path $tempApiDir -Recurse -Force }
+        }
+    }
+
+    It "Get-ExportTagsPageHtml returns localized HTML page string with embedded JSON data" {
+        $sampleJson = '{"Total":1,"Items":[]}'
+        $sampleGlossary = '{"tag1":"Definition 1"}'
+        $sampleTpl = "<!-- {{SIMPLEWIKI_SIDEBAR}} --><!-- {{SIMPLEWIKI_BODY}} -->"
+
+        $tagsHtml = Get-ExportTagsPageHtml -ApiJsonText $sampleJson -GlossaryJsonText $sampleGlossary -Template $sampleTpl -SidebarHtml "<div>Sidebar</div>" -ExportLang "ja" -DocListTitle "Doc List"
+        $tagsHtml | Should Match 'id="tagViewContainer"'
+        $tagsHtml | Should Match 'id="wiki-index-data"'
+        $tagsHtml | Should Match 'id="wiki-glossary-data"'
+        $tagsHtml | Should Match '<div>Sidebar</div>'
+    }
+
+    It "Get-ExportAuthorsPageHtml returns localized HTML page string with embedded index JSON data" {
+        $sampleJson = '{"Total":1,"Items":[]}'
+        $sampleTpl = "<!-- {{SIMPLEWIKI_SIDEBAR}} --><!-- {{SIMPLEWIKI_BODY}} -->"
+
+        $authorsHtml = Get-ExportAuthorsPageHtml -ApiJsonText $sampleJson -Template $sampleTpl -SidebarHtml "<div>Sidebar</div>" -ExportLang "en" -DocListTitle "Doc List"
+        $authorsHtml | Should Match 'id="authorViewContainer"'
+        $authorsHtml | Should Match 'id="wiki-index-data"'
+        $authorsHtml | Should Match 'Documents by'
+        $authorsHtml | Should Match '<div>Sidebar</div>'
     }
 }
