@@ -494,6 +494,102 @@ Describe 'Directory Listing and Fallback Tests (Get-DirectoryListingHtml)' {
         } | Should Not Throw
     }
 
+    It "Render-ServerFolderTreeHtml executes without throwing parameter binding exceptions even when scriptDir is undefined" {
+        $mockNode = [PSCustomObject]@{
+            Files = [System.Collections.Generic.List[PSObject]]::new()
+            SubFolders = [ordered]@{}
+        }
+        for ($i = 1; $i -le 20; $i++) {
+            $mockNode.Files.Add([PSCustomObject]@{
+                FullName = "C:\wiki\doc$i.md"
+                Name     = "doc$i.md"
+                BaseName = "doc$i"
+                RelPath  = "doc$i.md"
+                Title    = "Document $i"
+            })
+        }
+        {
+            $res = Render-ServerFolderTreeHtml -node $mockNode -currentRelPath "doc1.md" -wikiDir "C:\wiki"
+            $res | Should Match "class='active'"
+            $res | Should Match "doc20"
+        } | Should Not Throw
+    }
+
+    It "Render-ServerFolderTreeHtml renders large trees efficiently under 600ms for 100 items" {
+        $mockFiles = [System.Collections.Generic.List[PSCustomObject]]::new()
+        for ($i = 1; $i -le 100; $i++) {
+            $fldr = if ($i -le 40) { "folderA" } elseif ($i -le 70) { "folderB" } else { "" }
+            $name = "item$i.md"
+            $rel = if ($fldr) { "$fldr/$name" } else { $name }
+            $mockFiles.Add([PSCustomObject]@{
+                Name     = $name
+                RelPath  = $rel
+                Title    = "Item $i"
+                FullPath = "C:/wiki/$rel"
+            })
+        }
+        $largeNode = Build-ServerFileTreeNode -allMdFiles $mockFiles -wikiDir "C:/wiki"
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $rendered = Render-ServerFolderTreeHtml -node $largeNode -currentRelPath "folderA/item1.md" -wikiDir "C:/wiki"
+        $sw.Stop()
+
+        $rendered | Should Match "folderA"
+        $rendered | Should Match "item100"
+        ($sw.ElapsedMilliseconds -lt 600) | Should Be $true
+    }
+
+    It "Get-SidebarCachePath generates unique hash-separated paths for different wiki directories" {
+        $pathA = Get-SidebarCachePath -TargetWikiDir "C:\WikiA" -TargetScriptDir $projectRoot -Lang "ja"
+        $pathB = Get-SidebarCachePath -TargetWikiDir "C:\WikiB" -TargetScriptDir $projectRoot -Lang "ja"
+        $pathAEn = Get-SidebarCachePath -TargetWikiDir "C:\WikiA" -TargetScriptDir $projectRoot -Lang "en"
+
+        $pathA | Should Not Be $pathB
+        $pathA | Should Not Be $pathAEn
+        $pathA | Should Match "\.sidebar-cache-[0-9a-f]+-ja\.html$"
+        $pathB | Should Match "\.sidebar-cache-[0-9a-f]+-ja\.html$"
+        $pathAEn | Should Match "\.sidebar-cache-[0-9a-f]+-en\.html$"
+    }
+
+    It "Save-SidebarCache and Load-SidebarCache safely persist and restore sidebar templates" {
+        $testDir = Join-Path ([System.IO.Path]::GetTempPath()) ("SimpleWiki_CacheTest_" + [System.Guid]::NewGuid().ToString("N"))
+        New-Item -ItemType Directory -Path $testDir -Force | Out-Null
+        try {
+            $sampleHtml = "<ul><li><a href='/doc1.md'>doc1</a></li></ul>"
+            $saved = Save-SidebarCache -HtmlTemplate $sampleHtml -TargetWikiDir $testDir -TargetScriptDir $projectRoot -Lang "ja"
+            $saved | Should Be $true
+
+            $loaded = Load-SidebarCache -TargetWikiDir $testDir -TargetScriptDir $projectRoot -Lang "ja"
+            $loaded | Should Be $sampleHtml
+
+            # Language separation check
+            $loadedEn = Load-SidebarCache -TargetWikiDir $testDir -TargetScriptDir $projectRoot -Lang "en"
+            $loadedEn | Should BeNullOrEmpty
+        } finally {
+            if (Test-Path $testDir) { Remove-Item -Path $testDir -Recurse -Force -ErrorAction SilentlyContinue }
+        }
+    }
+
+    It "Get-SidebarHtml applies active class and opens parent folder using cached template" {
+        $sampleWiki = Join-Path $projectRoot "markdown_sample"
+        $cacheFile = Get-SidebarCachePath -TargetWikiDir $sampleWiki -TargetScriptDir $projectRoot -Lang "ja"
+        if (Test-Path $cacheFile) { Remove-Item -LiteralPath $cacheFile -Force -ErrorAction SilentlyContinue }
+        if ($null -ne $script:SidebarHtmlCacheMap) { $script:SidebarHtmlCacheMap.Clear() }
+        $script:CachedSidebarTree = $null
+
+        $sidebar1 = Get-SidebarHtml -currentRelPath "index.md" -Lang "ja" -TargetWikiDir $sampleWiki -TargetScriptDir $projectRoot
+        $sidebar1 | Should Match "class='active'"
+        $sidebar1 | Should Match "href='/index.md'"
+
+        # Second call should leverage cache and correctly switch active item
+        $sidebar2 = Get-SidebarHtml -currentRelPath "log.md" -Lang "ja" -TargetWikiDir $sampleWiki -TargetScriptDir $projectRoot
+        $sidebar2 | Should Match "href='/log.md' class='active'"
+        $sidebar2 | Should Not Match "href='/index.md' class='active'"
+
+        # NoSidebarCache switch test
+        $sidebarNoCache = Get-SidebarHtml -currentRelPath "index.md" -Lang "ja" -TargetWikiDir $sampleWiki -TargetScriptDir $projectRoot -NoSidebarCache
+        $sidebarNoCache | Should Match "href='/index.md' class='active'"
+    }
+
     It "Get-ChatWidgetHtml に開いているページを含めるデフォルトONのチェックボックスが含まれる" {
         $html = Get-ChatWidgetHtml
         $html | Should Match "okfIncludeCurrentPage"

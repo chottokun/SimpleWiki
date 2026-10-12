@@ -46,10 +46,22 @@ function Get-MaintenanceViewHtml {
 
 function Get-SettingsViewData {
     param (
-        [string]$Lang = "ja"
+        [string]$Lang = "ja",
+        [string]$TargetScriptDir = ""
     )
 
-    $config = Get-ConfigJson -TargetScriptDir $scriptDir
+    $resolvedScript = if (-not [string]::IsNullOrWhiteSpace($TargetScriptDir)) {
+        $TargetScriptDir
+    } elseif ($scriptDir) {
+        $scriptDir
+    } elseif ($script:scriptDir) {
+        $script:scriptDir
+    } elseif ($PSScriptRoot) {
+        [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+    } else {
+        $PWD.Path
+    }
+    $config = Get-ConfigJson -TargetScriptDir $resolvedScript
 
     $editorEnabledChecked = if ($config.editor -and $null -ne $config.editor.enabled) {
         if ($config.editor.enabled -eq $true) { "checked" } else { "" }

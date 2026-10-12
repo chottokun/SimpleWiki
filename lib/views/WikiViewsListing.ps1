@@ -63,10 +63,15 @@ function Get-DirectoryListingHtml {
 
 function Get-ApiIndexJson {
     param (
-        [hashtable]$QueryParams = @{}
+        [hashtable]$QueryParams = @{},
+        [string]$TargetWikiDir = "",
+        [string]$TargetScriptDir = ""
     )
-    Build-WikiIndex -TargetWikiDir $wikiDir | Out-Null
-    $config = Get-ConfigJson -TargetScriptDir $scriptDir
+    $targetWiki = if (-not [string]::IsNullOrWhiteSpace($TargetWikiDir)) { $TargetWikiDir } elseif ($wikiDir) { $wikiDir } elseif ($script:wikiDir) { $script:wikiDir } else { $PWD.Path }
+    $targetScript = if (-not [string]::IsNullOrWhiteSpace($TargetScriptDir)) { $TargetScriptDir } elseif ($scriptDir) { $scriptDir } elseif ($script:scriptDir) { $script:scriptDir } elseif ($PSScriptRoot) { [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../..")) } else { $PWD.Path }
+
+    Build-WikiIndex -TargetWikiDir $targetWiki | Out-Null
+    $config = Get-ConfigJson -TargetScriptDir $targetScript
 
     $defaultLimit = if ($config.api -and $config.api.defaultLimit) { [int]$config.api.defaultLimit } else { 100 }
     $maxLimit     = if ($config.api -and $config.api.maxLimit) { [int]$config.api.maxLimit } else { 1000 }
@@ -257,16 +262,29 @@ function Get-ApiChunksJson {
 function Get-GlossaryBoxHtml {
     param (
         [string]$Term,
-        [string]$TargetWikiDir
+        [string]$TargetWikiDir,
+        [string]$TargetScriptDir = ""
     )
     if ([string]::IsNullOrWhiteSpace($Term)) {
         return ""
     }
 
     $targetWiki = if (-not [string]::IsNullOrWhiteSpace($TargetWikiDir)) { $TargetWikiDir } elseif ($wikiDir) { $wikiDir } elseif ($script:wikiDir) { $script:wikiDir } else { $PWD.Path }
+    $resolvedScript = if (-not [string]::IsNullOrWhiteSpace($TargetScriptDir)) {
+        $TargetScriptDir
+    } elseif ($scriptDir) {
+        $scriptDir
+    } elseif ($script:scriptDir) {
+        $script:scriptDir
+    } elseif ($PSScriptRoot) {
+        [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+    } else {
+        ""
+    }
+
     $gPath = Join-Path $targetWiki "glossary.md"
-    if (-not (Test-Path $gPath) -and $scriptDir) {
-        $gPath = Join-Path $scriptDir "markdown_sample/glossary.md"
+    if (-not (Test-Path $gPath) -and -not [string]::IsNullOrWhiteSpace($resolvedScript)) {
+        $gPath = Join-Path $resolvedScript "markdown_sample/glossary.md"
     }
 
     $defText = Get-GlossaryTermDefinition -Term $Term -GlossaryPath $gPath

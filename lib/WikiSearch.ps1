@@ -34,6 +34,83 @@ function Get-WikiCachePath {
     return Join-Path $cacheDir ".index-cache-$dirHash.json"
 }
 
+function Get-SidebarCachePath {
+    param (
+        [string]$TargetWikiDir = $script:wikiDir,
+        [string]$TargetScriptDir = $scriptDir,
+        [string]$CacheFolder = "",
+        [string]$Lang = "ja"
+    )
+    $baseScriptDir = if (-not [string]::IsNullOrWhiteSpace($TargetScriptDir)) { $TargetScriptDir } elseif (-not [string]::IsNullOrWhiteSpace($scriptDir)) { $scriptDir } elseif (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) { $PSScriptRoot } else { $PWD.Path }
+    $config = Get-ConfigJson -TargetScriptDir $baseScriptDir
+
+    $cacheDir = if (-not [string]::IsNullOrWhiteSpace($CacheFolder)) {
+        if ([System.IO.Path]::IsPathRooted($CacheFolder)) { $CacheFolder } else { Join-Path $baseScriptDir $CacheFolder }
+    } else {
+        $cacheSubFolder = if ($config.search -and -not [string]::IsNullOrWhiteSpace($config.search.cacheFolder)) { $config.search.cacheFolder } else { ".cache" }
+        Join-Path $baseScriptDir $cacheSubFolder
+    }
+
+    $targetDir = if (-not [string]::IsNullOrWhiteSpace($TargetWikiDir)) {
+        try {
+            (Resolve-Path -LiteralPath $TargetWikiDir -ErrorAction Stop).Path
+        } catch {
+            [System.IO.Path]::GetFullPath($TargetWikiDir)
+        }
+    } else {
+        $baseScriptDir
+    }
+
+    $normPath  = $targetDir.TrimEnd('\', '/').ToLowerInvariant()
+    $md5       = [System.Security.Cryptography.MD5]::Create()
+    $hashBytes = $md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($normPath))
+    $dirHash   = ($hashBytes | ForEach-Object { "{0:x2}" -f $_ }) -join ""
+
+    $safeLang = if ([string]::IsNullOrWhiteSpace($Lang)) { "ja" } else { $Lang.ToLower().Trim() }
+    return Join-Path $cacheDir ".sidebar-cache-$dirHash-$safeLang.html"
+}
+
+function Save-SidebarCache {
+    param (
+        [Parameter(Mandatory = $true)][string]$HtmlTemplate,
+        [string]$TargetWikiDir = $script:wikiDir,
+        [string]$TargetScriptDir = $scriptDir,
+        [string]$CacheFolder = "",
+        [string]$Lang = "ja"
+    )
+    try {
+        $cacheFilePath = Get-SidebarCachePath -TargetWikiDir $TargetWikiDir -TargetScriptDir $TargetScriptDir -CacheFolder $CacheFolder -Lang $Lang
+        $cacheDir = [System.IO.Path]::GetDirectoryName($cacheFilePath)
+        if (-not (Test-Path $cacheDir)) {
+            New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
+        }
+        [System.IO.File]::WriteAllText($cacheFilePath, $HtmlTemplate, [System.Text.Encoding]::UTF8)
+        return $true
+    } catch {
+        Write-Warning ("Failed to save sidebar cache: {0}" -f $_)
+        return $false
+    }
+}
+
+function Load-SidebarCache {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
+    param (
+        [string]$TargetWikiDir = $script:wikiDir,
+        [string]$TargetScriptDir = $scriptDir,
+        [string]$CacheFolder = "",
+        [string]$Lang = "ja"
+    )
+    try {
+        $cacheFilePath = Get-SidebarCachePath -TargetWikiDir $TargetWikiDir -TargetScriptDir $TargetScriptDir -CacheFolder $CacheFolder -Lang $Lang
+        if (Test-Path $cacheFilePath) {
+            return [System.IO.File]::ReadAllText($cacheFilePath, [System.Text.Encoding]::UTF8)
+        }
+        return ""
+    } catch {
+        return ""
+    }
+}
+
 function Get-WikiStatusPath {
     param (
         [string]$TargetWikiDir = $script:wikiDir,
@@ -74,7 +151,7 @@ function Clear-AllWikiCaches {
 
     $removedCount = 0
     if (Test-Path $cacheDir) {
-        $cacheFiles = Get-ChildItem -Path $cacheDir -Force -ErrorAction SilentlyContinue | Where-Object { -not $_.PSIsContainer -and $_.Name -like ".index-cache-*.json" }
+        $cacheFiles = Get-ChildItem -Path $cacheDir -Force -ErrorAction SilentlyContinue | Where-Object { -not $_.PSIsContainer -and ($_.Name -like ".index-cache-*.json" -or $_.Name -like ".sidebar-cache-*.html") }
         foreach ($cf in $cacheFiles) {
             try {
                 Remove-Item -LiteralPath $cf.FullName -Force -ErrorAction Stop
@@ -95,6 +172,9 @@ function Clear-AllWikiCaches {
     $script:SidebarCachedHtml = $null
     $script:CachedSidebarTree = $null
     $script:CachedSidebarTreeLastScan = [DateTime]::MinValue
+    if ($null -ne $script:SidebarHtmlCacheMap) {
+        $script:SidebarHtmlCacheMap.Clear()
+    }
     $script:IndexingStatus = [PSCustomObject]@{
         IsBuilding = $false
         Total      = 0
@@ -406,6 +486,22 @@ function Build-WikiIndex {
 
         Save-WikiIndexCache -TargetWikiDir $targetDir -TargetScriptDir $baseScriptDir | Out-Null
 
+        if ($ForceRefresh) {
+            $script:CachedSidebarTree = $null
+            $script:CachedSidebarTreeLastScan = [DateTime]::MinValue
+            if ($null -ne $script:SidebarHtmlCacheMap) { $script:SidebarHtmlCacheMap.Clear() }
+            $cacheConfig = Get-ConfigJson -TargetScriptDir $baseScriptDir
+            $subFolder = if ($cacheConfig.search -and -not [string]::IsNullOrWhiteSpace($cacheConfig.search.cacheFolder)) { $cacheConfig.search.cacheFolder } else { ".cache" }
+            $cacheDir = Join-Path $baseScriptDir $subFolder
+            if (Test-Path $cacheDir) {
+                $normPath  = $targetDir.TrimEnd('\', '/').ToLowerInvariant()
+                $md5       = [System.Security.Cryptography.MD5]::Create()
+                $hashBytes = $md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($normPath))
+                $dirHash   = ($hashBytes | ForEach-Object { "{0:x2}" -f $_ }) -join ""
+                Get-ChildItem -Path $cacheDir -Filter ".sidebar-cache-$dirHash-*.html" -Force -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+            }
+        }
+
         $script:IndexingStatus = [PSCustomObject]@{
             IsBuilding = $false
             Total      = $totalFiles
@@ -708,12 +804,34 @@ function Get-ServerFolderTreeHtml {
         [Parameter(Mandatory = $false)][string]$wikiDir = "",
         [Parameter(Mandatory = $false)]$allMdFiles = $null,
         [Parameter(Mandatory = $false)][string]$parentRelPath = "",
-        [Parameter(Mandatory = $false)][string]$Lang = "ja"
+        [Parameter(Mandatory = $false)][string]$Lang = "ja",
+        [Parameter(Mandatory = $false)][string]$DisplayMode = "",
+        [Parameter(Mandatory = $false)][string]$ScriptDir = ""
     )
 
     if ($null -eq $node) { return "<ul>`n</ul>" }
 
-    $html = "<ul>`n"
+    $resolvedScriptDir = if (-not [string]::IsNullOrWhiteSpace($ScriptDir)) {
+        $ScriptDir
+    } elseif ($scriptDir) {
+        $scriptDir
+    } elseif ($script:scriptDir) {
+        $script:scriptDir
+    } elseif ($PSScriptRoot) {
+        [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+    } else {
+        $PWD.Path
+    }
+
+    $resolvedDisplayMode = if (-not [string]::IsNullOrWhiteSpace($DisplayMode)) {
+        $DisplayMode
+    } else {
+        $config = Get-ConfigJson -TargetScriptDir $resolvedScriptDir
+        if ($config.ui -and $config.ui.sidebarDisplay) { $config.ui.sidebarDisplay.ToString().ToLower().Trim() } else { "basename" }
+    }
+
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.Add("<ul>")
 
     # Sort files: pin index.md and README.md to the top, then sort alphabetically
     $sortedFiles = if ($node.Files) {
@@ -751,10 +869,7 @@ function Get-ServerFolderTreeHtml {
         $fileNameOnly = if ($f.Name) { $f.Name } elseif ($f.RelPath) { [System.IO.Path]::GetFileName($f.RelPath) } elseif ($f.FullName) { [System.IO.Path]::GetFileName($f.FullName) } else { "" }
         $baseNameOnly = if ($f.BaseName) { $f.BaseName } elseif (-not [string]::IsNullOrWhiteSpace($fileNameOnly)) { [System.IO.Path]::GetFileNameWithoutExtension($fileNameOnly) } else { "" }
 
-        $config = Get-ConfigJson -TargetScriptDir $scriptDir
-        $displayMode = if ($config.ui -and $config.ui.sidebarDisplay) { $config.ui.sidebarDisplay.ToString().ToLower().Trim() } else { "basename" }
-
-        $displayText = switch ($displayMode) {
+        $displayText = switch ($resolvedDisplayMode) {
             "title" {
                 if ($f.Title) { $f.Title } elseif ($baseNameOnly) { $baseNameOnly } else { "Untitled" }
             }
@@ -771,32 +886,38 @@ function Get-ServerFolderTreeHtml {
         $activeClass = if ($currentRelPath -and $rel -eq $currentRelPath) { " class='active'" } else { "" }
         $relUri = "/" + [Uri]::EscapeUriString($rel.Replace('\', '/'))
         $encDisplay = [System.Net.WebUtility]::HtmlEncode($displayText)
-        $html += "  <li class='nav-file'><a href='$relUri'$activeClass title='$encTooltip'>$encDisplay</a></li>`n"
+        $lines.Add("  <li class='nav-file'><a href='$relUri'$activeClass title='$encTooltip'>$encDisplay</a></li>")
     }
+
+    $normCurrentRel = if (-not [string]::IsNullOrWhiteSpace($currentRelPath)) { $currentRelPath.Replace('\', '/').TrimStart('/') } else { "" }
 
     foreach ($folderName in $node.SubFolders.Keys) {
         $subNode     = $node.SubFolders[$folderName]
         $encodedName = [System.Net.WebUtility]::HtmlEncode($folderName)
         $currentFolderRel = if ($parentRelPath) { "$parentRelPath/$folderName" } else { $folderName }
-        $subHtml     = Get-ServerFolderTreeHtml -node $subNode -currentRelPath $currentRelPath -wikiDir $wikiDir -allMdFiles $allMdFiles -parentRelPath $currentFolderRel -Lang $Lang
+        $subHtml     = Get-ServerFolderTreeHtml -node $subNode -currentRelPath $currentRelPath -wikiDir $wikiDir -allMdFiles $allMdFiles -parentRelPath $currentFolderRel -Lang $Lang -DisplayMode $resolvedDisplayMode -ScriptDir $resolvedScriptDir
 
-        $isOpen   = Test-ServerNodeHasActiveFile -node $subNode -currentRelPath $currentRelPath -wikiDir $wikiDir -allMdFiles $allMdFiles
+        $isOpen = if ($normCurrentRel -and ($normCurrentRel.StartsWith("$currentFolderRel/", [System.StringComparison]::OrdinalIgnoreCase) -or $normCurrentRel -eq $currentFolderRel)) {
+            $true
+        } else {
+            Test-ServerNodeHasActiveFile -node $subNode -currentRelPath $currentRelPath -wikiDir $wikiDir -allMdFiles $allMdFiles
+        }
         $openAttr = if ($isOpen) { " open" } else { "" }
         $addDocToFolderTitle = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "sidebar_add_doc_tooltip" -Lang $Lang))
 
-        $html += "  <li class='nav-folder'>`n"
-        $html += "    <details$openAttr>`n"
-        $html += "      <summary class='folder-title'>`n"
-        $html += "        <span class='folder-label'>&#128193; $encodedName</span>`n"
-        $html += "        <button type='button' class='sidebar-add-doc-btn' title='$addDocToFolderTitle' data-folder='$currentFolderRel/' onclick='event.stopPropagation(); event.preventDefault(); openNewDocModal(""$currentFolderRel/"");'>＋</button>`n"
-        $html += "      </summary>`n"
-        $html += "      $subHtml`n"
-        $html += "    </details>`n"
-        $html += "  </li>`n"
+        $lines.Add("  <li class='nav-folder'>")
+        $lines.Add("    <details$openAttr>")
+        $lines.Add("      <summary class='folder-title'>")
+        $lines.Add("        <span class='folder-label'>&#128193; $encodedName</span>")
+        $lines.Add("        <button type='button' class='sidebar-add-doc-btn' title='$addDocToFolderTitle' data-folder='$currentFolderRel/' onclick='event.stopPropagation(); event.preventDefault(); openNewDocModal(""$currentFolderRel/"");'>&#43;</button>")
+        $lines.Add("      </summary>")
+        $lines.Add("      $subHtml")
+        $lines.Add("    </details>")
+        $lines.Add("  </li>")
     }
 
-    $html += "</ul>"
-    return $html
+    $lines.Add("</ul>")
+    return ($lines -join "`n")
 }
 
 $script:SidebarMdFiles = @()
@@ -1217,7 +1338,9 @@ function Render-ServerFolderTreeHtml {
         [Parameter(Mandatory = $false)][string]$wikiDir = "",
         [Parameter(Mandatory = $false)]$allMdFiles = $null,
         [Parameter(Mandatory = $false)][string]$parentRelPath = "",
-        [Parameter(Mandatory = $false)][string]$Lang = "ja"
+        [Parameter(Mandatory = $false)][string]$Lang = "ja",
+        [Parameter(Mandatory = $false)][string]$DisplayMode = "",
+        [Parameter(Mandatory = $false)][string]$ScriptDir = ""
     )
-    return Get-ServerFolderTreeHtml -node $node -currentRelPath $currentRelPath -wikiDir $wikiDir -allMdFiles $allMdFiles -parentRelPath $parentRelPath -Lang $Lang
+    return Get-ServerFolderTreeHtml -node $node -currentRelPath $currentRelPath -wikiDir $wikiDir -allMdFiles $allMdFiles -parentRelPath $parentRelPath -Lang $Lang -DisplayMode $DisplayMode -ScriptDir $ScriptDir
 }

@@ -4,37 +4,132 @@
 #  Encoding: UTF-8 with BOM
 # ==============================================================================
 
+if ($null -eq $script:SidebarHtmlCacheMap) {
+    $script:SidebarHtmlCacheMap = @{}
+}
+
 function Get-SidebarHtml {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSReviewUnusedParameter", "")]
     param (
         $currentRelPath,
-        [string]$Lang = "ja"
+        [string]$Lang = "ja",
+        [string]$TargetWikiDir = "",
+        [string]$TargetScriptDir = "",
+        [string]$CacheFolder = "",
+        [switch]$NoSidebarCache
     )
 
-    $targetWiki = if ($wikiDir) { $wikiDir } elseif ($script:wikiDir) { $script:wikiDir } else { $PWD.Path }
+    $targetWiki = if (-not [string]::IsNullOrWhiteSpace($TargetWikiDir)) {
+        $TargetWikiDir
+    } elseif ($wikiDir) {
+        $wikiDir
+    } elseif ($script:wikiDir) {
+        $script:wikiDir
+    } else {
+        $PWD.Path
+    }
+    $resolvedScript = if (-not [string]::IsNullOrWhiteSpace($TargetScriptDir)) {
+        $TargetScriptDir
+    } elseif ($scriptDir) {
+        $scriptDir
+    } elseif ($script:scriptDir) {
+        $script:scriptDir
+    } elseif ($PSScriptRoot) {
+        [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+    } else {
+        $PWD.Path
+    }
+
+    $config = Get-ConfigJson -TargetScriptDir $resolvedScript
+    $useCache = (-not $NoSidebarCache) -and (-not ($config.ui -and $config.ui.sidebarCache -eq $false))
+
+    $resolvedDisplayMode = if ($config.ui -and $config.ui.sidebarDisplay) {
+        $config.ui.sidebarDisplay.ToString().ToLower().Trim()
+    } else {
+        "basename"
+    }
+
+    $normWiki = $targetWiki.TrimEnd('\', '/').ToLowerInvariant()
+    $cacheKey = "$normWiki-$Lang-$resolvedDisplayMode"
 
     # Ensure index is loaded (from memory, disk cache, or synchronous build)
     if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
         Initialize-WikiIndex -TargetWikiDir $targetWiki
     }
 
-    # Retrieve tree: from index if available, otherwise full recursive scan from disk
-    $treeNode = $null
-    if ($null -ne $script:CachedSidebarTree -and $null -ne $script:WikiIndex -and $script:WikiIndex.Count -gt 0 -and $script:CachedSidebarTreeLastScan -eq $script:WikiIndexLastScan) {
-        $treeNode = $script:CachedSidebarTree
-    } else {
-        if ($null -ne $script:WikiIndex -and $script:WikiIndex.Count -gt 0) {
-            $treeNode = Build-ServerFileTreeNode -allMdFiles $script:WikiIndex -wikiDir $targetWiki
-            $script:CachedSidebarTree = $treeNode
-            $script:CachedSidebarTreeLastScan = $script:WikiIndexLastScan
+    $templateHtml = ""
+
+    if ($useCache) {
+        if ($script:SidebarHtmlCacheMap.ContainsKey($cacheKey) -and -not [string]::IsNullOrWhiteSpace($script:SidebarHtmlCacheMap[$cacheKey])) {
+            $templateHtml = $script:SidebarHtmlCacheMap[$cacheKey]
         } else {
-            $treeNode = Build-ServerFileTreeNode -wikiDir $targetWiki
+            $templateHtml = Load-SidebarCache -TargetWikiDir $targetWiki -TargetScriptDir $resolvedScript -CacheFolder $CacheFolder -Lang $Lang
+            if (-not [string]::IsNullOrWhiteSpace($templateHtml)) {
+                $script:SidebarHtmlCacheMap[$cacheKey] = $templateHtml
+            }
         }
     }
 
-    $treeHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath $currentRelPath -wikiDir $targetWiki -Lang $Lang
+    if ([string]::IsNullOrWhiteSpace($templateHtml)) {
+        # Retrieve tree: from index if available, otherwise full recursive scan from disk
+        $treeNode = $null
+        $normTreeDir = if ($script:CachedSidebarTreeWikiDir) { $script:CachedSidebarTreeWikiDir.TrimEnd('\', '/').ToLowerInvariant() } else { "" }
+        if ($null -ne $script:CachedSidebarTree -and $null -ne $script:WikiIndex -and $script:WikiIndex.Count -gt 0 -and $script:CachedSidebarTreeLastScan -eq $script:WikiIndexLastScan -and $normTreeDir -eq $normWiki) {
+            $treeNode = $script:CachedSidebarTree
+        } else {
+            $indexMatchesWiki = $false
+            if ($null -ne $script:WikiIndex -and $script:WikiIndex.Count -gt 0) {
+                $firstDoc = $script:WikiIndex | Select-Object -First 1
+                if ($firstDoc -and $firstDoc.FullPath -and $firstDoc.FullPath.StartsWith($targetWiki, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $indexMatchesWiki = $true
+                } elseif ($firstDoc -and -not $firstDoc.FullPath -and (Test-Path (Join-Path $targetWiki $firstDoc.RelPath))) {
+                    $indexMatchesWiki = $true
+                }
+            }
+            if ($indexMatchesWiki) {
+                $treeNode = Build-ServerFileTreeNode -allMdFiles $script:WikiIndex -wikiDir $targetWiki
+                $script:CachedSidebarTree = $treeNode
+                $script:CachedSidebarTreeLastScan = $script:WikiIndexLastScan
+                $script:CachedSidebarTreeWikiDir = $targetWiki
+            } else {
+                $treeNode = Build-ServerFileTreeNode -wikiDir $targetWiki
+            }
+        }
 
-    return $treeHtml
+        # Generate base template (without currentRelPath)
+        $templateHtml = Render-ServerFolderTreeHtml -node $treeNode -currentRelPath "" -wikiDir $targetWiki -Lang $Lang -ScriptDir $resolvedScript -DisplayMode $resolvedDisplayMode
+
+        if ($useCache) {
+            $script:SidebarHtmlCacheMap[$cacheKey] = $templateHtml
+            Save-SidebarCache -HtmlTemplate $templateHtml -TargetWikiDir $targetWiki -TargetScriptDir $resolvedScript -CacheFolder $CacheFolder -Lang $Lang | Out-Null
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($currentRelPath)) {
+        return $templateHtml
+    }
+
+    # Fast active & open decoration on cached template
+    $cleanRel = $currentRelPath.Replace('\', '/').TrimStart('/')
+    $cleanUri = "/" + [Uri]::EscapeUriString($cleanRel)
+
+    # 1. Active class on link
+    $finalHtml = $templateHtml.Replace("<a href='$cleanUri'", "<a href='$cleanUri' class='active'")
+
+    # 2. Open details for parent folders
+    $parts = $cleanRel.Split('/')
+    if ($parts.Length -gt 1) {
+        $folderPath = ""
+        for ($i = 0; $i -lt $parts.Length - 1; $i++) {
+            $folderPath = if ($folderPath) { "$folderPath/$($parts[$i])" } else { $parts[$i] }
+            $marker = "data-folder='$folderPath/'"
+            # Replace closed details containing this folder button to open details
+            $targetPattern = "(?s)<details>(.*?$marker)"
+            $finalHtml = [regex]::Replace($finalHtml, $targetPattern, "<details open>`$1", [System.Text.RegularExpressions.RegexOptions]::Singleline)
+        }
+    }
+
+    return $finalHtml
 }
 
 function Get-OkfTopBarHtml {
@@ -261,13 +356,16 @@ function Get-OkfFooterCardHtml {
 
 function Initialize-WikiIndex {
     param (
-        [string]$TargetWikiDir
+        [string]$TargetWikiDir = "",
+        [switch]$Force
     )
+    if (-not $Force -and $null -ne $script:WikiIndex -and $script:WikiIndex.Count -gt 0) {
+        return
+    }
+
     $dir = if (-not [string]::IsNullOrWhiteSpace($TargetWikiDir)) { $TargetWikiDir } elseif ($wikiDir) { $wikiDir } elseif ($script:wikiDir) { $script:wikiDir } else { $PWD.Path }
-    if ($null -eq $script:WikiIndex -or $script:WikiIndex.Count -eq 0) {
-        if (-not (Load-WikiIndexCache -TargetWikiDir $dir)) {
-            Build-WikiIndex -TargetWikiDir $dir | Out-Null
-        }
+    if (-not (Load-WikiIndexCache -TargetWikiDir $dir)) {
+        Build-WikiIndex -TargetWikiDir $dir | Out-Null
     }
 }
 
@@ -788,7 +886,7 @@ function Get-MainViewHtml {
         $folderOptionsHtml = $folderOptionsArray -join "`n                        "
 
         $newDocBtnHtml = "<button type='button' onclick='openNewDocModal()' style='background: #28a745; color: #fff; border: 1px solid #218838; padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; font-weight: bold; white-space: nowrap;'>$btnNewDocTxt</button>"
-        
+
         $newDocModalHtml = @"
     <!-- Create New Document Modal -->
     <div id="newDocModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; align-items: center; justify-content: center;">
@@ -1002,9 +1100,10 @@ function Get-MainViewHtml {
     nav.sidebar ul { list-style: none; padding: 0; margin: 0; }
     nav.sidebar ul ul { padding-left: 12px; margin-top: 2px; }
     nav.sidebar li.nav-folder { margin-top: 4px; margin-bottom: 4px; }
-    nav.sidebar summary.folder-title { display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 13px; color: #586069; padding: 4px 6px; cursor: pointer; user-select: none; }
-    nav.sidebar summary.folder-title:hover { color: #0366d6; }
-    .sidebar-add-doc-btn { background: none; border: none; color: #586069; opacity: 0.5; font-size: 12px; font-weight: bold; width: 20px; height: 20px; line-height: 18px; text-align: center; border-radius: 3px; cursor: pointer; padding: 0; transition: all 0.15s ease-in-out; }
+    nav.sidebar summary.folder-title { display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 13px; color: #586069; padding: 4px 6px; cursor: pointer; user-select: none; border-radius: 4px; }
+    nav.sidebar summary.folder-title:hover { color: #0366d6; background-color: #f0f3f6; }
+    .folder-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sidebar-add-doc-btn { background: none; border: none; color: #586069; opacity: 0; font-size: 13px; font-weight: bold; width: 20px; height: 20px; line-height: 20px; text-align: center; border-radius: 3px; cursor: pointer; padding: 0; margin-left: 4px; flex-shrink: 0; transition: all 0.15s ease-in-out; }
     summary.folder-title:hover .sidebar-add-doc-btn, .sidebar-add-doc-btn:hover, .sidebar-add-doc-btn:focus { opacity: 1; background: #0366d6; color: #fff; }
     nav.sidebar li.nav-file a { display: block; padding: 4px 8px; color: #0366d6; text-decoration: none; border-radius: 6px; font-size: 13px; word-break: break-all; }
     nav.sidebar li.nav-file a:hover { background-color: #f0f3f6; text-decoration: none; }
