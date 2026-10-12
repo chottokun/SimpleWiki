@@ -90,7 +90,38 @@ function Update-SingleDirectoryIndex {
     # Subdirectories
     $subDirs = Get-ChildItem -Path $DirectoryPath -Directory | Where-Object { $_.Name -notmatch '^\.' }
     # Markdown concept files (excluding index.md and log.md)
-    $mdFiles = Get-ChildItem -Path $DirectoryPath -File -Filter "*.md" | Where-Object { $_.Name -notin @("index.md", "log.md") }
+    $rawMdFiles = @(Get-ChildItem -Path $DirectoryPath -File -Filter "*.md" | Where-Object { $_.Name -notin @("index.md", "log.md") })
+
+    # Preserve established document link order from existing index.md
+    $existingOrder = @()
+    if (Test-Path $indexFile) {
+        try {
+            $existingIndexText = [System.IO.File]::ReadAllText($indexFile, [System.Text.Encoding]::UTF8)
+            $linkMatches = [regex]::Matches($existingIndexText, '\[.*?\]\((?:\./)?([^/#?\s]+\.md)(?:[#?][^)]*)?\)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            foreach ($lm in $linkMatches) {
+                $existingOrder += $lm.Groups[1].Value
+            }
+        } catch { }
+    }
+
+    $fileMap = [System.Collections.Generic.Dictionary[string, System.IO.FileInfo]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+    foreach ($f in $rawMdFiles) {
+        $fileMap[$f.Name] = $f
+    }
+
+    $mdFiles = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
+    foreach ($targetName in $existingOrder) {
+        if ($fileMap.ContainsKey($targetName)) {
+            $mdFiles.Add($fileMap[$targetName])
+            $fileMap.Remove($targetName) | Out-Null
+        }
+    }
+    $remaining = @($fileMap.Values) | Sort-Object Name
+    foreach ($rem in $remaining) {
+        $mdFiles.Add($rem)
+    }
 
     $lines = [System.Collections.Generic.List[string]]::new()
 

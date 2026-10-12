@@ -65,6 +65,10 @@ Windows PowerShell 5.1 / PowerShell 7+ および Windows 11 環境で動作す�
     - **誤操作防止 ＆ 全画面案内**: 停止前の確認ダイアログ（`confirm`）と停止完了後の全画面案内オーバーレイ（`#shutdownOverlay`）を表示。
     - **Ctrl + C (SIGINT) 即時終了**: `BeginGetContext` による 200ms 非同期ポーリング待機および `[System.Console]::CancelKeyPress` ハンドラにより、バッチファイル (`.bat`) 起動時やコンソールからの `Ctrl + C` でスレッドをブロッキングさせず即座に正常停止。
   - **Google OKF (Open Knowledge Format) v0.2 思想の準拠**: YAML Front Matter からの文脈抽出・自動補完 (フォールバック)・Version / Reviewer / Contributors / Related メタデータカード描画
+    - **📑 カタログ主導のドキュメント表示順制御 (`Get-OkfOrderedFiles`)**:
+      - 各ドキュメント（Concept）は数字プレフィックス（`01_` 等）を持たない不変の kebab-case で命名。
+      - バンドル直下の `index.md` 内に記述されたリンクリスト出現順を「順序の真実（Single Source of Truth）」としてサイドバー・ディレクトリ一覧・静的エクスポートに反映。
+      - 記法揺れ（箇条書き `-`, `*`, 番号付きリスト `1.`）、欠損ファイル（デッドリンク無視）、未登録ファイル（末尾自然ソート追加）、破損フォールバックに対する寛容で堅牢な耐障害性を実現。
   - **AI エージェント / LLM 用機械可読 API**: `/api/index.json` (メタデータ), `/api/chunks.json` (自動セマンティック分割チャンク), `/api/chat` (AI チャット), `/api/config` (設定管理), `/api/shutdown` (サーバー停止)
   - **✏️ Web UI 内蔵 Markdown エディター ＆ OKF フォーム・本文分離編集 ＆ 世代管理バックアップ・復元 ＆ ON/OFF 制御**:
     - **OKF フォーム＆本文 分離編集モーダル**: メタデータ（YAML Front Matter）と本文（Markdown Body）を分離して直感的に編集可能。

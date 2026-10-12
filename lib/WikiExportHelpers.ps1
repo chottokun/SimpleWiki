@@ -253,12 +253,27 @@ function Render-ExportFolderTreeHtml {
     }
 
     # 2. ファイルの描画 (index.md / README.md を先頭に優先ソート)
+    $hasCustomOrder = ($node.PSObject.Properties['HasCustomOrder'] -and $node.HasCustomOrder)
     $sortedFiles = if ($node.Files) {
-        @($node.Files | Sort-Object {
-            if ($_.BaseName -eq "index") { 0 }
-            elseif ($_.BaseName -eq "README") { 1 }
-            else { 2 }
-        }, BaseName)
+        $idx = 0
+        @($node.Files | Sort-Object -Property @{
+            Expression = {
+                if ($_.BaseName -ieq "index" -or $_.Name -ieq "index.md") { return 0 }
+                if ($_.BaseName -ieq "README" -or $_.Name -ieq "readme.md") { return 1 }
+                return 2
+            }
+        }, @{
+            Expression = {
+                if ($hasCustomOrder) {
+                    if ($_.PSObject.Properties['SortOrder'] -and $null -ne $_.SortOrder) {
+                        return [int]$_.SortOrder
+                    }
+                    return $idx++
+                } else {
+                    return $_.BaseName
+                }
+            }
+        })
     } else { @() }
 
     foreach ($file in $sortedFiles) {

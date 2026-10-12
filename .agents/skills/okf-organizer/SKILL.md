@@ -65,6 +65,13 @@ If documents contain critical metric calculation queries or formulas (e.g., reve
 - Link to it from the readable narrative concept (e.g., `metrics/mrr.md` links to `[MRR Computation](/computations/mrr.md)`).
 
 ### Step 5: Generate & Synchronize Navigation (`index.md` & `log.md`)
+
+> **ドキュメント表示順・カタログ順序ポリシー**:
+> - **不変のファイル命名**: Concept ファイルには数字プレフィックス（`01_` 等）を付与せず、概念を表す不変の kebab-case で命名する。
+> - **カタログ主導の表示順 (Single Source of Truth)**: バンドル内のナビゲーション順・読了順は、バンドル直下の `index.md` 内に記載されたリンクリスト出現順が最優先される。
+> - **推奨フォーマット**: 順序が重要なドキュメント群は番号付きリスト（`1. [概要](overview.md)`）、並列なドキュメント群は箇条書きを推奨。
+> - **新規追加時の責務**: 新規ファイルを生成したツールやエージェントは、`index.md` の目次セクションに適切な順序でリンクを追記すること。
+
 Run the synchronization script to auto-generate/update all `index.md` files (extracting titles and descriptions) and record changes to `log.md`:
 
 ```powershell
