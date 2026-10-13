@@ -48,25 +48,25 @@ Google が提唱する **OKF (Open Knowledge Format) v0.2** の思想に基づ�
 
 ---
 
-## 📄 ドキュメントマップ (Concepts & Documents)
+## 📄 ドキュメント目録・推奨読了順 (Reading Order & Documents)
 
-### ルートドキュメント
-- 📘 **[プロジェクト概要とシステムアーキテクチャ](概要.md)**: 開発背景、コンポーネント構成、OKF 思想の反映状況
-- 📖 **[社内用語定義集 (Glossary)](glossary.md)**: システム名・開発略称定義集（Agentic RAG 用）
-- 📝 **[更新履歴 (Update Log)](log.md)**: OKF バンドルの変更履歴
+### ルートドキュメント (推奨読了順)
+1. 📘 **[プロジェクト概要とシステムアーキテクチャ](概要.md)**: 開発背景、コンポーネント構成、OKF 思想の反映状況
+2. 📖 **[社内用語定義集 (Glossary)](glossary.md)**: システム名・開発略称定義集（Agentic RAG 用）
+3. 📝 **[更新履歴 (Update Log)](log.md)**: OKF バンドルの変更履歴
 
 ### 仕様 ＆ リファレンス (docs/)
-- ⚙️ **[詳細仕様書](docs/詳細仕様.md)**: ルーティング動作、メタデータ補完マトリクス、セキュリティ仕様
-- 📊 **[HTML埋め込み表サンプル](docs/complex-table.md)**: 縦横セル結合（colspan/rowspan）、ステータスバッジ、複雑なレイアウトの表表現
-- 🤖 **[REST API 仕様書](docs/api/REST-API.md)**: `/api/index.json` および RAG 用 `/api/chunks.json` の仕様と Python 連携コード
-- 🧮 **[検索スコアリング計算 (Attested Computation)](docs/computations/search-score.md)**: 検索確定アルゴリズムのパラメータと計算仕様
-- 🚀 **[クイックスタートガイド](docs/user-guide/クイックスタート.md)**: Web サーバー起動、GUI ツール、ドラッグ＆ドロップ運用
-- ✏️ **[Webエディタ活用ガイド](docs/user-guide/editor-guide.md)**: メタデータ編集と世代バックアップ・復元
-- 🤖 **[AIチャット＆RAG活用ガイド](docs/user-guide/rag-chat-guide.md)**: ローカルLLM・形態素解析・自律調査モード
-- 📦 **[静的HTMLエクスポートガイド](docs/user-guide/export-guide.md)**: オフライン配布用HTML一括出力とGUI運用
+1. ⚙️ **[詳細仕様書](docs/詳細仕様.md)**: ルーティング動作、メタデータ補完マトリクス、セキュリティ仕様
+2. 📊 **[HTML埋め込み表サンプル](docs/complex-table.md)**: 縦横セル結合（colspan/rowspan）、ステータスバッジ、複雑なレイアウトの表表現
+3. 🤖 **[REST API 仕様書](docs/api/REST-API.md)**: `/api/index.json` および RAG 用 `/api/chunks.json` の仕様と Python 連携コード
+4. 🧮 **[検索スコアリング計算 (Attested Computation)](docs/computations/search-score.md)**: 検索確定アルゴリズムのパラメータと計算仕様
+5. 🚀 **[クイックスタートガイド](docs/user-guide/クイックスタート.md)**: Web サーバー起動、GUI ツール、ドラッグ＆ドロップ運用
+6. ✏️ **[Webエディタ活用ガイド](docs/user-guide/editor-guide.md)**: メタデータ編集と世代バックアップ・復元
+7. 🤖 **[AIチャット＆RAG活用ガイド](docs/user-guide/rag-chat-guide.md)**: ローカルLLM・形態素解析・自律調査モード
+8. 📦 **[静的HTMLエクスポートガイド](docs/user-guide/export-guide.md)**: オフライン配布用HTML一括出力とGUI運用
 
 ### ガイド (guides/)
-- 🛠️ **[開発環境構築ガイド](guides/環境構築.md)**: 開発前提条件、文字コード規約 (BOM付き UTF-8)、Pester 自動テスト
+1. 🛠️ **[開発環境構築ガイド](guides/環境構築.md)**: 開発前提条件、文字コード規約 (BOM付き UTF-8)、Pester 自動テスト
 
 ---
 
