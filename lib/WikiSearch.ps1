@@ -1071,7 +1071,7 @@ function Get-ServerFolderTreeHtml {
         $addDocToFolderTitle = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "sidebar_add_doc_tooltip" -Lang $Lang))
 
         $lines.Add("  <li class='nav-folder'>")
-        $lines.Add("    <details$openAttr>")
+        $lines.Add("    <details$openAttr data-folder='$currentFolderRel/'>")
         $lines.Add("      <summary class='folder-title'>")
         $lines.Add("        <span class='folder-label'>&#128193; $encodedName</span>")
         $lines.Add("        <button type='button' class='sidebar-add-doc-btn' title='$addDocToFolderTitle' data-folder='$currentFolderRel/' onclick='event.stopPropagation(); event.preventDefault(); openNewDocModal(""$currentFolderRel/"");'>&#43;</button>")
