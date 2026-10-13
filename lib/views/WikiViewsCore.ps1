@@ -123,13 +123,47 @@ function Get-SidebarHtml {
         for ($i = 0; $i -lt $parts.Length - 1; $i++) {
             $folderPath = if ($folderPath) { "$folderPath/$($parts[$i])" } else { $parts[$i] }
             $marker = "data-folder='$folderPath/'"
-            # Replace closed details containing this folder button to open details
-            $targetPattern = "(?s)<details>(.*?$marker)"
-            $finalHtml = [regex]::Replace($finalHtml, $targetPattern, "<details open>`$1", [System.Text.RegularExpressions.RegexOptions]::Singleline)
+            # 1. Exact string replace for details attribute (safe, robust, zero false-match)
+            if ($finalHtml.Contains("<details $marker")) {
+                $finalHtml = $finalHtml.Replace("<details $marker", "<details open $marker")
+            } else {
+                # 2. Fallback regex strictly bounded within the summary tag of this folder
+                $targetPattern = "(?s)<details>(\s*<summary[^>]*>(?:(?!</summary>).)*?$marker)"
+                $finalHtml = [regex]::Replace($finalHtml, $targetPattern, "<details open>`$1", [System.Text.RegularExpressions.RegexOptions]::Singleline)
+            }
         }
     }
 
-    return $finalHtml
+    # 3. Client-side folder state persistence across navigation
+    $persistScript = @"
+<script>
+(function() {
+    try {
+        var storageKey = 'simplewiki_open_folders';
+        var sb = document.querySelector('.sidebar') || document.querySelector('.folder-tree');
+        if (!sb) return;
+        var saved = JSON.parse(sessionStorage.getItem(storageKey) || '[]');
+        if (Array.isArray(saved)) {
+            saved.forEach(function(f) {
+                var d = sb.querySelector("details[data-folder='" + f + "']");
+                if (d) d.open = true;
+            });
+        }
+        sb.addEventListener('toggle', function(e) {
+            if (e.target && e.target.tagName === 'DETAILS' && e.target.hasAttribute('data-folder')) {
+                var openList = [];
+                var allOpen = sb.querySelectorAll('details[open][data-folder]');
+                for (var i = 0; i < allOpen.length; i++) {
+                    openList.push(allOpen[i].getAttribute('data-folder'));
+                }
+                sessionStorage.setItem(storageKey, JSON.stringify(openList));
+            }
+        }, true);
+    } catch(err) {}
+})();
+</script>
+"@
+    return ($finalHtml + "`n" + $persistScript)
 }
 
 function Get-OkfTopBarHtml {

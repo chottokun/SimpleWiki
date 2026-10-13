@@ -7,6 +7,7 @@
 - Include PSScriptAnalyzer-equivalent checks in the test/validation process.
 - Develop using a TDD approach.
 - Target execution & test environment is vanilla Windows 11 / Windows PowerShell 5.1 with built-in Pester (v3.4.0). Do NOT use hyphenated Pester 5 assertion operators (e.g., use `Should Be`, NOT `Should -Be`). See `.agents/rules/powershell.md`.
+- **OKF Document Display Order Policy (ドキュメント表示順・カタログ順序ポリシー)**: ドキュメントの不変命名 (kebab-case) と各フォルダ直下の `index.md` リンクリスト出現順 (First-Wins) に基づく表示順制御。See `.agents/rules/okf.md`.
 
 
 # Project Context

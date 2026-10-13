@@ -4,9 +4,9 @@ OKF (Open Knowledge Format) v0.2 仕様に準拠した保証付き計算（Attes
 
 ---
 
-## 📄 コンセプト ＆ ドキュメント (Concepts & Documents)
+## 📄 コンセプト ＆ ドキュメント・推奨読了順 (Reading Order & Documents)
 
-* [検索スコアリング計算](search-score.md) - タイトル・タグ・本文一致とボーナスに基づく確定スコア算出ロジック
+1. [検索スコアリング計算](search-score.md) - タイトル・タグ・本文一致とボーナスに基づく確定スコア算出ロジック
 
 ---
 

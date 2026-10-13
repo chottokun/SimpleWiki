@@ -515,6 +515,147 @@ function Build-WikiIndex {
     return $script:WikiIndex
 }
 
+# --- OKF Bundle Ordered Files Resolution Functions ---
+
+function Get-OkfOrderedFiles {
+    <#
+    .SYNOPSIS
+        OKFバンドル内のMarkdownファイルを index.md の記述順に基づいてソートして取得する。
+    .DESCRIPTION
+        index.md に出現するMarkdownリンク順を最優先し、未記載ファイルは末尾に自然ソートで付加する。
+        index.md が破損・欠損している場合でもエラーとせずフォールバックする。
+    .PARAMETER BundleRoot
+        走査対象のフォルダパス。
+    .PARAMETER IncludeIndex
+        指定された場合、index.md 自体が存在すれば返却配列の先頭に含める。
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$BundleRoot,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$IncludeIndex
+    )
+
+    if (-not (Test-Path -LiteralPath $BundleRoot -PathType Container)) {
+        return @()
+    }
+
+    $rawFiles = @(Get-ChildItem -LiteralPath $BundleRoot -Filter "*.md" -File -ErrorAction SilentlyContinue)
+    if ($rawFiles.Count -eq 0) {
+        return @()
+    }
+
+    $indexFileInfo = $null
+    $contentFiles = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
+    foreach ($f in $rawFiles) {
+        if ($f.Name -ieq 'index.md') {
+            $indexFileInfo = $f
+        } else {
+            $contentFiles.Add($f)
+        }
+    }
+
+    $fileMap = [System.Collections.Generic.Dictionary[string, System.IO.FileInfo]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+    foreach ($f in $contentFiles) {
+        $fileMap[$f.Name] = $f
+    }
+
+    $orderedList = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
+    $indexPath = if ($indexFileInfo) { $indexFileInfo.FullName } else { Join-Path -Path $BundleRoot -ChildPath "index.md" }
+
+    if (Test-Path -LiteralPath $indexPath -PathType Leaf) {
+        try {
+            $indexContent = [System.IO.File]::ReadAllText($indexPath, [System.Text.Encoding]::UTF8)
+
+            # 直下の .md ファイルのみを対象とする（サブディレクトリパスを含むリンク api/doc.md は除外。ただし ./doc.md は許可）
+            # アンカー (#sec) や クエリ (?v=1) を許容、大文字小文字（.MD など）を吸収
+            $pattern = '\[.*?\]\((?:\./)?([^/#?\s]+\.md)(?:[#?][^)]*)?\)'
+            $linkMatches = [regex]::Matches($indexContent, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+
+            foreach ($m in $linkMatches) {
+                $targetFile = $m.Groups[1].Value
+                if ($fileMap.ContainsKey($targetFile)) {
+                    $orderedList.Add($fileMap[$targetFile])
+                    $fileMap.Remove($targetFile) | Out-Null
+                }
+            }
+        }
+        catch {
+            Write-Verbose "Failed to parse index.md: $_"
+        }
+    }
+
+    $remaining = @($fileMap.Values) | Sort-Object Name
+    foreach ($rem in $remaining) {
+        $orderedList.Add($rem)
+    }
+
+    if ($IncludeIndex -and $indexFileInfo) {
+        $orderedList.Insert(0, $indexFileInfo)
+    }
+
+    return $orderedList.ToArray()
+}
+
+function Sync-FileTreeNodeOkfOrder {
+    <#
+    .SYNOPSIS
+        allMdFiles から生成されたツリーノードに対して物理フォルダの index.md 順序を再帰的に同期する。
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseApprovedVerbs", "")]
+    param(
+        [Parameter(Mandatory = $true)]$targetNode,
+        [Parameter(Mandatory = $true)][string]$nodePhysicalPath
+    )
+
+    if (Test-Path -LiteralPath $nodePhysicalPath -PathType Container) {
+        $orderedDiskFiles = Get-OkfOrderedFiles -BundleRoot $nodePhysicalPath -IncludeIndex
+        if ($orderedDiskFiles.Count -gt 0) {
+            $orderMap = [System.Collections.Generic.Dictionary[string, int]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            for ($i = 0; $i -lt $orderedDiskFiles.Count; $i++) {
+                $orderMap[$orderedDiskFiles[$i].Name] = $i
+            }
+
+            if ($targetNode.Files -and $targetNode.Files.Count -gt 0) {
+                $sorted = @($targetNode.Files | Sort-Object -Property @{
+                    Expression = {
+                        $name = if ($_.Name) { $_.Name } elseif ($_.BaseName) { "$($_.BaseName).md" } else { "" }
+                        if ($orderMap.ContainsKey($name)) {
+                            return $orderMap[$name]
+                        }
+                        return 999999
+                    }
+                }, @{
+                    Expression = {
+                        if ($_.Name) { $_.Name } elseif ($_.BaseName) { $_.BaseName } else { "" }
+                    }
+                })
+
+                $targetNode.Files.Clear()
+                $idx = 0
+                foreach ($sf in $sorted) {
+                    $sf | Add-Member -NotePropertyName "SortOrder" -NotePropertyValue ($idx++) -Force
+                    $targetNode.Files.Add($sf)
+                }
+                $targetNode | Add-Member -NotePropertyName "HasCustomOrder" -NotePropertyValue $true -Force
+            }
+        }
+    }
+
+    if ($targetNode.SubFolders) {
+        foreach ($subName in $targetNode.SubFolders.Keys) {
+            $subNode = $targetNode.SubFolders[$subName]
+            $subPhysical = Join-Path $nodePhysicalPath $subName
+            Sync-FileTreeNodeOkfOrder -targetNode $subNode -nodePhysicalPath $subPhysical
+        }
+    }
+}
+
 # --- Sidebar Tree Generation Functions ---
 
 function Build-FileTreeNode {
@@ -583,30 +724,37 @@ function Build-FileTreeNode {
                 })
             }
         }
+        if (-not [string]::IsNullOrWhiteSpace($wikiDir) -and (Test-Path -LiteralPath $wikiDir -PathType Container)) {
+            Sync-FileTreeNodeOkfOrder -targetNode $node -nodePhysicalPath $wikiDir
+        }
         return $node
     }
 
     $targetDir = if ([string]::IsNullOrWhiteSpace($baseDir)) { $wikiDir } else { $baseDir }
     if (-not (Test-Path $targetDir)) { return $node }
 
-    $items = Get-ChildItem -Path $targetDir | Sort-Object { -not $_.PSIsContainer }, Name
-    foreach ($item in $items) {
-        if ($item.PSIsContainer) {
-            $subBase = $item.FullName
-            $subRel  = if ([string]::IsNullOrWhiteSpace($currentRelPath)) { $item.Name } else { "$currentRelPath/$($item.Name)" }
-            $node.SubFolders[$item.Name] = Build-FileTreeNode -wikiDir $wikiDir -baseDir $subBase -currentRelPath $subRel -pageRelPath $pageRelPath
-        } else {
-            if ($item.Extension -eq ".md") {
-                $docRel = if ([string]::IsNullOrWhiteSpace($currentRelPath)) { $item.Name } else { "$currentRelPath/$($item.Name)" }
-                $docMeta = Get-DocumentMetadata -File $item -RelPath $docRel
-                $node.Files.Add([PSCustomObject]@{
-                    Name     = $item.Name
-                    RelPath  = $docRel
-                    Title    = $docMeta.Title
-                    IsActive = ($docRel -eq $pageRelPath)
-                })
-            }
-        }
+    $subFolders = @(Get-ChildItem -LiteralPath $targetDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch '^(\.git|lib|tests|dist|\.cache|scratch)$' } | Sort-Object Name)
+    foreach ($dir in $subFolders) {
+        $subBase = $dir.FullName
+        $subRel  = if ([string]::IsNullOrWhiteSpace($currentRelPath)) { $dir.Name } else { "$currentRelPath/$($dir.Name)" }
+        $node.SubFolders[$dir.Name] = Build-FileTreeNode -wikiDir $wikiDir -baseDir $subBase -currentRelPath $subRel -pageRelPath $pageRelPath
+    }
+
+    $orderedFiles = Get-OkfOrderedFiles -BundleRoot $targetDir -IncludeIndex
+    $orderIdx = 0
+    foreach ($item in $orderedFiles) {
+        $docRel = if ([string]::IsNullOrWhiteSpace($currentRelPath)) { $item.Name } else { "$currentRelPath/$($item.Name)" }
+        $docMeta = Get-DocumentMetadata -File $item -RelPath $docRel
+        $node.Files.Add([PSCustomObject]@{
+            Name      = $item.Name
+            RelPath   = $docRel
+            Title     = $docMeta.Title
+            IsActive  = ($docRel -eq $pageRelPath)
+            SortOrder = $orderIdx++
+        })
+    }
+    if ($orderedFiles.Count -gt 0) {
+        $node | Add-Member -NotePropertyName "HasCustomOrder" -NotePropertyValue $true -Force
     }
     return $node
 }
@@ -738,6 +886,9 @@ function Build-ServerFileTreeNode {
                 })
             }
         }
+        if (-not [string]::IsNullOrWhiteSpace($wikiDir) -and (Test-Path -LiteralPath $wikiDir -PathType Container)) {
+            Sync-FileTreeNodeOkfOrder -targetNode $node -nodePhysicalPath $wikiDir
+        }
         return $node
     }
 
@@ -746,26 +897,30 @@ function Build-ServerFileTreeNode {
         return $node
     }
 
-    $items = @(Get-ChildItem -Path $targetDir | Where-Object { $_.Name -notmatch '^(\.git|lib|tests|dist|\.cache|scratch)$' } | Sort-Object { -not $_.PSIsContainer }, Name)
-    foreach ($item in $items) {
-        if ($item.PSIsContainer) {
-            $subBase = $item.FullName
-            $subRel  = if ([string]::IsNullOrWhiteSpace($currentRelPath)) { $item.Name } else { "$currentRelPath/$($item.Name)" }
-            $subTree = Build-ServerFileTreeNode -wikiDir $wikiDir -baseDir $subBase -currentRelPath $subRel
-            if ($subTree.Files.Count -gt 0 -or $subTree.SubFolders.Count -gt 0) {
-                $node.SubFolders[$item.Name] = $subTree
-            }
-        } else {
-            if ($item.Extension -eq ".md") {
-                $docRel = if ([string]::IsNullOrWhiteSpace($currentRelPath)) { $item.Name } else { "$currentRelPath/$($item.Name)" }
-                $docMeta = Get-DocumentMetadata -File $item -RelPath $docRel
-                $node.Files.Add([PSCustomObject]@{
-                    Name     = $item.Name
-                    RelPath  = $docRel
-                    Title    = $docMeta.Title
-                })
-            }
+    $subFolders = @(Get-ChildItem -LiteralPath $targetDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch '^(\.git|lib|tests|dist|\.cache|scratch)$' } | Sort-Object Name)
+    foreach ($dir in $subFolders) {
+        $subBase = $dir.FullName
+        $subRel  = if ([string]::IsNullOrWhiteSpace($currentRelPath)) { $dir.Name } else { "$currentRelPath/$($dir.Name)" }
+        $subTree = Build-ServerFileTreeNode -wikiDir $wikiDir -baseDir $subBase -currentRelPath $subRel
+        if ($subTree.Files.Count -gt 0 -or $subTree.SubFolders.Count -gt 0) {
+            $node.SubFolders[$dir.Name] = $subTree
         }
+    }
+
+    $orderedFiles = Get-OkfOrderedFiles -BundleRoot $targetDir -IncludeIndex
+    $orderIdx = 0
+    foreach ($item in $orderedFiles) {
+        $docRel = if ([string]::IsNullOrWhiteSpace($currentRelPath)) { $item.Name } else { "$currentRelPath/$($item.Name)" }
+        $docMeta = Get-DocumentMetadata -File $item -RelPath $docRel
+        $node.Files.Add([PSCustomObject]@{
+            Name      = $item.Name
+            RelPath   = $docRel
+            Title     = $docMeta.Title
+            SortOrder = $orderIdx++
+        })
+    }
+    if ($orderedFiles.Count -gt 0) {
+        $node | Add-Member -NotePropertyName "HasCustomOrder" -NotePropertyValue $true -Force
     }
     return $node
 }
@@ -833,8 +988,11 @@ function Get-ServerFolderTreeHtml {
     $lines = [System.Collections.Generic.List[string]]::new()
     $lines.Add("<ul>")
 
-    # Sort files: pin index.md and README.md to the top, then sort alphabetically
+    # Maintain established node.Files order (from Get-OkfOrderedFiles) when HasCustomOrder is set;
+    # otherwise pin index.md/README.md and sort alphabetically
+    $hasCustomOrder = ($node.PSObject.Properties['HasCustomOrder'] -and $node.HasCustomOrder)
     $sortedFiles = if ($node.Files) {
+        $idx = 0
         @($node.Files | Sort-Object -Property @{
             Expression = {
                 $n = if ($_.Name) { $_.Name.ToLower() } elseif ($_.BaseName) { "$($_.BaseName.ToLower()).md" } elseif ($_.FullName) { [System.IO.Path]::GetFileName($_.FullName).ToLower() } else { "" }
@@ -844,8 +1002,15 @@ function Get-ServerFolderTreeHtml {
             }
         }, @{
             Expression = {
-                $n = if ($_.BaseName) { $_.BaseName.ToLower() } elseif ($_.Name) { $_.Name.ToLower() } elseif ($_.Title) { $_.Title.ToLower() } else { "" }
-                return $n
+                if ($hasCustomOrder) {
+                    if ($_.PSObject.Properties['SortOrder'] -and $null -ne $_.SortOrder) {
+                        return [int]$_.SortOrder
+                    }
+                    return $idx++
+                } else {
+                    $n = if ($_.BaseName) { $_.BaseName.ToLower() } elseif ($_.Name) { $_.Name.ToLower() } elseif ($_.Title) { $_.Title.ToLower() } else { "" }
+                    return $n
+                }
             }
         })
     } else { @() }
@@ -906,7 +1071,7 @@ function Get-ServerFolderTreeHtml {
         $addDocToFolderTitle = [System.Net.WebUtility]::HtmlEncode((Get-LocalizedStr -Key "sidebar_add_doc_tooltip" -Lang $Lang))
 
         $lines.Add("  <li class='nav-folder'>")
-        $lines.Add("    <details$openAttr>")
+        $lines.Add("    <details$openAttr data-folder='$currentFolderRel/'>")
         $lines.Add("      <summary class='folder-title'>")
         $lines.Add("        <span class='folder-label'>&#128193; $encodedName</span>")
         $lines.Add("        <button type='button' class='sidebar-add-doc-btn' title='$addDocToFolderTitle' data-folder='$currentFolderRel/' onclick='event.stopPropagation(); event.preventDefault(); openNewDocModal(""$currentFolderRel/"");'>&#43;</button>")

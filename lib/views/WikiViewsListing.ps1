@@ -27,7 +27,7 @@ function Get-DirectoryListingHtml {
     $html = $css + "`n"
 
     $subDirs = Get-ChildItem -LiteralPath $DirFullPath -Directory -ErrorAction SilentlyContinue | Sort-Object Name
-    $mdFiles = Get-ChildItem -LiteralPath $DirFullPath -Filter "*.md" -File -ErrorAction SilentlyContinue | Sort-Object Name
+    $mdFiles = Get-OkfOrderedFiles -BundleRoot $DirFullPath
 
     if ($subDirs.Count -eq 0 -and $mdFiles.Count -eq 0) {
         $noContentText = Get-LocalizedStr -Key "no_content" -Lang $Lang

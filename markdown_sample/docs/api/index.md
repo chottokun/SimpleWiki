@@ -4,9 +4,9 @@ SimpleWiki が提供する機械可読 API、RAG 連携エンドポイント、A
 
 ---
 
-## 📄 コンセプト ＆ ドキュメント (Concepts & Documents)
+## 📄 コンセプト ＆ ドキュメント・推奨読了順 (Reading Order & Documents)
 
-* [REST API 仕様書 ＆ AI Agent / RAG 連携ガイド](REST-API.md) - `/api/index.json`, `/api/chunks.json`, `/api/chat` の詳細仕様
+1. [REST API 仕様書 ＆ AI Agent / RAG 連携ガイド](REST-API.md) - `/api/index.json`, `/api/chunks.json`, `/api/chat` の詳細仕様
 
 ---
 

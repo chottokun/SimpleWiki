@@ -590,6 +590,29 @@ Describe 'Directory Listing and Fallback Tests (Get-DirectoryListingHtml)' {
         $sidebarNoCache | Should Match "href='/index.md' class='active'"
     }
 
+    It "Get-SidebarHtml correctly opens target folder without falsely opening preceding sibling folders" {
+        $sampleWiki = Join-Path $projectRoot "markdown_sample"
+        $cacheFile = Get-SidebarCachePath -TargetWikiDir $sampleWiki -TargetScriptDir $projectRoot -Lang "ja"
+        if (Test-Path $cacheFile) { Remove-Item -LiteralPath $cacheFile -Force -ErrorAction SilentlyContinue }
+        if ($null -ne $script:SidebarHtmlCacheMap) { $script:SidebarHtmlCacheMap.Clear() }
+        $script:CachedSidebarTree = $null
+
+        # When viewing a file inside 'guides' (sibling that comes after 'docs')
+        $sidebarGuides = Get-SidebarHtml -currentRelPath "guides/環境構築.md" -Lang "ja" -TargetWikiDir $sampleWiki -TargetScriptDir $projectRoot
+        
+        # 'guides' folder MUST be open
+        $sidebarGuides | Should Match "<details open[^>]*data-folder='guides/'"
+        # 'docs' folder MUST NOT be falsely opened
+        $sidebarGuides | Should Not Match "<details open[^>]*data-folder='docs/'"
+        $sidebarGuides | Should Match "<details[^>]*data-folder='docs/'"
+
+        # Multi-level folder check: docs/user-guide/editor-guide.md
+        $sidebarNested = Get-SidebarHtml -currentRelPath "docs/user-guide/editor-guide.md" -Lang "ja" -TargetWikiDir $sampleWiki -TargetScriptDir $projectRoot
+        $sidebarNested | Should Match "<details open[^>]*data-folder='docs/'"
+        $sidebarNested | Should Match "<details open[^>]*data-folder='docs/user-guide/'"
+        $sidebarNested | Should Not Match "<details open[^>]*data-folder='guides/'"
+    }
+
     It "Get-ChatWidgetHtml に開いているページを含めるデフォルトONのチェックボックスが含まれる" {
         $html = Get-ChatWidgetHtml
         $html | Should Match "okfIncludeCurrentPage"

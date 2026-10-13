@@ -32,6 +32,7 @@ $libDir    = Join-Path $scriptDir "lib"
 # --- モジュールのロード (lib/*.ps1) ---
 . (Join-Path $libDir "WikiI18n.ps1")
 . (Join-Path $libDir "WikiMetadata.ps1")
+. (Join-Path $libDir "WikiSearch.ps1")
 . (Join-Path $libDir "WikiViews.ps1")
 . (Join-Path $libDir "WikiExportHelpers.ps1")
 
