@@ -35,7 +35,7 @@ jobs:
               $tag = "${{ github.ref_name }}"
           }
           Write-Host "Resolved tag: $tag"
-          echo "TAG_NAME=$tag" >> $env:GITHUB_ENV
+          "TAG_NAME=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Encoding & BOM Verification
         run: |
@@ -63,6 +63,20 @@ jobs:
 
           if ($failed) {
               throw "Encoding & BOM Verification failed"
+          }
+
+      - name: Install PSScriptAnalyzer
+        run: |
+          Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -AllowClobber
+
+      - name: PSScriptAnalyzer Check
+        run: |
+          $results = Invoke-ScriptAnalyzer -Path . -Recurse
+          $errors = $results | Where-Object { $_.Severity -eq 'Error' }
+          if ($errors) {
+              $errors | Format-Table -AutoSize
+              Write-Error "PSScriptAnalyzer found errors."
+              exit 1
           }
 
       - name: Pester Unit Tests
@@ -130,8 +144,8 @@ jobs:
           $hash = Get-FileHash -Path $zipPath -Algorithm SHA256
           $hash.Hash | Out-File -FilePath "$zipPath.sha256" -Encoding ascii
 
-          echo "ZIP_PATH=$zipPath" >> $env:GITHUB_ENV
-          echo "ZIP_HASH_PATH=$zipPath.sha256" >> $env:GITHUB_ENV
+          "ZIP_PATH=$zipPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ZIP_HASH_PATH=$zipPath.sha256" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
           Write-Host "Created Zip File: $zipPath"
           Write-Host "Zip File Size: $((Get-Item $zipPath).Length) bytes"
