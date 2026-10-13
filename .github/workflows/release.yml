@@ -1,0 +1,192 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name for manual run (e.g. v-manual)'
+        required: false
+        default: 'v-manual'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve Tag Name
+        id: tag
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+              $tag = "${{ github.event.inputs.tag_name }}"
+          } else {
+              $tag = "${{ github.ref_name }}"
+          }
+          Write-Host "Resolved tag: $tag"
+          echo "TAG_NAME=$tag" >> $env:GITHUB_ENV
+
+      - name: Encoding & BOM Verification
+        run: |
+          $failed = $false
+
+          # Check .ps1, .psm1, .psd1 for UTF-8 with BOM
+          $psFiles = Get-ChildItem -Path . -Recurse -File | Where-Object { $_.Extension -match '^\.ps(1|m1|d1)$' }
+          foreach ($file in $psFiles) {
+              $bytes = Get-Content -Path $file.FullName -Encoding Byte -TotalCount 3 -ErrorAction SilentlyContinue
+              if ($null -eq $bytes -or $bytes.Count -lt 3 -or $bytes[0] -ne 0xEF -or $bytes[1] -ne 0xBB -or $bytes[2] -ne 0xBF) {
+                  Write-Error "File $($file.FullName) must be UTF-8 with BOM (0xEF, 0xBB, 0xBF)"
+                  $failed = $true
+              }
+          }
+
+          # Check .bat for UTF-8 without BOM
+          $batFiles = Get-ChildItem -Path . -Recurse -File -Filter *.bat
+          foreach ($file in $batFiles) {
+              $bytes = Get-Content -Path $file.FullName -Encoding Byte -TotalCount 3 -ErrorAction SilentlyContinue
+              if ($null -ne $bytes -and $bytes.Count -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+                  Write-Error "File $($file.FullName) must NOT have BOM (0xEF, 0xBB, 0xBF)"
+                  $failed = $true
+              }
+          }
+
+          if ($failed) {
+              throw "Encoding & BOM Verification failed"
+          }
+
+      - name: Pester Unit Tests
+        run: |
+          # Force loading Pester 3.4.0 to match Windows 11 built-in environment
+          Remove-Module Pester -ErrorAction SilentlyContinue
+          Import-Module Pester -RequiredVersion 3.4.0 -Force -ErrorAction SilentlyContinue
+          if (-not (Get-Module Pester | Where-Object { $_.Version.Major -eq 3 })) {
+              Install-Module -Name Pester -RequiredVersion 3.4.0 -Force -Scope CurrentUser -SkipPublisherCheck
+              Import-Module Pester -RequiredVersion 3.4.0 -Force
+          }
+          Invoke-Pester -Script .\tests -EnableExit
+
+      - name: Build Clean Distribution Package
+        run: |
+          $tag = $env:TAG_NAME
+          $stagingDir = "$env:RUNNER_TEMP\SimpleWiki"
+          New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
+
+          # Root runners
+          Copy-Item "Start-MarkdigWiki.bat" -Destination $stagingDir
+          Copy-Item "Export-GUI.bat" -Destination $stagingDir
+          Copy-Item "Set-ApiKey.bat" -Destination $stagingDir
+
+          # Root entrypoints
+          Copy-Item "Start-MarkdigWiki.ps1" -Destination $stagingDir
+          Copy-Item "Export-MarkdigWiki.ps1" -Destination $stagingDir
+          Copy-Item "Export-GUI.ps1" -Destination $stagingDir
+
+          # Runtime libraries
+          Copy-Item "lib" -Destination $stagingDir -Recurse
+
+          # Sample content
+          Copy-Item "markdown_sample" -Destination $stagingDir -Recurse
+
+          # Documentation
+          if (Test-Path "README.md") { Copy-Item "README.md" -Destination $stagingDir }
+          if (Test-Path "LICENSE.md") { Copy-Item "LICENSE.md" -Destination $stagingDir }
+          if (Test-Path "LICENSE") { Copy-Item "LICENSE" -Destination $stagingDir }
+
+          # Additional runtime things if exist
+          if (Test-Path "New-ActivationCode.bat") { Copy-Item "New-ActivationCode.bat" -Destination $stagingDir }
+          if (Test-Path "New-ActivationCode.ps1") { Copy-Item "New-ActivationCode.ps1" -Destination $stagingDir }
+          if (Test-Path "Set-ApiKey.ps1") { Copy-Item "Set-ApiKey.ps1" -Destination $stagingDir }
+          if (Test-Path "Update-WikiTags.ps1") { Copy-Item "Update-WikiTags.ps1" -Destination $stagingDir }
+          if (Test-Path "Export-MarkdigWiki.bat") { Copy-Item "Export-MarkdigWiki.bat" -Destination $stagingDir }
+
+          if (Test-Path "config.json.example") { Copy-Item "config.json.example" -Destination $stagingDir }
+          if (Test-Path "i18n.json.example") { Copy-Item "i18n.json.example" -Destination $stagingDir }
+          if (Test-Path "images") { Copy-Item "images" -Destination $stagingDir -Recurse }
+          if (Test-Path "templates") { Copy-Item "templates" -Destination $stagingDir -Recurse }
+
+          # Remove explicitly excluded stuff just in case they were nested (they shouldn't be based on above explicit inclusion)
+          $excludeList = @(".git", ".github", ".agents", "tests", "scratch", "*.log", ".cache")
+          foreach ($item in $excludeList) {
+              $pathToRemove = Join-Path $stagingDir $item
+              if (Test-Path $pathToRemove) {
+                  Remove-Item $pathToRemove -Recurse -Force
+              }
+          }
+
+          $zipPath = "$env:RUNNER_TEMP\SimpleWiki-$tag.zip"
+          Compress-Archive -Path "$stagingDir\*" -DestinationPath $zipPath -Force
+
+          $hash = Get-FileHash -Path $zipPath -Algorithm SHA256
+          $hash.Hash | Out-File -FilePath "$zipPath.sha256" -Encoding ascii
+
+          echo "ZIP_PATH=$zipPath" >> $env:GITHUB_ENV
+          echo "ZIP_HASH_PATH=$zipPath.sha256" >> $env:GITHUB_ENV
+
+          Write-Host "Created Zip File: $zipPath"
+          Write-Host "Zip File Size: $((Get-Item $zipPath).Length) bytes"
+
+      - name: Package Portability Smoke Test (Verification Step)
+        run: |
+          $tag = $env:TAG_NAME
+          $zipPath = $env:ZIP_PATH
+          $verifyDir = "$env:RUNNER_TEMP\verify_extracted"
+
+          New-Item -ItemType Directory -Path $verifyDir -Force | Out-Null
+          Expand-Archive -Path $zipPath -DestinationPath $verifyDir -Force
+
+          # Assert that all required files are present
+          $requiredFiles = @(
+              "Start-MarkdigWiki.bat",
+              "lib\Markdig.dll",
+              "markdown_sample\index.md",
+              "Export-MarkdigWiki.ps1"
+          )
+          foreach ($file in $requiredFiles) {
+              $filePath = Join-Path $verifyDir $file
+              if (-not (Test-Path $filePath)) {
+                  throw "Required file missing from package: $file"
+              }
+          }
+
+          # Ensure no test/dev files leaked
+          $excludedFiles = @(".git", ".github", ".agents", "tests", "scratch", ".cache")
+          foreach ($file in $excludedFiles) {
+              $filePath = Join-Path $verifyDir $file
+              if (Test-Path $filePath) {
+                  throw "Excluded file leaked into package: $file"
+              }
+          }
+
+          # Run end-to-end smoke test
+          Set-Location $verifyDir
+          $exportOut = "$env:RUNNER_TEMP\extracted_export"
+          powershell -ExecutionPolicy Bypass -File .\Export-MarkdigWiki.ps1 -SourceDir .\markdown_sample -OutputDir $exportOut -Language ja
+          if ($LASTEXITCODE -ne 0) {
+              throw "Export-MarkdigWiki.ps1 exited with code $LASTEXITCODE in smoke test"
+          }
+          if (-not (Test-Path "$exportOut\index.html")) {
+              throw "Export-MarkdigWiki.ps1 did not generate index.html in smoke test"
+          }
+
+          Write-Host "Package Portability Smoke Test Passed"
+          Set-Location $env:GITHUB_WORKSPACE
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ env.ZIP_PATH }}
+            ${{ env.ZIP_HASH_PATH }}
+          generate_release_notes: true
+          tag_name: ${{ env.TAG_NAME }}
