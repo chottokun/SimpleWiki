@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Encoding & BOM Verification
+        run: |
+          $failed = $false
+
+          # Check .ps1, .psm1, .psd1 for UTF-8 with BOM
+          $psFiles = Get-ChildItem -Path . -Recurse -File | Where-Object { $_.Extension -match '^\.ps(1|m1|d1)$' }
+          foreach ($file in $psFiles) {
+              $bytes = Get-Content -Path $file.FullName -Encoding Byte -TotalCount 3 -ErrorAction SilentlyContinue
+              if ($null -eq $bytes -or $bytes.Count -lt 3 -or $bytes[0] -ne 0xEF -or $bytes[1] -ne 0xBB -or $bytes[2] -ne 0xBF) {
+                  Write-Error "File $($file.FullName) must be UTF-8 with BOM (0xEF, 0xBB, 0xBF)"
+                  $failed = $true
+              }
+          }
+
+          # Check .bat for UTF-8 without BOM
+          $batFiles = Get-ChildItem -Path . -Recurse -File -Filter *.bat
+          foreach ($file in $batFiles) {
+              $bytes = Get-Content -Path $file.FullName -Encoding Byte -TotalCount 3 -ErrorAction SilentlyContinue
+              if ($null -ne $bytes -and $bytes.Count -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+                  Write-Error "File $($file.FullName) must NOT have BOM (0xEF, 0xBB, 0xBF)"
+                  $failed = $true
+              }
+          }
+
+          if ($failed) {
+              exit 1
+          }
+
+      - name: Install PSScriptAnalyzer
+        run: |
+          Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -AllowClobber
+
+      - name: PSScriptAnalyzer Check
+        run: |
+          $results = Invoke-ScriptAnalyzer -Path . -Recurse
+          $errors = $results | Where-Object { $_.Severity -eq 'Error' }
+          if ($errors) {
+              $errors | Format-Table -AutoSize
+              Write-Error "PSScriptAnalyzer found errors."
+              exit 1
+          }
+
+      - name: Pester Unit Tests
+        run: |
+          # Force loading Pester 3.4.0 to match Windows 11 built-in environment
+          Remove-Module Pester -ErrorAction SilentlyContinue
+          Import-Module Pester -RequiredVersion 3.4.0 -Force -ErrorAction SilentlyContinue
+          if (-not (Get-Module Pester | Where-Object { $_.Version.Major -eq 3 })) {
+              Install-Module -Name Pester -RequiredVersion 3.4.0 -Force -Scope CurrentUser -SkipPublisherCheck
+              Import-Module Pester -RequiredVersion 3.4.0 -Force
+          }
+          Invoke-Pester -Script .\tests -EnableExit
+
+      - name: End-to-End Static HTML Export Smoke Test
+        run: |
+          powershell -ExecutionPolicy Bypass -File .\Export-MarkdigWiki.ps1 -SourceDir .\markdown_sample -OutputDir "$env:RUNNER_TEMP\wiki_export" -Language ja
+          if ($LASTEXITCODE -ne 0) {
+              Write-Error "Export-MarkdigWiki.ps1 exited with code $LASTEXITCODE"
+              exit 1
+          }
+          if (-not (Test-Path "$env:RUNNER_TEMP\wiki_export\index.html")) {
+              Write-Error "Export-MarkdigWiki.ps1 did not generate index.html"
+              exit 1
+          }
