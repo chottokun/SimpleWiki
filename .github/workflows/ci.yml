@@ -63,6 +63,13 @@ jobs:
 
       - name: Pester Unit Tests
         run: |
+          # Force loading Pester 3.4.0 to match Windows 11 built-in environment
+          Remove-Module Pester -ErrorAction SilentlyContinue
+          Import-Module Pester -RequiredVersion 3.4.0 -Force -ErrorAction SilentlyContinue
+          if (-not (Get-Module Pester | Where-Object { $_.Version.Major -eq 3 })) {
+              Install-Module -Name Pester -RequiredVersion 3.4.0 -Force -Scope CurrentUser -SkipPublisherCheck
+              Import-Module Pester -RequiredVersion 3.4.0 -Force
+          }
           Invoke-Pester -Script .\tests -EnableExit
 
       - name: End-to-End Static HTML Export Smoke Test
